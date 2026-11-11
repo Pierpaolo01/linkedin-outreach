@@ -46,3 +46,20 @@ export function publicIdFromUrl(href: string): string | undefined {
 export function profileUrlFor(publicId: string): string {
   return `https://www.linkedin.com/in/${encodeURIComponent(publicId)}/`;
 }
+
+/**
+ * The member id (`ACoA…`) in a Message control's link (`/messaging/compose/?…&recipient=<id>`).
+ * It is how the messaging pages name a person; the vanity id of `/in/<id>/` does not appear there.
+ */
+export function memberIdFromComposeHref(href: string | null | undefined): string | null {
+  if (href == null) return null;
+  let url: URL;
+  try {
+    url = new URL(href, "https://www.linkedin.com");
+  } catch {
+    return null;
+  }
+  if (!url.pathname.startsWith("/messaging/compose")) return null;
+  const id = url.searchParams.get("recipient");
+  return id !== null && /^ACoA[A-Za-z0-9_-]+$/.test(id) ? id : null;
+}

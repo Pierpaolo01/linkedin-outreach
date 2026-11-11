@@ -9,7 +9,7 @@
  */
 import { parse, HTMLElement, TextNode, type Node } from "node-html-parser";
 import { languageFromHtml, normaliseText } from "../selectors";
-import { ParseError, profileUrlFor, publicIdFromUrl } from "./card";
+import { memberIdFromComposeHref, ParseError, profileUrlFor, publicIdFromUrl } from "./card";
 import { MAX_EXPERIENCE, profileStructure as s, profileWording, type ProfileWording } from "./selectors.profile";
 
 /** One role as the profile's Experience section shows it. */
@@ -44,6 +44,8 @@ export interface Profile {
   readonly connectionState: ConnectionState;
   /** The top card offers Message (to a 1st-degree connection, or an open profile / InMail). */
   readonly messageAvailable: boolean;
+  /** The member id (`ACoA…`) in the top card's Message link; `readThread` needs it. Null when there is no such link. */
+  readonly memberId: string | null;
 }
 
 /**
@@ -102,6 +104,7 @@ export function parseProfile(html: string): Profile {
     experience,
     connectionState: connectionStateOf(actions, degree),
     messageAvailable: actions.message,
+    memberId: memberIdFromComposeHref(card.querySelector(`${s.message} a[href]`)?.getAttribute("href")),
   };
 }
 

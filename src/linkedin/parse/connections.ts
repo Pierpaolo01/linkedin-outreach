@@ -4,7 +4,7 @@
  */
 import type { HTMLElement } from "node-html-parser";
 import { normaliseText } from "../selectors";
-import { ParseError, type Card } from "./card";
+import { memberIdFromComposeHref, ParseError, type Card } from "./card";
 import {
   identityFrom,
   includesAny,
@@ -17,6 +17,7 @@ import {
 } from "./selectors.lists";
 
 const PAGE = "connections";
+const COMPOSE_LINK = 'a[href*="/messaging/compose/"]';
 const hooks = listStructure.connections;
 
 export interface ConnectionCard extends Card {
@@ -25,6 +26,8 @@ export interface ConnectionCard extends Card {
   readonly connectedOnText: string | null;
   /** The connection date as `YYYY-MM-DD`, when the line gives an absolute date. Null for relative or unrecognised text. */
   readonly connectedOn: string | null;
+  /** The member id in the row's Message link; `readThread` needs it. Null when the row has no such link. */
+  readonly memberId: string | null;
 }
 
 export function parseConnections(html: string, options: ListParseOptions = {}): ConnectionCard[] {
@@ -62,6 +65,7 @@ function parseRow(row: HTMLElement, label: string, wording: ListWording): Connec
     degree: 1,
     connectedOnText,
     connectedOn: connectedOnText === null ? null : dateFrom(connectedOnText, wording),
+    memberId: memberIdFromComposeHref(row.querySelector(COMPOSE_LINK)?.getAttribute("href")),
   };
 }
 
