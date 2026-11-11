@@ -42,6 +42,10 @@ export function openDb(file: string = dataPaths().db): OpenedDb {
     sqlite.pragma("journal_mode = WAL");
     sqlite.pragma("foreign_keys = ON");
     sqlite.pragma("busy_timeout = 5000");
+    // A committed ledger claim must survive a power cut: losing it after the click would send a step twice.
+    // FULL syncs the WAL on every commit; fullfsync makes macOS flush the drive's own cache too.
+    sqlite.pragma("synchronous = FULL");
+    sqlite.pragma("fullfsync = ON");
     const db = drizzle(sqlite, { schema });
     migrate(db, { migrationsFolder: MIGRATIONS_DIR });
     return { db, sqlite, close: () => sqlite.close() };

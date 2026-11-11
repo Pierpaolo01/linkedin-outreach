@@ -2,8 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq, isNull } from "drizzle-orm";
 import { openDb, type OpenedDb } from "./index";
-import { actions, campaigns, people, prospects, sessionState } from "./schema";
+import { actions, campaigns, CLOSED_STAGES, people, prospects, safetyStops, sessionState } from "./schema";
 
 let dir: string;
 let opened: OpenedDb;
@@ -48,16 +49,55 @@ describe("schema constraints", () => {
     expect(() => addPerson("test-person-1")).toThrow(/UNIQUE constraint failed: people.public_id/);
   });
 
-  it("allows one prospect per campaign and person, and the same person in another campaign", () => {
+  it("allows one prospect per campaign and person", () => {
     const personId = addPerson("test-person-2");
     const first = addCampaign("Construction");
-    const second = addCampaign("Hotels");
     const add = (campaignId: number) =>
-      opened.db.insert(prospects).values({ campaignId, personId, foundAt: now }).run();
+      opened.db.insert(prospects).values({ campaignId, personId, stage: "rejected", foundAt: now }).run();
 
     add(first);
     expect(() => add(first)).toThrow(/UNIQUE constraint failed: prospects.campaign_id, prospects.person_id/);
+  });
+
+  it("allows a person one active prospect across all campaigns", () => {
+    const personId = addPerson("test-person-5");
+    const first = addCampaign("Construction");
+    const second = addCampaign("Hotels");
+    const third = addCampaign("Bakeries");
+    const add = (campaignId: number) =>
+      opened.db.insert(prospects).values({ campaignId, personId, stage: "approved", foundAt: now }).returning().get();
+
+    const active = add(first);
+    expect(() => add(second)).toThrow(/UNIQUE constraint failed: prospects.person_id/);
+
+    for (const stage of CLOSED_STAGES) {
+      opened.db.update(prospects).set({ stage }).where(eq(prospects.id, active.id)).run();
+      expect(() => opened.db.update(prospects).set({ stage: "approved" }).where(eq(prospects.id, active.id)).run()).not.toThrow();
+    }
+    opened.db.update(prospects).set({ stage: "completed" }).where(eq(prospects.id, active.id)).run();
     expect(() => add(second)).not.toThrow();
+    expect(() => add(third)).toThrow(/UNIQUE constraint failed: prospects.person_id/);
+  });
+
+  it("stores a member id once, and lets many people have none", () => {
+    const first = addPerson("test-person-6");
+    const second = addPerson("test-person-7");
+    addPerson("test-person-8");
+    const set = (id: number) => opened.db.update(people).set({ memberId: "ACoAAtest" }).where(eq(people.id, id)).run();
+    set(first);
+    expect(() => set(second)).toThrow(/UNIQUE constraint failed: people.member_id/);
+  });
+
+  it("keeps a safety stop until it is resumed", () => {
+    opened.db.insert(safetyStops).values({ reason: "checkpoint", raisedAt: now }).run();
+    const active = opened.db.select().from(safetyStops).where(isNull(safetyStops.resumedAt)).all();
+    expect(active).toHaveLength(1);
+    expect(active[0]?.reason).toBe("checkpoint");
+  });
+
+  it("has no jobs table: due work is derived from prospects", () => {
+    const tables = opened.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[];
+    expect(tables.map((t) => t.name)).not.toContain("jobs");
   });
 
   it("rejects a second action with the same idempotency key", () => {

@@ -51,9 +51,13 @@ export const settingsSchema = z.object({
     messagesPerDay: count,
     /** Search and recommendation pages together. */
     discoveryPagesPerDay: count,
+    /** Withdrawals of old invitations, so a return from downtime does not withdraw them all at once. */
+    withdrawalsPerDay: count,
   }),
   /** Invites start at invitesStartPerDay and rise by invitesIncreasePerDay each day up to limits.invitesPerDay. */
   warmUp: z.object({ enabled: z.boolean(), invitesStartPerDay: count, invitesIncreasePerDay: count }),
+  /** Days invites stay off after LinkedIn's own invitation-limit message, even once the safety stop is resumed. */
+  inviteLimitCooldownDays: count,
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -81,8 +85,10 @@ export const DEFAULT_SETTINGS = {
     profileViewsPerDay: 40,
     messagesPerDay: 10,
     discoveryPagesPerDay: 10,
+    withdrawalsPerDay: 10,
   },
   warmUp: { enabled: true, invitesStartPerDay: 5, invitesIncreasePerDay: 2 },
+  inviteLimitCooldownDays: 7,
 } as const satisfies Settings;
 
 const SETTING_KEYS = new Set<string>(Object.keys(settingsSchema.shape));

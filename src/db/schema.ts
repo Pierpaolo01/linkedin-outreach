@@ -48,6 +48,9 @@ export const PROSPECT_STAGES = [
 ] as const;
 export type ProspectStage = (typeof PROSPECT_STAGES)[number];
 
+/** Stages in which a prospect's sequence is over. Every other stage is active: a person has at most one active prospect. */
+export const CLOSED_STAGES = ["rejected", "completed", "withdrawn", "stopped"] as const satisfies readonly ProspectStage[];
+
 export const STOP_REASONS = ["replied", "manual_takeover"] as const;
 export type StopReason = (typeof STOP_REASONS)[number];
 
@@ -67,8 +70,9 @@ export type ActionType = (typeof ACTION_TYPES)[number];
 export const ACTION_STATUSES = ["planned", "in_progress", "done", "failed", "unknown"] as const;
 export type ActionStatus = (typeof ACTION_STATUSES)[number];
 
-export const JOB_STATUSES = ["queued", "running", "done", "failed"] as const;
-export type JobStatus = (typeof JOB_STATUSES)[number];
+/** Why all LinkedIn activity was halted (spec section 6, "Safety stop"). */
+export const SAFETY_STOP_REASONS = ["logged_out", "checkpoint", "restricted", "limit_hit", "unexpected_pages"] as const;
+export type SafetyStopReason = (typeof SAFETY_STOP_REASONS)[number];
 
 export const EVENT_LEVELS = ["info", "warning", "error"] as const;
 export type EventLevel = (typeof EVENT_LEVELS)[number];
@@ -141,7 +145,12 @@ export const people = sqliteTable("people", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   /** The public profile identifier, the `<id>` in linkedin.com/in/<id>. */
   publicId: text("public_id").notNull().unique(),
-  urn: text("urn"),
+  /**
+   * LinkedIn's member id (`ACoA…`). Unlike the public id, the member cannot change it, so it is
+   * what makes two rows the same person. Known once a profile or connection row has shown it;
+   * required before an invite.
+   */
+  memberId: text("member_id").unique(),
   profileUrl: text("profile_url").notNull(),
   fullName: text("full_name").notNull(),
   firstName: text("first_name"),
@@ -156,6 +165,12 @@ export const people = sqliteTable("people", {
   raw: text("raw", { mode: "json" }).$type<unknown>(),
   firstSeenAt: timestamp("first_seen_at").notNull(),
   doNotContact: flag("do_not_contact").notNull().default(false),
+  /**
+   * Suppression: set when the first invite to this person is claimed in the ledger, and never
+   * cleared. Only `contactedProspectId` may contact the person from then on.
+   */
+  contactedAt: timestamp("contacted_at"),
+  contactedProspectId: integer("contacted_prospect_id"),
 });
 
 /** A person inside one campaign. */
@@ -194,6 +209,9 @@ export const prospects = sqliteTable(
   },
   (t) => [
     uniqueIndex("prospects_campaign_person_unique").on(t.campaignId, t.personId),
+    uniqueIndex("prospects_one_active_per_person")
+      .on(t.personId)
+      .where(sql`${t.stage} NOT IN ('rejected', 'completed', 'withdrawn', 'stopped')`),
     index("prospects_person_idx").on(t.personId),
     index("prospects_stage_next_action_idx").on(t.stage, t.nextActionAt),
   ],
@@ -210,27 +228,18 @@ export const actions = sqliteTable(
     status: text("status", { enum: ACTION_STATUSES }).notNull().default("planned"),
     /** For example `invite:<prospect>` or `message1:<prospect>`. */
     idempotencyKey: text("idempotency_key").notNull().unique(),
+    /** How many times the action was claimed (moved to in_progress). */
+    attempts: integer("attempts").notNull().default(0),
     startedAt: timestamp("started_at"),
     finishedAt: timestamp("finished_at"),
     error: text("error"),
+    /** The driver error kind (`unexpected`, `checkpoint`, ...) when the action ended on one. */
+    errorKind: text("error_kind"),
+    /** What reconciliation needs to know about the claim, e.g. how many of the user's messages the thread held before a send. */
+    detail: text("detail", { mode: "json" }).$type<Record<string, unknown>>(),
     screenshotPath: text("screenshot_path"),
   },
   (t) => [index("actions_type_started_idx").on(t.type, t.startedAt)],
-);
-
-/** The scheduler queue. */
-export const jobs = sqliteTable(
-  "jobs",
-  {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    kind: text("kind").notNull(),
-    payload: text("payload", { mode: "json" }).$type<unknown>().notNull().default(sql`'{}'`),
-    runAfter: timestamp("run_after").notNull(),
-    attempts: integer("attempts").notNull().default(0),
-    status: text("status", { enum: JOB_STATUSES }).notNull().default("queued"),
-    lockedAt: timestamp("locked_at"),
-  },
-  (t) => [index("jobs_status_run_after_idx").on(t.status, t.runAfter)],
 );
 
 /** Human-readable audit trail shown in the UI. */
@@ -259,4 +268,19 @@ export const discoveryRuns = sqliteTable("discovery_runs", {
   exhausted: flag("exhausted").notNull().default(false),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
+});
+
+/**
+ * Safety stops, newest last. The stop is active while `resumedAt` is null; only the user lifts
+ * it. Kept apart from `session_state`, which every session check overwrites.
+ */
+export const safetyStops = sqliteTable("safety_stops", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  reason: text("reason", { enum: SAFETY_STOP_REASONS }).notNull(),
+  detail: text("detail"),
+  screenshotPath: text("screenshot_path"),
+  raisedAt: timestamp("raised_at").notNull(),
+  resumedAt: timestamp("resumed_at"),
+  /** After LinkedIn's own invitation-limit message, invites stay off until this instant even once resumed. */
+  invitesBlockedUntil: timestamp("invites_blocked_until"),
 });
