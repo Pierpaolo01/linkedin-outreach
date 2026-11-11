@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: hand-written in the markup shape of the real "New message" pane that
+     /messaging/compose/?recipient=… shows for a connection with no conversation yet (seen 2026-11-11).
+     The pane names the person by a recipient pill and a profile card that links the vanity id.
+     Names and ids are invented. -->
+<html lang="en" class="theme theme--mercado artdeco osx">
+<head><title>Messaging | LinkedIn</title></head>
+<body>
+<header id="global-nav" class="global-nav">
+  <nav class="global-nav__nav"><ul class="global-nav__primary-items">
+    <li class="global-nav__primary-item global-nav__me">
+      <button class="global-nav__primary-link global-nav__primary-link-me-menu-trigger" type="button">
+        <img width="24" height="24" alt="Ada Example" class="global-nav__me-photo evi-image ember-view">
+        <span class="global-nav__primary-link-text">Me</span>
+      </button>
+    </li>
+  </ul></nav>
+</header>
+<main class="scaffold-layout__main">
+  <div class="msg-conversations-container">
+    <ul class="list-style-none msg-conversations-container__conversations-list"></ul>
+  </div>
+  <div class="msg-convo-wrapper msg-thread msg-thread--pillar">
+    <div class="msg-title-bar global-title-container shared-title-bar">
+      <div class="shared-title-bar__title msg-title-bar__title-bar-title"><h2>New message</h2></div>
+    </div>
+    <div class="msg-connections-typeahead-container full-width">
+      <div class="msg-connections-typeahead relative full-width mbA">
+        <div class="msg-connections-typeahead__top-fixed-section">
+          <div class="scrollable msg-connections-typeahead__added-recipients display-flex align-items-center pl2">
+            <button class="artdeco-pill artdeco-pill--slate artdeco-pill--3 artdeco-pill--dismiss artdeco-pill--selected ember-view mv1 mr1" type="button">
+              <span class="artdeco-pill__text">Gina Prova</span>
+              <li-icon class="artdeco-pill__icon"><svg><path d=""></path></svg></li-icon>
+            </button>
+            <input class="msg-connections-typeahead__search-field ml1 mv1 pl2" type="text">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="msg-s-profile-card msg-s-profile-card-one-to-one">
+      <div>
+        <a href="/in/gina-prova/"><div><div class="msg-conversation-card__presence-entity"><img alt="Gina Prova"></div></div></a>
+        <div><div>
+          <span><a class="profile-card-one-to-one__profile-link" href="/in/gina-prova/"><span>Gina Prova</span></a></span>
+          <span>· 1st</span>
+          <div><span>Example headline</span></div>
+        </div></div>
+      </div>
+    </div>
+    <form class="msg-form">
+      <div class="msg-form__msg-content-container"><div class="msg-form__contenteditable" contenteditable="true" role="textbox"><p><br></p></div></div>
+      <footer class="msg-form__footer"><button class="msg-form__send-button artdeco-button" type="submit" disabled>Send</button></footer>
+    </form>
+  </div>
+</main>
+</body>
+</html>

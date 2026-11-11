@@ -21,6 +21,15 @@ export const thread = {
   /** Links the participant's profile as /in/<member id> (the ACoAA… form, not the vanity id). */
   participantLink: "a.msg-thread__link-to-profile",
 
+  /**
+   * The "New message" pane that `/messaging/compose/?recipient=…` shows for a person with no
+   * conversation yet (seen 2026-11-11): no participant in the title bar; the person is a recipient
+   * pill, and a profile card links their `/in/<vanity id>/` (not the member id).
+   */
+  newRecipientPill: ".msg-connections-typeahead__added-recipients .artdeco-pill",
+  newRecipientName: ".artdeco-pill__text",
+  newProfileCardLink: '.msg-s-profile-card a[href*="/in/"]',
+
   /** One per rendered message, in page order (oldest first). Day headings sit inside them. */
   listEvent: "li.msg-s-message-list__event",
   /** "Today", "Mar 3, 2025": applies to every message after it until the next heading. */

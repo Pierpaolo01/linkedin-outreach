@@ -88,6 +88,34 @@ describe("parseThread", () => {
   });
 });
 
+describe("the New message pane for a person with no conversation yet", () => {
+  const html = fixture("synthetic-new-message-en.html");
+
+  it("is a new conversation with that person and no messages", () => {
+    expect(parseThread(html)).toEqual({
+      participant: {
+        fullName: "Gina Prova",
+        headline: null,
+        publicId: "gina-prova",
+        profileUrl: "https://www.linkedin.com/in/gina-prova/",
+      },
+      kind: "unknown",
+      messages: [],
+      isNew: true,
+    });
+  });
+
+  it("refuses a new message addressed to several people", () => {
+    const two = html.replace(/(<button class="artdeco-pill[\s\S]*?<\/button>)/, "$1$1");
+
+    expect(() => parseThread(two)).toThrow(ParseError);
+  });
+
+  it("refuses a pane whose profile card links nobody", () => {
+    expect(() => parseThread(html.replaceAll('href="/in/gina-prova/"', 'href="#"'))).toThrow(ParseError);
+  });
+});
+
 describe("the real messaging page (scrubbed capture, English)", () => {
   // Saved 2026-11-11 from the user's inbox: the newest conversation, an InMail with one incoming message, is open.
   const html = fixture("inbox-inmail-en.html");

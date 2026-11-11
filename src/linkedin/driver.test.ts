@@ -164,6 +164,17 @@ describe("the live driver on saved pages", () => {
     expect((await driver.readThread({ memberId: "person-1" })).threadUrl).toBe("https://www.linkedin.com/messaging/thread/2-abc/");
   });
 
+  it("reads a new conversation, which names the person by public id, as no messages", async () => {
+    const { driver } = fakeWindow((url) => ({ url, html: fixture("messaging/synthetic-new-message-en.html") }));
+
+    const thread = await driver.readThread({ memberId: "ACoAAgina", publicId: "gina-prova" });
+
+    expect(thread.isNew).toBe(true);
+    expect(thread.messages).toEqual([]);
+    await expect(driver.readThread({ memberId: "ACoAAgina" })).rejects.toThrow(Unexpected);
+    await expect(driver.readThread({ memberId: "ACoAAgina", publicId: "someone-else" })).rejects.toThrow(Unexpected);
+  });
+
   it("refuses to return a conversation with someone other than the person asked for", async () => {
     const { driver } = fakeWindow(linkedIn);
 

@@ -51,8 +51,12 @@ export interface ReadDriver {
   listSentInvitations(): Promise<SentInvitationCard[]>;
   /** The messaging page: its conversation list, and the conversation it opens by itself (the newest), if any. */
   listConversations(): Promise<{ readonly conversations: ConversationSummary[]; readonly open: Thread | null }>;
-  /** The conversation with one person, by the member id their Message link carries. */
-  readThread(person: { readonly memberId: string }): Promise<ReadThreadResult>;
+  /**
+   * The conversation with one person, opened by the member id their Message link carries. With no
+   * conversation yet LinkedIn shows a new-message pane that names the person by `publicId` instead,
+   * so pass it when known; the result then has `isNew` and no messages.
+   */
+  readThread(person: { readonly memberId: string; readonly publicId?: string }): Promise<ReadThreadResult>;
 }
 
 export interface LiveDriverDeps {
@@ -140,7 +144,7 @@ export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): R
       return { conversations, open: openThread };
     },
 
-    async readThread({ memberId }) {
+    async readThread({ memberId, publicId }) {
       if (!/^[A-Za-z0-9_-]+$/.test(memberId)) throw new RangeError("not a member id");
       const url = new URL(`${ORIGIN}/messaging/compose/`);
       url.searchParams.set("profileUrn", `urn:li:fsd_profile:${memberId}`);
@@ -148,7 +152,8 @@ export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): R
       const html = await open(url.href);
       const thread = await read(html, parseThread);
       // LinkedIn opens the newest conversation when it cannot open the one asked for: never report that one.
-      if (thread.participant.publicId !== memberId) {
+      const shown = thread.participant.publicId;
+      if (shown === null || (shown !== memberId && shown !== publicId)) {
         const artifacts = await savePage(page, html, "unknown", health);
         throw new Unexpected(`the conversation shown is not with the person asked for. Saved html ${artifacts.html}`, {
           artifacts,

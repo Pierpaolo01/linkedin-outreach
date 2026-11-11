@@ -1,10 +1,12 @@
 /**
- * `npm run live:check [-- --keywords "<words>"]`
+ * `npm run live:check [-- --keywords "<words>"] [-- --thread-member <member id>]`
  *
  * Runs every read-only driver operation once against the real account in the
  * dedicated window and checks that each returns well-formed data (handoff
  * section 5, item 3). Read-only: it loads pages and scrolls; it never clicks
- * or types. Pages are spaced 20–40 s apart.
+ * or types. Pages are spaced 20–40 s apart. `readThread` runs on the newest
+ * connection, who often has no conversation yet; `--thread-member` adds a read
+ * of a person the user has exchanged messages with, which must return messages.
  *
  * Stdout holds states and counts only. The parsed results, which contain real
  * people's data, go to `<data dir>/live-check/<timestamp>.json`.
@@ -47,6 +49,7 @@ const shapes = {
     participant: z.object({ fullName: z.string().min(1), publicId: z.string().min(1) }),
     kind: z.enum(["message", "inmail", "sponsored", "unknown"]),
     messages: z.array(z.object({ sender: z.enum(["user", "participant"]), senderName: z.string().min(1), text: z.string().min(1) })),
+    isNew: z.boolean(),
     threadUrl: z.string().nullable(),
   }),
 };
@@ -57,13 +60,14 @@ function problems(error: z.ZodError): string {
   return `${error.issues.length} problem(s): ${lines.join("; ")}`;
 }
 
-function keywordsFrom(argv: readonly string[]): string {
-  const at = argv.indexOf("--keywords");
-  return (at >= 0 ? argv[at + 1] : undefined) ?? "marketing";
+function option(argv: readonly string[], name: string): string | undefined {
+  const at = argv.indexOf(name);
+  return at >= 0 ? argv[at + 1] : undefined;
 }
 
 async function main(): Promise<number> {
-  const keywords = keywordsFrom(process.argv.slice(2));
+  const keywords = option(process.argv.slice(2), "--keywords") ?? "marketing";
+  const threadMember = option(process.argv.slice(2), "--thread-member");
   let window: DedicatedWindow;
   try {
     window = await openDedicatedWindow();
@@ -153,15 +157,25 @@ async function main(): Promise<number> {
       (c) => `cards=${c.length} dated=${c.filter((x) => x.connectedOn !== null).length} memberIds=${c.filter((x) => x.memberId !== null).length}`,
     );
     await check("listSentInvitations", () => driver.listSentInvitations(), shapes.invitations, (c) => `cards=${c.length}`);
-    const memberId = connections?.find((c) => c.memberId !== null)?.memberId;
-    if (memberId == null) {
+    const connection = connections?.find((c) => c.memberId !== null);
+    const memberId = connection?.memberId;
+    if (connection === undefined || memberId == null) {
       failed += 1;
       console.log("FAIL readThread no connection with a member id to read");
     } else {
       await check(
         "readThread",
-        () => driver.readThread({ memberId }),
+        () => driver.readThread({ memberId, publicId: connection.publicId }),
         shapes.thread,
+        (t) =>
+          `kind=${t.kind} isNew=${t.isNew} messages=${t.messages.length} fromUser=${t.messages.filter((m) => m.sender === "user").length} fromParticipant=${t.messages.filter((m) => m.sender === "participant").length} threadUrl=${t.threadUrl !== null}`,
+      );
+    }
+    if (threadMember !== undefined) {
+      await check(
+        "readThread(existing)",
+        () => driver.readThread({ memberId: threadMember }),
+        shapes.thread.extend({ isNew: z.literal(false), messages: shapes.thread.shape.messages.min(1) }),
         (t) =>
           `kind=${t.kind} messages=${t.messages.length} fromUser=${t.messages.filter((m) => m.sender === "user").length} fromParticipant=${t.messages.filter((m) => m.sender === "participant").length} threadUrl=${t.threadUrl !== null}`,
       );

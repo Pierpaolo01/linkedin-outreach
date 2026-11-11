@@ -21,7 +21,7 @@ export interface Participant {
   /**
    * The `<id>` of the profile link the page shows, or null when it links none. On the messaging
    * page this is the member id form (`ACoAA…`), not the vanity id used on profile pages;
-   * `profileUrl` still opens the profile.
+   * `profileUrl` still opens the profile. In a new conversation (`isNew`) it is the vanity id.
    */
   readonly publicId: string | null;
   readonly profileUrl: string | null;
@@ -44,6 +44,11 @@ export interface Thread {
   readonly kind: ConversationKind;
   /** Oldest first. Empty for a new conversation. */
   readonly messages: readonly Message[];
+  /**
+   * True for LinkedIn's "New message" pane: there is no conversation with this person yet. The
+   * participant's `publicId` is then the vanity id of their profile, not the member id.
+   */
+  readonly isNew: boolean;
 }
 
 export interface ConversationSummary {
@@ -215,6 +220,8 @@ export function parseThread(html: string): Thread {
   const root = loadMessagingPage(html);
   const pane = root.querySelector(thread.pane);
   if (pane === null) throw new ParseError(PAGE, "no conversation is open");
+  const fresh = parseNewConversation(pane);
+  if (fresh !== null) return fresh;
   const participant = parseParticipant(pane);
   const wording = threadWordingFor(languageFromHtml(html));
 
@@ -265,7 +272,36 @@ export function parseThread(html: string): Thread {
       });
     }
   }
-  return { participant, kind, messages };
+  return { participant, kind, messages, isNew: false };
+}
+
+/**
+ * The "New message" pane addressed to exactly one person, or null when the pane is something else.
+ * Fails closed: several recipients, a missing profile link, or any rendered message is not a new
+ * one-to-one conversation.
+ */
+function parseNewConversation(pane: HTMLElement): Thread | null {
+  const pills = pane.querySelectorAll(thread.newRecipientPill);
+  if (pills.length === 0) return null;
+  if (pills.length > 1) throw new ParseError(PAGE, "a new message addressed to several people");
+  if (pane.querySelector(thread.listEvent) !== null) throw new ParseError(PAGE, "a new message pane that shows messages");
+  const fullName = inlineText(pills[0]?.querySelector(thread.newRecipientName) ?? null);
+  const ids = new Set(
+    pane
+      .querySelectorAll(thread.newProfileCardLink)
+      .map((link) => publicIdFromUrl(link.getAttribute("href") ?? ""))
+      .filter((id) => id !== undefined),
+  );
+  const [publicId] = ids;
+  if (fullName === "" || publicId === undefined || ids.size !== 1) {
+    throw new ParseError(PAGE, "a new message pane that does not name one person");
+  }
+  return {
+    participant: { fullName, headline: null, publicId, profileUrl: profileUrlFor(publicId) },
+    kind: "unknown",
+    messages: [],
+    isNew: true,
+  };
 }
 
 /** Canonical thread URL from a relative or absolute link, or null when it is not one. */
