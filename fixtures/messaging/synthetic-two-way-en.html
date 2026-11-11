@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: hand-written in the markup shape of the real messaging page (older frontend, msg-* classes).
+     Two-way conversation: user, participant, user. Names and ids are invented.
+     Unlike the real capture, the list cards link their thread (/messaging/thread/<id>/) so the link parsing is exercised. -->
+<html lang="en" class="theme theme--mercado artdeco osx">
+<head><title>Messaging | LinkedIn</title></head>
+<body>
+<header id="global-nav" class="global-nav">
+  <nav class="global-nav__nav">
+    <ul class="global-nav__primary-items">
+      <li class="global-nav__primary-item"><a class="global-nav__primary-link" href="https://www.linkedin.com/messaging/"><span class="global-nav__primary-link-text">Messaging</span></a></li>
+      <li class="global-nav__primary-item global-nav__me">
+        <button class="global-nav__primary-link global-nav__primary-link-me-menu-trigger" type="button">
+          <img width="24" height="24" alt="Ada Example" class="global-nav__me-photo evi-image ember-view">
+          <span class="global-nav__primary-link-text">Me</span>
+        </button>
+      </li>
+    </ul>
+  </nav>
+</header>
+<main class="scaffold-layout__main">
+  <div class="msg-conversations-container msg-conversations-container--inbox-shortcuts">
+    <ul class="list-style-none msg-conversations-container__conversations-list">
+      <li class="msg-conversation-listitem msg-conversations-container__convo-item msg-conversations-container__pillar">
+        <div class="msg-conversation-card msg-conversations-container__pillar">
+          <a class="msg-conversation-listitem__link msg-conversations-container__convo-item-link msg-conversations-container__convo-item-link--active pl3" href="/messaging/thread/2-c3ludGhldGljLXR3by13YXlfMTAw/">
+            <div class="msg-conversation-card__content--selectable">
+              <div class="msg-conversation-card__rows">
+                <div class="msg-conversation-card__row msg-conversation-card__title-row">
+                  <h3 class="msg-conversation-listitem__participant-names msg-conversation-card__participant-names truncate pr1">
+                    <div class="display-flex"><span class="truncate">Bruno Sample</span></div>
+                  </h3>
+                  <time class="msg-conversation-listitem__time-stamp msg-conversation-card__time-stamp">10:15 AM</time>
+                  <span class="visually-hidden">10:15 AM</span>
+                </div>
+                <div class="msg-conversation-card__row msg-conversation-card__body-row">
+                  <div class="msg-conversation-card__message-snippet-container flex-grow-1">
+                    <p class="msg-conversation-card__message-snippet m0 t-normal">
+                      You: Thanks, talk soon then
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <span class="msg-conversation-listitem__active-text visually-hidden">. Active conversation</span>
+          </a>
+        </div>
+      </li>
+      <li class="msg-conversation-listitem msg-conversations-container__convo-item msg-conversations-container__pillar">
+        <div class="msg-conversation-card msg-conversations-container__pillar">
+          <a class="msg-conversation-listitem__link msg-conversations-container__convo-item-link pl3" href="https://www.linkedin.com/messaging/thread/2-c3ludGhldGljLW90aGVyXzEwMA==/">
+            <div class="msg-conversation-card__content--selectable">
+              <div class="msg-conversation-card__rows">
+                <div class="msg-conversation-card__row msg-conversation-card__title-row">
+                  <h3 class="msg-conversation-listitem__participant-names msg-conversation-card__participant-names truncate pr1">
+                    <div class="display-flex"><span class="truncate">Carla Placeholder</span></div>
+                  </h3>
+                  <time class="msg-conversation-listitem__time-stamp msg-conversation-card__time-stamp">Mar 1</time>
+                </div>
+                <div class="msg-conversation-card__row msg-conversation-card__body-row">
+                  <div class="msg-conversation-card__message-snippet-container flex-grow-1">
+                    <p class="msg-conversation-card__message-snippet msg-conversation-card__message-snippet--unread m0 t-bold">
+                      Carla: Are you free next week?
+                    </p>
+                  </div>
+                  <div class="msg-conversation-card__unread-count artdeco-notification-badge">
+                    <span class="notification-badge notification-badge--show"><span class="notification-badge__count">1</span></span>
+                    <span class="a11y-text">1 unread message</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+      </li>
+    </ul>
+  </div>
+  <div class="msg-convo-wrapper msg-thread msg-thread--pillar">
+    <div class="relative display-flex flex-column flex-grow-1">
+      <div class="msg-title-bar global-title-container shared-title-bar" id="thread-detail-jump-target">
+        <div class="shared-title-bar__title msg-title-bar__title-bar-title">
+          <a class="msg-thread__link-to-profile" title="Open Bruno Sample’s profile" href="https://www.linkedin.com/in/ACoAAPARTICIPANT0000000000000000000000001">
+            <div class="msg-entity-lockup truncate">
+              <dl class="truncate">
+                <dt class="msg-entity-lockup__entity-title-wrapper"><h2 class="msg-entity-lockup__entity-title truncate pr2 hoverable-link-text">Bruno Sample</h2></dt>
+                <dd class="msg-entity-lockup__entity-info truncate">Head of Example Things</dd>
+              </dl>
+            </div>
+          </a>
+        </div>
+      </div>
+      <div class="msg-s-message-list-container relative display-flex mbA">
+        <div class="msg-s-message-list msg-s-message-list--scroll-buffer full-width scrollable">
+          <ul class="msg-s-message-list-content list-style-none full-width mbA">
+            <li class="msg-s-message-list__top-of-list"></li>
+            <li class="msg-s-message-list__event clearfix">
+              <time class="msg-s-message-list__time-heading t-12 t-black--light t-bold">Mar 3, 2025</time>
+              <span class="msg-s-event-listitem--group-a11y-heading visually-hidden">Ada Example sent the following messages at 10:02 AM</span>
+              <div class="msg-s-event-listitem msg-s-event-listitem--last-in-group" data-event-urn="urn:li:msg_message:(urn:li:fsd_profile:ACoAAUSER00000000000000000000000000000001,2-bXNnMQ==)" data-view-name="message-list-item">
+                <a tabindex="0" href="https://www.linkedin.com/in/ACoAAUSER00000000000000000000000000000001" class="msg-s-event-listitem__link">
+                  <span class="a11y-text">View Ada’s profile</span>
+                  <img title="Ada Example" alt="Ada Example" class="msg-s-event-listitem__profile-picture EntityPhoto-circle-2">
+                </a>
+                <div class="msg-s-message-group__meta">
+                  <span><a class="inline-block v-align-middle" href="https://www.linkedin.com/in/ACoAAUSER00000000000000000000000000000001"><span class="msg-s-message-group__profile-link msg-s-message-group__name hoverable-link-text t-14 t-black t-bold">Ada Example</span></a></span>
+                  <time class="msg-s-message-group__timestamp white-space-nowrap t-12 t-black--light t-normal">10:02 AM</time>
+                </div>
+                <div class="msg-s-event-listitem__message-bubble">
+                  <div class="msg-s-event-with-indicator display-flex">
+                    <div class="msg-s-event__content" dir="ltr">
+                      <p class="msg-s-event-listitem__body t-14 t-black--light t-normal">Hi Bruno,<br><br>Thanks for connecting.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </li>
+            <li class="msg-s-message-list__event clearfix">
+              <time class="msg-s-message-list__time-heading t-12 t-black--light t-bold">Today</time>
+              <span class="msg-s-event-listitem--group-a11y-heading visually-hidden">Bruno Sample sent the following messages at 9:40 AM</span>
+              <div class="msg-s-event-listitem msg-s-event-listitem--last-in-group msg-s-event-listitem--other" data-event-urn="urn:li:msg_message:(urn:li:fsd_profile:ACoAAUSER00000000000000000000000000000001,2-bXNnMg==)" data-view-name="message-list-item">
+                <a tabindex="0" href="https://www.linkedin.com/in/ACoAAPARTICIPANT0000000000000000000000001" class="msg-s-event-listitem__link">
+                  <span class="a11y-text">View Bruno’s profile</span>
+                  <img title="Bruno Sample" alt="Bruno Sample" class="msg-s-event-listitem__profile-picture EntityPhoto-circle-2">
+                </a>
+                <div class="msg-s-message-group__meta">
+                  <span><a class="inline-block v-align-middle" href="https://www.linkedin.com/in/ACoAAPARTICIPANT0000000000000000000000001"><span class="msg-s-message-group__profile-link msg-s-message-group__name hoverable-link-text t-14 t-black t-bold">Bruno Sample</span></a></span>
+                  <time class="msg-s-message-group__timestamp white-space-nowrap t-12 t-black--light t-normal">9:40 AM</time>
+                </div>
+                <div class="msg-s-event-listitem__message-bubble">
+                  <div class="msg-s-event-with-indicator display-flex">
+                    <div class="msg-s-event__content" dir="ltr">
+                      <p class="msg-s-event-listitem__body t-14 t-black--light t-normal">Happy to chat &amp; compare notes.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </li>
+            <li class="msg-s-message-list__event clearfix">
+              <span class="msg-s-event-listitem--group-a11y-heading visually-hidden">Ada Example sent the following messages at 10:15 AM</span>
+              <div class="msg-s-event-listitem msg-s-event-listitem--last-in-group" data-event-urn="urn:li:msg_message:(urn:li:fsd_profile:ACoAAUSER00000000000000000000000000000001,2-bXNnMw==)" data-view-name="message-list-item">
+                <a tabindex="0" href="https://www.linkedin.com/in/ACoAAUSER00000000000000000000000000000001" class="msg-s-event-listitem__link">
+                  <span class="a11y-text">View Ada’s profile</span>
+                  <img title="Ada Example" alt="Ada Example" class="msg-s-event-listitem__profile-picture EntityPhoto-circle-2">
+                </a>
+                <div class="msg-s-message-group__meta">
+                  <span><a class="inline-block v-align-middle" href="https://www.linkedin.com/in/ACoAAUSER00000000000000000000000000000001"><span class="msg-s-message-group__profile-link msg-s-message-group__name hoverable-link-text t-14 t-black t-bold">Ada Example</span></a></span>
+                  <time class="msg-s-message-group__timestamp white-space-nowrap t-12 t-black--light t-normal">10:15 AM</time>
+                </div>
+                <div class="msg-s-event-listitem__message-bubble">
+                  <div class="msg-s-event-with-indicator display-flex">
+                    <div class="msg-s-event__content" dir="ltr">
+                      <p class="msg-s-event-listitem__body t-14 t-black--light t-normal">Thanks, talk soon then</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </li>
+            <li class="msg-s-message-list__typing-indicator-container--without-seen-receipt"></li>
+            <li class="msg-s-message-list__bottom-of-list"></li>
+          </ul>
+        </div>
+      </div>
+      <form class="msg-form msg-form--thread-footer-feature">
+        <div class="msg-form__contenteditable" contenteditable="true" role="textbox" aria-label="Write a message…"><p><br></p></div>
+        <button class="msg-form__send-button artdeco-button" disabled type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+</main>
+</body>
+</html>
