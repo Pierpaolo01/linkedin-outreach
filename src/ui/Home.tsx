@@ -22,6 +22,7 @@ const VIEWS: Readonly<Record<Status, StatusView>> = {
     label: "Logged out",
     light: "status-warning",
     line: "Log in to LinkedIn in the dedicated window, then press Re-check.",
+    stop: "The dedicated window is not logged in to LinkedIn. Log in there yourself, then press Re-check.",
   },
   checkpoint: {
     label: "Checkpoint",

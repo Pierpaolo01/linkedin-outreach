@@ -14,8 +14,8 @@ import { parseProfile, type Profile } from "./parse/profile";
 import { parseRecommendations, type RecommendationsResult } from "./parse/recommendations";
 import { parseSearchResults, type SearchResults } from "./parse/search";
 import { parseSentInvitations, type SentInvitationCard } from "./parse/sentInvitations";
-import { findThreadUrl, parseConversationList, parseThread, type ConversationSummary, type Thread } from "./parse/thread";
-import { Unexpected, type LinkedInError } from "./errors";
+import { findThreadUrl, parseThread, type Thread } from "./parse/thread";
+import { SearchCapped, Unexpected, type LinkedInError } from "./errors";
 import { humanDelay, randomInt } from "./human";
 import { assertHealthy, savePage, type HealthOptions, type InspectablePage } from "./pageHealth";
 import { classifyPage, FEED_URL, settle, type PageClassification } from "./session";
@@ -49,8 +49,6 @@ export interface ReadDriver {
   /** Connections as LinkedIn lists them by default: recently added first. */
   listRecentConnections(): Promise<ConnectionCard[]>;
   listSentInvitations(): Promise<SentInvitationCard[]>;
-  /** The messaging page: its conversation list, and the conversation it opens by itself (the newest), if any. */
-  listConversations(): Promise<{ readonly conversations: ConversationSummary[]; readonly open: Thread | null }>;
   /**
    * The conversation with one person, opened by the member id their Message link carries. With no
    * conversation yet LinkedIn shows a new-message pane that names the person by `publicId` instead,
@@ -66,7 +64,7 @@ export interface LiveDriverDeps {
   readonly health?: HealthOptions;
 }
 
-const SAFETY_STOPS: readonly LinkedInError["kind"][] = ["logged_out", "checkpoint", "restricted"];
+const SAFETY_STOPS: readonly LinkedInError["kind"][] = ["logged_out", "checkpoint", "restricted", "limit_hit"];
 
 export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): ReadDriver {
   let stopped: LinkedInError | undefined;
@@ -86,7 +84,10 @@ export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): R
     return page.content();
   }
 
-  /** Runs a parser; a page it cannot read is saved and reported as `Unexpected`. */
+  /**
+   * Runs a parser; a page it cannot read is saved and reported as `Unexpected` (the parser's own
+   * error, such as a profile that is not available, is its `cause`).
+   */
   async function read<T>(html: string, parse: (html: string) => T): Promise<T> {
     try {
       return parse(html);
@@ -112,7 +113,9 @@ export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): R
 
     async searchPeople(query) {
       const url = searchUrl(query);
-      return read(await open(url), (html) => parseSearchResults(html));
+      const results = await read(await open(url), (html) => parseSearchResults(html));
+      if (results.capped) throw new SearchCapped("LinkedIn shows its monthly search limit notice");
+      return results;
     },
 
     async listRecommendations() {
@@ -129,19 +132,6 @@ export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): R
 
     async listSentInvitations() {
       return read(await open(`${ORIGIN}/mynetwork/invitation-manager/sent/`), (html) => parseSentInvitations(html));
-    },
-
-    async listConversations() {
-      const html = await open(`${ORIGIN}/messaging/`);
-      const conversations = await read(html, parseConversationList);
-      let openThread: Thread | null;
-      try {
-        openThread = parseThread(html);
-      } catch (error) {
-        if (!(error instanceof ParseError)) throw error;
-        openThread = null;
-      }
-      return { conversations, open: openThread };
     },
 
     async readThread({ memberId, publicId }) {

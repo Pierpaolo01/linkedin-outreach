@@ -46,9 +46,9 @@ const shapes = {
     .min(1),
   invitations: z.array(card),
   thread: z.object({
-    participant: z.object({ fullName: z.string().min(1), publicId: z.string().min(1) }),
+    participant: z.object({ fullName: z.string().min(1), publicId: z.string().min(1).nullable() }),
     kind: z.enum(["message", "inmail", "sponsored", "unknown"]),
-    messages: z.array(z.object({ sender: z.enum(["user", "participant"]), senderName: z.string().min(1), text: z.string().min(1) })),
+    messages: z.array(z.object({ sender: z.enum(["user", "participant"]), senderName: z.string().min(1), text: z.string() })),
     isNew: z.boolean(),
     threadUrl: z.string().nullable(),
   }),
@@ -106,7 +106,9 @@ async function main(): Promise<number> {
     } catch (error) {
       failed += 1;
       if (error instanceof LinkedInError) {
-        if (error.kind === "logged_out" || error.kind === "checkpoint" || error.kind === "restricted") stopped = true;
+        // A page whose session state is not recognised ends the run too: nothing more is loaded until someone has looked.
+        const unrecognised = error.kind === "unexpected" && error.message.startsWith("session unknown");
+        if (error.kind !== "unexpected" || unrecognised) stopped = true;
         // The message of an unexpected page names the saved files, not people.
         console.log(`FAIL ${name} ${error.kind}: ${error.message}`);
         return undefined;

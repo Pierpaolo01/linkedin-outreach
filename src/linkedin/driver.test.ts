@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createLiveDriver, type DriverPage, type ReadDriver } from "./driver";
-import { Checkpoint, LoggedOut, Restricted, Unexpected } from "./errors";
+import { Checkpoint, LoggedOut, Restricted, SearchCapped, Unexpected } from "./errors";
 
 const fixture = (path: string) => readFileSync(join(process.cwd(), "fixtures", path), "utf8");
 
@@ -46,7 +46,6 @@ const linkedIn: Route = (url) => {
     ["/mynetwork/invite-connect/connections/", "connections/recent-en.html"],
     ["/mynetwork/invitation-manager/sent/", "invitations/sent-en.html"],
     ["/messaging/compose/", "messaging/two-way-en.html"],
-    ["/messaging/", "messaging/inbox-inmail-en.html"],
     ["/in/", "profile/not-connected-a-en.html"],
   ];
   const match = pages.find(([prefix]) => pathname.startsWith(prefix));
@@ -90,6 +89,14 @@ describe("the live driver on saved pages", () => {
     expect(events).toEqual([]);
   });
 
+  it("throws SearchCapped when the page shows the monthly search limit notice (wording unverified)", async () => {
+    const html =
+      '<!doctype html><html lang="en"><body><header data-testid="primary-nav"></header><main><div data-sdui-screen="com.linkedin.sdui.flagshipnav.search.SearchResultsPeople"><section><div role="list"></div><p>You’ve reached the monthly limit for profile searches.</p></section></div></main></body></html>';
+    const { driver } = fakeWindow((url) => ({ url, html }));
+
+    await expect(driver.searchPeople({ keywords: "cfo" })).rejects.toThrow(SearchCapped);
+  });
+
   it("lists the recommendation groups of My Network → Grow", async () => {
     const { driver, loads } = fakeWindow(linkedIn);
 
@@ -128,17 +135,6 @@ describe("the live driver on saved pages", () => {
 
     expect(loads()).toEqual(["load https://www.linkedin.com/mynetwork/invitation-manager/sent/"]);
     expect(invitations.length).toBeGreaterThan(0);
-  });
-
-  it("lists conversations and reads the one the messaging page opens", async () => {
-    const { driver, loads } = fakeWindow(linkedIn);
-
-    const { conversations, open } = await driver.listConversations();
-
-    expect(loads()).toEqual(["load https://www.linkedin.com/messaging/"]);
-    expect(conversations).toHaveLength(10);
-    expect(open?.participant.publicId).toBe("person-1");
-    expect(open?.messages).toHaveLength(1);
   });
 
   it("reads the conversation with a person by opening it from their member id", async () => {
@@ -215,7 +211,6 @@ const operations: readonly (readonly [string, (driver: ReadDriver) => Promise<un
   ["viewProfile", (d) => d.viewProfile("person-1")],
   ["listRecentConnections", (d) => d.listRecentConnections()],
   ["listSentInvitations", (d) => d.listSentInvitations()],
-  ["listConversations", (d) => d.listConversations()],
   ["readThread", (d) => d.readThread({ memberId: "person-1" })],
 ];
 
