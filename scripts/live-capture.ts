@@ -69,7 +69,10 @@ async function main(): Promise<number> {
     await settle(page);
     console.log(`session: ${(await assertHealthy(page)).state}`);
 
-    const scrolls = randomInt({ min: 3, max: 5 });
+    // LinkedIn scrolls an inner column, so the wheel must be over the page content, not the corner.
+    const size = await page.evaluate(() => ({ width: globalThis.innerWidth, height: globalThis.innerHeight }));
+    await page.mouse.move(Math.round(size.width * 0.6), Math.round(size.height * 0.6));
+    const scrolls = randomInt({ min: 5, max: 7 });
     for (let i = 0; i < scrolls; i += 1) {
       await page.mouse.wheel(0, randomInt({ min: 500, max: 900 }));
       await humanDelay({ minMs: 1_500, maxMs: 3_500 });

@@ -30,7 +30,7 @@ export const FEED_URL = `https://www.linkedin.com${structural.feedPath}`;
  * Order matters. Restriction wording wins over everything (it is the most
  * serious and can appear on signed-in pages and on /checkpoint/ pages alike),
  * then checkpoint URLs and security-check wording, then the login wall, then
- * CAPTCHA widgets, then the signed-in navigation. Stop wording is matched in every supported language, whatever
+ * the signed-in navigation, then CAPTCHA widgets on pages that are neither. Stop wording is matched in every supported language, whatever
  * the page declares, because a missed stop costs more than a false one.
  */
 export function classifyPage({ url, html }: PageSnapshot): PageClassification {
@@ -59,12 +59,13 @@ export function classifyPage({ url, html }: PageSnapshot): PageClassification {
   const loginForm = findMarker(markup, structural.loginForm);
   if (loginForm !== undefined) return { state: "logged_out", evidence: loginForm };
 
-  // After the login wall: the ordinary login page embeds an invisible reCAPTCHA widget.
-  const captcha = findMarker(markup, structural.captcha);
-  if (captcha !== undefined) return { state: "checkpoint", evidence: captcha };
-
   const signedInNav = findMarker(markup, structural.signedInNav);
   if (signedInNav !== undefined) return { state: "ok", evidence: signedInNav };
+
+  // A CAPTCHA widget counts only on a page that is neither the login wall nor signed in:
+  // the login page and the signed-in messaging page both embed an invisible reCAPTCHA.
+  const captcha = findMarker(markup, structural.captcha);
+  if (captcha !== undefined) return { state: "checkpoint", evidence: captcha };
 
   if (structural.loggedOutHomePaths.some((home) => trimSlash(path) === trimSlash(home))) {
     return { state: "logged_out", evidence: `logged-out home page ${path}` };

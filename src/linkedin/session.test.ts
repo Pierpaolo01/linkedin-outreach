@@ -22,6 +22,19 @@ describe("classifyPage", () => {
       expect(result.evidence).toContain("url path");
     });
 
+    it("is not logged out on the 2026 feed, whose navigation is marked by data-testid", () => {
+      const html = '<html lang="en"><body><nav data-testid="primary-nav"></nav><main data-testid="mainFeed"></main></body></html>';
+      expect(classifyPage({ url: "https://www.linkedin.com/feed/", html }).state).toBe("ok");
+    });
+
+    it("is ok on the signed-in messaging page, which embeds an invisible reCAPTCHA widget", () => {
+      // Seen live 2026-11-11: /messaging/ carries a g-recaptcha-response textarea next to the signed-in navigation.
+      const html =
+        '<html lang="en"><body><header id="global-nav"></header>' +
+        '<textarea name="g-recaptcha-response" class="g-recaptcha-response" style="display: none"></textarea></body></html>';
+      expect(classifyPage({ url: "https://www.linkedin.com/messaging/", html }).state).toBe("ok");
+    });
+
     it("on the real login page, which embeds an invisible reCAPTCHA widget", () => {
       // Seen live 2026-11-11: /login carries a g-recaptcha element and is not a challenge.
       const html =

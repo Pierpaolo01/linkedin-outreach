@@ -33,7 +33,8 @@ export const structural = {
   /** Path of the feed `ensureSession` opens. */
   feedPath: "/feed/",
   /** The signed-in global navigation bar at the top of every logged-in page. */
-  signedInNav: [marker("id", "global-nav")],
+  /** `primary-nav` is the 2026 frontend (seen live on the feed 2026-11-11); `global-nav` is the older one. */
+  signedInNav: [marker("data-testid", "primary-nav"), marker("id", "global-nav")],
   /** The email and password fields of the login form, on the login page and the authwall. */
   loginForm: [marker("name", "session_key"), marker("name", "session_password")],
   /** CAPTCHA and challenge widgets. */
