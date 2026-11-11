@@ -4,13 +4,13 @@
  */
 import type { HTMLElement } from "node-html-parser";
 import { ParseError, type Card } from "./card";
+import { isInside } from "./dom";
 import {
   identityFrom,
   includesAny,
-  isInside,
   listStructure,
   loadListPage,
-  searchActionViewNames,
+  searchActionSelector,
   startsWithAny,
   textOf,
   type ListParseOptions,
@@ -71,21 +71,21 @@ function parseRow(result: HTMLElement, label: string, wording: ListWording): Sea
   if (fullName === "") throw new ParseError(PAGE, `${label}: no name`);
 
   // The title's paragraph holds the name and the degree badge; its parent holds headline then location.
-  const titleLine = title.closest("p") ?? title.parentNode;
+  const titleLine = title.closest(hooks.textLine) ?? title.parentNode;
   if (titleLine === null) throw new ParseError(PAGE, `${label}: name link outside any line`);
   const details = titleLine.parentNode ?? titleLine;
   const actionWrapper = result.querySelector(hooks.action) ?? actionSlotOf(result);
   const outsideAction = (p: HTMLElement) => actionWrapper === null || !isInside(p, actionWrapper);
 
   const [headline, location] = details
-    .querySelectorAll("p")
+    .querySelectorAll(hooks.textLine)
     .filter((p) => p !== titleLine && outsideAction(p))
     .map(textOf);
   const snippet = result.querySelector(hooks.snippet);
   const summaryLines =
     snippet === null
-      ? result.querySelectorAll("p").filter((p) => !isInside(p, details) && outsideAction(p))
-      : snippet.querySelectorAll("p");
+      ? result.querySelectorAll(hooks.textLine).filter((p) => !isInside(p, details) && outsideAction(p))
+      : snippet.querySelectorAll(hooks.textLine);
   const summary =
     summaryLines
       .map(textOf)
@@ -107,7 +107,7 @@ function parseRow(result: HTMLElement, label: string, wording: ListWording): Sea
 /** The action slot of a later page load, when it holds a control; null for a row with no action. */
 function actionSlotOf(result: HTMLElement): HTMLElement | null {
   const slot = result.querySelector(hooks.actionSlot);
-  return slot !== null && slot.querySelector("a, button") !== null ? slot : null;
+  return slot !== null && slot.querySelector(hooks.control) !== null ? slot : null;
 }
 
 /** The company from an older-style "Current: <role> at <company>" line, in its original case. */
@@ -118,7 +118,7 @@ function companyFrom(summary: string, wording: ListWording): string | null {
 }
 
 function degreeOf(titleLine: HTMLElement, title: HTMLElement, wording: ListWording): Card["degree"] {
-  for (const span of titleLine.querySelectorAll("span")) {
+  for (const span of titleLine.querySelectorAll(hooks.degreeBadge)) {
     if (isInside(span, title)) continue;
     const match = wording.search.degree.exec(textOf(span).toLowerCase());
     const digit = match?.[1]?.[0];
@@ -131,10 +131,9 @@ function degreeOf(titleLine: HTMLElement, title: HTMLElement, wording: ListWordi
 
 function actionOf(wrapper: HTMLElement, label: string, wording: ListWording): SearchAction {
   for (const action of SEARCH_ACTIONS) {
-    const selector = searchActionViewNames[action].map((name) => `[data-view-name="${name}"]`).join(", ");
-    if (wrapper.querySelector(selector) !== null) return action;
+    if (wrapper.querySelector(searchActionSelector(action)) !== null) return action;
   }
-  const control = wrapper.querySelector("a, button");
+  const control = wrapper.querySelector(hooks.control);
   if (control === null) throw new ParseError(PAGE, `${label}: action area with no control`);
   const text = control.getAttribute("aria-label") ?? textOf(control);
   // Pending first: its wording ("withdraw invitation") must win over the others.
@@ -142,7 +141,7 @@ function actionOf(wrapper: HTMLElement, label: string, wording: ListWording): Se
     if (startsWithAny(text, wording.search.action[action])) return action;
   }
   const viewNames = wrapper
-    .querySelectorAll("[data-view-name]")
+    .querySelectorAll(hooks.viewNamed)
     .map((element) => element.getAttribute("data-view-name"))
     .join(", ");
   throw new ParseError(PAGE, `${label}: unrecognised action (data-view-name: ${viewNames || "none"})`);

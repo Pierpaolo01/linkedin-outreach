@@ -30,15 +30,24 @@ export class ParseError extends Error {
 
 const PROFILE_PATH = /^\/in\/([^/?#]+)\/?$/;
 
-/** Extracts the public identifier from a profile link, absolute or relative. Undefined for anything else. */
-export function publicIdFromUrl(href: string): string | undefined {
-  let url: URL;
+/** A link's `href`, relative or absolute, resolved against linkedin.com. Undefined when it is not a URL. */
+export function linkedInUrl(href: string): URL | undefined {
   try {
-    url = new URL(href, "https://www.linkedin.com");
+    return new URL(href, "https://www.linkedin.com");
   } catch {
     return undefined;
   }
-  if (url.hostname !== "www.linkedin.com" && url.hostname !== "linkedin.com") return undefined;
+}
+
+/** The URL is on linkedin.com, with or without `www`. */
+export function isLinkedInHost(url: URL): boolean {
+  return url.hostname === "www.linkedin.com" || url.hostname === "linkedin.com";
+}
+
+/** Extracts the public identifier from a profile link, absolute or relative. Undefined for anything else. */
+export function publicIdFromUrl(href: string): string | undefined {
+  const url = linkedInUrl(href);
+  if (url === undefined || !isLinkedInHost(url)) return undefined;
   const id = PROFILE_PATH.exec(url.pathname)?.[1];
   return id === undefined ? undefined : decodeURIComponent(id);
 }
@@ -53,13 +62,8 @@ export function profileUrlFor(publicId: string): string {
  */
 export function memberIdFromComposeHref(href: string | null | undefined): string | null {
   if (href == null) return null;
-  let url: URL;
-  try {
-    url = new URL(href, "https://www.linkedin.com");
-  } catch {
-    return null;
-  }
-  if (!url.pathname.startsWith("/messaging/compose")) return null;
+  const url = linkedInUrl(href);
+  if (url === undefined || !url.pathname.startsWith("/messaging/compose")) return null;
   const id = url.searchParams.get("recipient");
   return id !== null && /^ACoA[A-Za-z0-9_-]+$/.test(id) ? id : null;
 }

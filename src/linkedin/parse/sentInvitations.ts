@@ -5,10 +5,10 @@
 import type { HTMLElement } from "node-html-parser";
 import { normaliseText } from "../selectors";
 import { ParseError, type Card } from "./card";
+import { isInside } from "./dom";
 import {
   identityFrom,
   includesAny,
-  isInside,
   listStructure,
   loadListPage,
   startsWithAny,
@@ -39,8 +39,8 @@ export function parseSentInvitations(html: string, options: ListParseOptions = {
 }
 
 function parseRow(row: HTMLElement, label: string, wording: ListWording): SentInvitationCard {
-  const identity = identityFrom(row.querySelector('a[href*="/in/"]'), PAGE, label);
-  const controls = row.querySelectorAll("a, button").filter((control) => control.querySelector("p") === null);
+  const identity = identityFrom(row.querySelector(hooks.profileLink), PAGE, label);
+  const controls = row.querySelectorAll(hooks.controls).filter((control) => control.querySelector(hooks.textLine) === null);
   const withdraw = row.querySelector(hooks.withdraw);
   const canWithdraw =
     withdraw !== null ||
@@ -48,7 +48,7 @@ function parseRow(row: HTMLElement, label: string, wording: ListWording): SentIn
 
   // Text lines in order: name, then headline and the sent line, each optional.
   const [name, ...others] = row
-    .querySelectorAll("p")
+    .querySelectorAll(hooks.textLine)
     .filter((p) => !controls.some((control) => isInside(p, control)))
     .map(textOf);
   if (!name) throw new ParseError(PAGE, `${label}: no name`);

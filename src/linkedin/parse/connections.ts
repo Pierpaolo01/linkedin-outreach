@@ -5,10 +5,10 @@
 import type { HTMLElement } from "node-html-parser";
 import { normaliseText } from "../selectors";
 import { memberIdFromComposeHref, ParseError, type Card } from "./card";
+import { isInside } from "./dom";
 import {
   identityFrom,
   includesAny,
-  isInside,
   listStructure,
   loadListPage,
   textOf,
@@ -17,7 +17,6 @@ import {
 } from "./selectors.lists";
 
 const PAGE = "connections";
-const COMPOSE_LINK = 'a[href*="/messaging/compose/"]';
 const hooks = listStructure.connections;
 
 export interface ConnectionCard extends Card {
@@ -44,14 +43,14 @@ export function parseConnections(html: string, options: ListParseOptions = {}): 
 function parseRow(row: HTMLElement, label: string, wording: ListWording): ConnectionCard {
   const links = row.querySelectorAll(hooks.profileLink);
   const identity = identityFrom(links[0] ?? null, PAGE, label);
-  const textLink = links.find((link) => link.querySelector("p") !== null);
-  const [name, headline] = (textLink?.querySelectorAll("p") ?? []).map(textOf);
+  const textLink = links.find((link) => link.querySelector(hooks.textLine) !== null);
+  const [name, headline] = (textLink?.querySelectorAll(hooks.textLine) ?? []).map(textOf);
   if (textLink === undefined || !name) throw new ParseError(PAGE, `${label}: no name`);
 
   const controls = row.querySelectorAll(hooks.controls);
   const connectedOnText =
     row
-      .querySelectorAll("p")
+      .querySelectorAll(hooks.textLine)
       .filter((p) => !isInside(p, textLink) && !controls.some((control) => isInside(p, control)))
       .map(textOf)
       .find((text) => text !== "") ?? null;
@@ -65,7 +64,7 @@ function parseRow(row: HTMLElement, label: string, wording: ListWording): Connec
     degree: 1,
     connectedOnText,
     connectedOn: connectedOnText === null ? null : dateFrom(connectedOnText, wording),
-    memberId: memberIdFromComposeHref(row.querySelector(COMPOSE_LINK)?.getAttribute("href")),
+    memberId: memberIdFromComposeHref(row.querySelector(hooks.composeLink)?.getAttribute("href")),
   };
 }
 

@@ -21,7 +21,8 @@
  */
 import { parse, type HTMLElement } from "node-html-parser";
 import { languageFromHtml, normaliseText, type InterfaceLanguage } from "../selectors";
-import { ParseError, profileUrlFor, publicIdFromUrl } from "./card";
+import { ParseError, profileUrlFor } from "./card";
+import { publicIdOfLink } from "./dom";
 
 export const listStructure = {
   search: {
@@ -33,10 +34,18 @@ export const listStructure = {
     title: '[data-view-name="search-result-lockup-title"]',
     /** The name link on any load: the first link inside a paragraph (mutual-connection links come after it). Seen 2026-11-11. */
     nameLink: "p a",
+    /** Name, headline, location and summary lines are `p` elements. */
+    textLine: "p",
+    /** In the title's paragraph, the degree badge ("• 3rd+") is a `span` outside the name link. */
+    degreeBadge: "span",
     /** Holds the row's one action (Message, Connect, Follow, Pending). First loads only. */
     action: '[data-view-name="relationship-building-button"]',
     /** Holds the action wrapper on any load: `componentkey="SearchResults<member id>"`. Seen 2026-11-11. */
     actionSlot: '[componentkey^="SearchResultsACoA"]',
+    /** The control inside an action wrapper or slot. */
+    control: "a, button",
+    /** Any element carrying a `data-view-name`; listed in the error for an unrecognised action. */
+    viewNamed: "[data-view-name]",
     /** The generated summary under the location. Later loads add mutual-connection and follower lines after it. Seen 2026-11-11. */
     snippet: '[componentkey^="SearchResultssnippet"], [id^="SearchResultssnippet"]',
     nextPage: '[data-testid="pagination-controls-next-button-visible"]',
@@ -50,11 +59,21 @@ export const listStructure = {
     profileLink: 'a[href*="/in/"]',
     /** Controls whose text is not part of the card: the Message link and the More actions button. */
     controls: 'a[href*="/messaging/compose/"], button',
+    /** The Message link; its `recipient` is the member id. */
+    composeLink: 'a[href*="/messaging/compose/"]',
+    /** Name, headline and the "Connected on …" line are `p` elements. */
+    textLine: "p",
   },
   sentInvitations: {
     /** Seen 2026-11-11 on My Network → Manage invitations → Sent → People. */
     screen: "com.linkedin.sdui.flagshipnav.mynetwork.invitations.InvitationSentWithType",
     row: '[role="listitem"]',
+    /** The row's profile link (photo or name). */
+    profileLink: 'a[href*="/in/"]',
+    /** Candidate controls; one holding a `p` is the card's name link, not a control. */
+    controls: "a, button",
+    /** Name, headline and the "Sent …" line are `p` elements. */
+    textLine: "p",
     /** First loads only; on any load the control labelled "Withdraw invitation sent to …" (wording below). */
     withdraw: '[data-view-name="sent-invitations-withdraw-single"]',
   },
@@ -71,6 +90,11 @@ export const searchActionViewNames = {
   /** Not seen: a guess following the pattern above. Wording below is the fallback. */
   pending: ["edge-creation-pending-action", "edge-creation-withdraw-action"],
 } as const;
+
+/** The CSS selector for any of an action's `data-view-name`s. */
+export function searchActionSelector(action: keyof typeof searchActionViewNames): string {
+  return searchActionViewNames[action].map((name) => `[data-view-name="${name}"]`).join(", ");
+}
 
 export interface ListWording {
   readonly search: {
@@ -239,20 +263,13 @@ export function includesAny(text: string, phrases: readonly string[]): boolean {
   return phrases.some((phrase) => normalised.includes(phrase));
 }
 
-export function isInside(element: HTMLElement, ancestor: HTMLElement): boolean {
-  for (let node: HTMLElement | null = element; node !== null; node = node.parentNode) {
-    if (node === ancestor) return true;
-  }
-  return false;
-}
-
 /** The card's identity from a profile link; `ParseError` naming the row when the link is missing or not a profile. */
 export function identityFrom(
   link: HTMLElement | null,
   page: string,
   rowLabel: string,
 ): { readonly publicId: string; readonly profileUrl: string } {
-  const publicId = publicIdFromUrl(link?.getAttribute("href") ?? "");
+  const publicId = link === null ? undefined : publicIdOfLink(link);
   if (publicId === undefined) throw new ParseError(page, `${rowLabel}: no profile link`);
   return { publicId, profileUrl: profileUrlFor(publicId) };
 }

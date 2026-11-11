@@ -82,6 +82,12 @@ export const threadUrl = {
   /** `/messaging/thread/<id>/`, relative or absolute. */
   path: /\/messaging\/thread\/([^/?#"'\s]+)\/?/,
   link: "a[href*='/messaging/thread/']",
+  /** The page's canonical URL in the head, when the saved markup has one. */
+  canonicalLink: "link[rel='canonical']",
+  /** `og:url` in the head; read from its `content`. */
+  ogUrl: "meta[property='og:url']",
+  /** Every element of the conversation pane is searched for the URN below in any attribute. */
+  urnCarrier: "*",
   /** `urn:li:msg_conversation:(urn:li:fsd_profile:<owner>,<thread id>)`. */
   conversationUrn: /urn:li:msg_conversation:\(urn:li:fsd_profile:[^,]+,([^)]+)\)/,
 } as const;

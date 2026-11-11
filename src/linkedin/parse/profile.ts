@@ -10,7 +10,7 @@
 import { parse, HTMLElement, TextNode, type Node } from "node-html-parser";
 import { languageFromHtml, normaliseText } from "../selectors";
 import { memberIdFromComposeHref, ParseError, profileUrlFor, publicIdFromUrl } from "./card";
-import { isInside } from "./selectors.lists";
+import { firstProfileLink, inlineText, isInside } from "./dom";
 import { MAX_EXPERIENCE, profileStructure as s, profileWording, type ProfileWording } from "./selectors.profile";
 
 /** One role as the profile's Experience section shows it. */
@@ -81,7 +81,7 @@ export function parseProfile(html: string): Profile {
     throw new ParseError(PAGE, "no top card: not a profile page");
   }
 
-  const nameHeading = card.querySelector(`${s.nameBadge} h2`) ?? card.querySelector("h2");
+  const nameHeading = card.querySelector(s.name) ?? card.querySelector(s.nameFallback);
   const fullName = textOf(nameHeading);
   if (fullName === null) throw new ParseError(PAGE, "top card has no name");
 
@@ -105,7 +105,7 @@ export function parseProfile(html: string): Profile {
     experience,
     connectionState: connectionStateOf(actions, degree),
     messageAvailable: actions.message,
-    memberId: memberIdFromComposeHref((card.querySelector(`${s.message} a[href]`) ?? composeLinks(card)[0])?.getAttribute("href")),
+    memberId: memberIdFromComposeHref((card.querySelector(s.messageLink) ?? composeLinks(card)[0])?.getAttribute("href")),
   };
 }
 
@@ -132,7 +132,7 @@ function cardWithHeading(root: HTMLElement, headings: readonly string[]): HTMLEl
 }
 
 function isUnavailablePage(root: HTMLElement, wording: ProfileWording): boolean {
-  const headings = root.querySelectorAll("h1, h2, h3, title").map((h) => normaliseText(h.text));
+  const headings = root.querySelectorAll(s.unavailableHeadings).map((h) => normaliseText(h.text));
   return headings.some((heading) => wording.unavailable.some((phrase) => heading.includes(phrase)));
 }
 
@@ -146,13 +146,13 @@ interface TopCardActions {
 
 /** What the top card offers. Only the top card: other people's cards on the page carry their own Connect buttons. */
 function actionsOf(card: HTMLElement, wording: ProfileWording): TopCardActions {
-  const controls = card.querySelectorAll('button, a, [role="menuitem"]');
+  const controls = card.querySelectorAll(s.controls);
   const primary = controls.filter((el) => !inMenu(el));
   const menu = controls.filter(inMenu);
   const says = (words: readonly string[]) => (el: HTMLElement) => controlSays(el, words);
   const notInMenu = (selector: string) => card.querySelectorAll(selector).some((el) => !inMenu(el));
 
-  const messageLinks = card.querySelectorAll(`${s.message} a, ${s.message} button`);
+  const messageLinks = card.querySelectorAll(s.messageControls);
   return {
     connect: notInMenu(s.connectAction) || notInMenu(s.connectLink) || primary.some(says(wording.connect)),
     connectInMenu: menu.some(says(wording.connect)),
@@ -185,7 +185,7 @@ function aboutOf(root: HTMLElement, wording: ProfileWording): string | null {
   if (section === null) return null;
   const box = section.querySelector(s.expandableText);
   if (box !== null) return blockText(box);
-  const paragraphs = section.querySelectorAll("p").map(blockText).filter((t) => t !== null);
+  const paragraphs = section.querySelectorAll(s.textLine).map(blockText).filter((t) => t !== null);
   return paragraphs.length === 0 ? null : paragraphs.join("\n");
 }
 
@@ -194,10 +194,10 @@ function experienceOf(root: HTMLElement, wording: ProfileWording): ExperienceEnt
   if (section === null) return [];
   const entries: ExperienceEntry[] = [];
   for (const item of section.querySelectorAll(s.experienceItem)) {
-    const roles = item.querySelectorAll("ul > li");
+    const roles = item.querySelectorAll(s.experienceGroupRole);
     if (roles.length > 0) {
       // A company with several roles: the item's first paragraph is the company, each `li` a role.
-      const company = textOf(ownParagraphs(item).find((p) => p.closest("li") === null));
+      const company = textOf(ownParagraphs(item).find((p) => p.closest(s.experienceRole) === null));
       for (const li of roles) {
         const entry = roleOf(li, wording, { companyInRole: false });
         if (entry !== null) entries.push({ ...entry, company });
@@ -241,7 +241,7 @@ function roleOf(el: HTMLElement, wording: ProfileWording, o: { readonly companyI
 
 /** Paragraphs that belong to the role itself, not to a media thumbnail inside it. */
 function ownParagraphs(el: HTMLElement): HTMLElement[] {
-  return el.querySelectorAll("p").filter((p) => p.closest(s.experienceMedia) === null);
+  return el.querySelectorAll(s.textLine).filter((p) => p.closest(s.experienceMedia) === null);
 }
 
 /** "Old Company · Full-time" → "Old Company". */
@@ -265,13 +265,8 @@ function isPresentWord(text: string, wording: ProfileWording): boolean {
 /** The owner's id: from the Contact info link in the top card, else the sticky header's profile link. */
 function ownerPublicId(root: HTMLElement, card: HTMLElement): string | undefined {
   const contact = card.querySelector(s.contactInfoLink)?.getAttribute("href");
-  const fromContact = contact === undefined ? undefined : publicIdFromUrl(contact.replace(/overlay\/contact-info\/?.*$/, ""));
-  if (fromContact !== undefined) return fromContact;
-  for (const link of root.querySelectorAll(s.stickyHeaderLink)) {
-    const id = publicIdFromUrl(link.getAttribute("href") ?? "");
-    if (id !== undefined) return id;
-  }
-  return undefined;
+  const fromContact = contact === undefined ? undefined : publicIdFromUrl(contact.replace(s.contactInfoSuffix, ""));
+  return fromContact ?? firstProfileLink(root.querySelectorAll(s.stickyHeaderLink))?.publicId;
 }
 
 /**
@@ -295,8 +290,8 @@ function headlineAfter(name: HTMLElement, card: HTMLElement, wording: ProfileWor
 
 /** The location is the first paragraph of the row that holds the Contact info link. */
 function locationOf(card: HTMLElement): string | null {
-  const row = card.querySelector(s.contactInfoLink)?.closest("p")?.parentNode;
-  const first = row?.querySelector("p");
+  const row = card.querySelector(s.contactInfoLink)?.closest(s.textLine)?.parentNode;
+  const first = row?.querySelector(s.textLine);
   if (first === null || first === undefined || first.querySelector(s.contactInfoLink) !== null) return null;
   return textOf(first);
 }
@@ -310,7 +305,7 @@ function degreeOf(card: HTMLElement, wording: ProfileWording): 1 | 2 | 3 | null 
 }
 
 function degreeBadges(card: HTMLElement, wording: ProfileWording): HTMLElement[] {
-  return card.querySelectorAll("p").filter((p) => degreeFromText(p.text, wording) !== null);
+  return card.querySelectorAll(s.textLine).filter((p) => degreeFromText(p.text, wording) !== null);
 }
 
 function degreeFromText(text: string, wording: ProfileWording): 1 | 2 | 3 | null {
@@ -320,12 +315,14 @@ function degreeFromText(text: string, wording: ProfileWording): 1 | 2 | 3 | null
 
 /** Text of a paragraph with its line breaks kept, without the "… more" toggle. Null when empty. */
 function blockText(el: HTMLElement): string | null {
+  // Queried from the parent so that `el` itself is skipped when it is the toggle.
+  const toggles = new Set((el.parentNode ?? el).querySelectorAll(s.expandableButton));
   const parts: string[] = [];
   const walk = (node: Node): void => {
     if (node instanceof TextNode) parts.push(node.text.replace(/\s+/g, " "));
     else if (node instanceof HTMLElement) {
       if (node.rawTagName === "br") parts.push("\n");
-      else if (node.getAttribute("data-testid") !== "expandable-text-button") node.childNodes.forEach(walk);
+      else if (!toggles.has(node)) node.childNodes.forEach(walk);
     }
   };
   walk(el);
@@ -341,7 +338,6 @@ function blockText(el: HTMLElement): string | null {
 
 /** Visible text of an element, whitespace collapsed. Null when empty. */
 function textOf(el: HTMLElement | null | undefined): string | null {
-  if (el === null || el === undefined) return null;
-  const text = el.text.replace(/\s+/g, " ").trim();
+  const text = inlineText(el ?? null);
   return text === "" ? null : text;
 }

@@ -4,7 +4,8 @@
  */
 import { parse, type HTMLElement } from "node-html-parser";
 import { languageFromHtml, normaliseText } from "../selectors";
-import { ParseError, profileUrlFor, publicIdFromUrl, type Card } from "./card";
+import { linkedInUrl, ParseError, profileUrlFor, type Card } from "./card";
+import { firstProfileLink, inlineText, isInside } from "./dom";
 import {
   recommendationsStructural as s,
   recommendationsWordingFor,
@@ -79,19 +80,14 @@ function isGrowPage(main: HTMLElement): boolean {
 function groupSections(main: HTMLElement): HTMLElement[] {
   const sections: HTMLElement[] = [];
   for (const list of main.querySelectorAll(s.list)) {
-    const section = list.closest("section");
+    const section = list.closest(s.section);
     if (section !== null && !sections.includes(section)) sections.push(section);
   }
   return sections;
 }
 
 function signedInFromNav(root: HTMLElement): string | undefined {
-  const nav = root.querySelector(s.signedInNav);
-  for (const a of nav?.querySelectorAll(s.link) ?? []) {
-    const id = publicIdFromUrl(a.getAttribute("href") ?? "");
-    if (id !== undefined) return id;
-  }
-  return undefined;
+  return firstProfileLink(root.querySelector(s.signedInNav)?.querySelectorAll(s.link) ?? [])?.publicId;
 }
 
 interface GroupInput {
@@ -104,7 +100,7 @@ interface GroupInput {
 function readGroup({ section, groupNumber, wording, signedIn }: GroupInput): RecommendationGroup {
   const heading = section.querySelector(s.heading);
   if (heading === null) throw new ParseError(PAGE, `group ${groupNumber} has no heading`);
-  const title = lineText(heading);
+  const title = inlineText(heading);
   if (title === "") throw new ParseError(PAGE, `group ${groupNumber} has an empty heading`);
   const header: GroupHeader = {
     title,
@@ -141,14 +137,14 @@ interface CardInput {
 function readCard({ item, where, group, wording }: CardInput): RecommendationCard {
   const link = profileLink(item);
   if (link === undefined) throw new ParseError(PAGE, `${where} has no profile link`);
-  const [nameLine, headlineLine] = link.element.querySelectorAll(s.textLine).map(lineText);
+  const [nameLine, headlineLine] = link.element.querySelectorAll(s.textLine).map(inlineText);
   if (nameLine === undefined || nameLine === "") throw new ParseError(PAGE, `${where} has no name`);
   const action = actionOf(item, wording);
   if (action === undefined) throw new ParseError(PAGE, `${where} has no Connect, Follow or Pending button`);
   const insight = item
     .querySelectorAll(s.textLine)
     .filter((p) => !isInside(p, link.element) && p.closest(s.button) === null)
-    .map(lineText)
+    .map(inlineText)
     .find((text) => text !== "");
 
   return {
@@ -166,11 +162,7 @@ function readCard({ item, where, group, wording }: CardInput): RecommendationCar
 }
 
 function profileLink(item: HTMLElement): { element: HTMLElement; publicId: string } | undefined {
-  for (const element of item.querySelectorAll(s.link)) {
-    const publicId = publicIdFromUrl(element.getAttribute("href") ?? "");
-    if (publicId !== undefined) return { element, publicId };
-  }
-  return undefined;
+  return firstProfileLink(item.querySelectorAll(s.link));
 }
 
 /** The action is the card's one button with visible text; the dismiss button carries an icon only. */
@@ -193,22 +185,6 @@ function reasonFrom(title: string, wording: RecommendationsWording): string | nu
   return reason === "" ? null : reason;
 }
 
-function lineText(element: HTMLElement): string {
-  return element.text.replace(/\s+/g, " ").trim();
-}
-
-function isInside(element: HTMLElement, ancestor: HTMLElement): boolean {
-  for (let node: HTMLElement | null = element; node !== null; node = node.parentNode) {
-    if (node === ancestor) return true;
-  }
-  return false;
-}
-
 function pathOf(href: string | undefined): string | undefined {
-  if (href === undefined) return undefined;
-  try {
-    return new URL(href, "https://www.linkedin.com").pathname;
-  } catch {
-    return undefined;
-  }
+  return href === undefined ? undefined : linkedInUrl(href)?.pathname;
 }
