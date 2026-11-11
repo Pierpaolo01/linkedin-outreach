@@ -211,3 +211,33 @@ export function driverPageFor(page: Page): DriverPage {
     screenshot: (options) => page.screenshot(options),
   };
 }
+
+/** Who an outreach action is aimed at: the public id opens the profile, the member id opens the conversation. */
+export interface PersonRef {
+  readonly publicId: string;
+  readonly memberId: string;
+}
+
+/**
+ * What the invite step found. Only `sent` means an invitation went out; the others are refusals
+ * the engine turns into needs review.
+ */
+export type InviteResult = "sent" | "already_pending" | "already_connected" | "not_offered";
+
+export type WithdrawResult = "withdrawn" | "not_pending";
+
+/**
+ * The operations that change something on LinkedIn. Each resolves only once LinkedIn shows the
+ * result. A throw means the result is not known: the click may have happened, so the caller
+ * checks LinkedIn before it tries again. The live implementation arrives in milestone 4; until
+ * then only the fake driver has these.
+ */
+export interface WriteDriver {
+  /** Throws `LimitHit` on LinkedIn's own invitation-limit message. `note` null sends without a note. */
+  sendInvite(person: PersonRef, note: string | null): Promise<InviteResult>;
+  /** Sends one message to a 1st-degree connection. Clears any draft left in the message box first. */
+  sendMessage(person: PersonRef, text: string): Promise<void>;
+  withdrawInvite(person: PersonRef): Promise<WithdrawResult>;
+}
+
+export type Driver = ReadDriver & WriteDriver;

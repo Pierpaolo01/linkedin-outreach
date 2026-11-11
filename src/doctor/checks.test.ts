@@ -52,7 +52,7 @@ describe("runDoctor", () => {
     expect(report.ok).toBe(true);
     const text = formatReport(report);
     expect(text).toContain("142.0.7444.60");
-    expect(text).toContain("migrations applied 1 of 1");
+    expect(text).toMatch(/migrations applied (\d+) of \1\b/);
     expect(text).toContain("auto-start: not installed (arrives in milestone 4)");
     expect(text.trimEnd().split("\n").at(-1)).toBe("doctor: OK");
   });
@@ -92,7 +92,7 @@ describe("runDoctor", () => {
     raw.close();
     const db = check("database");
     expect(db.status).toBe("problem");
-    expect(db.detail).toContain("migrations applied 0 of 1");
+    expect(db.detail).toMatch(/migrations applied 0 of [1-9]\d*/);
   });
 
   it("reports a problem when Chrome is missing", () => {

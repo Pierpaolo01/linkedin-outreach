@@ -32,9 +32,9 @@ describe("openDb", () => {
       "campaigns",
       "discovery_runs",
       "event_log",
-      "jobs",
       "people",
       "prospects",
+      "safety_stops",
       "session_state",
       "settings",
     ]);
@@ -58,6 +58,9 @@ describe("openDb", () => {
     const { sqlite, close } = openDb(join(dir, "app.db"));
     expect(sqlite.pragma("journal_mode", { simple: true })).toBe("wal");
     expect(sqlite.pragma("foreign_keys", { simple: true })).toBe(1);
+    // FULL (2) plus fullfsync: a committed write survives a power cut.
+    expect(sqlite.pragma("synchronous", { simple: true })).toBe(2);
+    expect(sqlite.pragma("fullfsync", { simple: true })).toBe(1);
     close();
   });
 

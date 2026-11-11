@@ -71,9 +71,15 @@ _Avoid_: Event, operation, task
 **Ledger**:
 The permanent record of all actions. Limits are counted from it.
 
-**Job**:
-A unit of work waiting in the queue for its due time. Running a job produces actions.
-_Avoid_: Task, action
+**Due work**:
+What the engine should do next, worked out each tick from every prospect's stage and next-action time. Nothing is queued in a table.
+_Avoid_: Job, task, queue
+
+**Claim**:
+Moving a step's ledger row from planned to in progress, in one transaction, before the driver acts. A step that was claimed is never sent blindly again.
+
+**Reconcile**:
+Checking LinkedIn for what really happened to an action whose result is unknown, before deciding to retry.
 
 **Budget**:
 The account-wide allowance of one action type per calendar day or week, shared by all campaigns. A spent budget defers work and resumes by itself.

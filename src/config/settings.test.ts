@@ -32,8 +32,10 @@ describe("settings", () => {
         profileViewsPerDay: 40,
         messagesPerDay: 10,
         discoveryPagesPerDay: 10,
+        withdrawalsPerDay: 10,
       },
       warmUp: { enabled: true, invitesStartPerDay: 5, invitesIncreasePerDay: 2 },
+      inviteLimitCooldownDays: 7,
     });
   });
 
