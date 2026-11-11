@@ -7,6 +7,7 @@
  * - `captures/connections.html` → `fixtures/connections/recent-en.html`
  * - `captures/invitations-sent.html` → `fixtures/invitations/sent-en.html`
  * - `captures/later-search-people.html` → `fixtures/search/people-later-en.html`
+ * - `captures/later-connections.html` → `fixtures/connections/recent-later-en.html`
  *
  * The `later-` captures are later page loads, which carry no `data-view-name` (see `selectors.lists.ts`).
  *
@@ -55,6 +56,12 @@ const pages: readonly ListPage[] = [
   {
     capture: "captures/connections.html",
     fixture: "fixtures/connections/recent-en.html",
+    parse: parseConnections,
+    extraTexts: (card) => [card.location],
+  },
+  {
+    capture: "captures/later-connections.html",
+    fixture: "fixtures/connections/recent-later-en.html",
     parse: parseConnections,
     extraTexts: (card) => [card.location],
   },

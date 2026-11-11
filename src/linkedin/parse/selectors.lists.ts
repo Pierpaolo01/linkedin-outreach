@@ -44,11 +44,12 @@ export const listStructure = {
   connections: {
     /** Seen 2026-11-11 on My Network → Connections. */
     screen: "com.linkedin.sdui.flagshipnav.mynetwork.Connections",
-    row: '[data-view-name="connections-list"]',
+    /** One row: `componentkey="ConnectionCard_<n>-<public id>"`. Seen 2026-11-11 on first and later loads. */
+    row: '[componentkey^="ConnectionCard_"]',
     /** Two per row: the photo link (holds a `figure`) and the text link (name, headline). */
-    profileLink: '[data-view-name="connections-profile"]',
-    /** Controls whose text is not part of the card. */
-    controls: '[data-view-name="message-button"], [data-view-name="connections-remove-connection-dropdown"]',
+    profileLink: 'a[href*="/in/"]',
+    /** Controls whose text is not part of the card: the Message link and the More actions button. */
+    controls: 'a[href*="/messaging/compose/"], button',
   },
   sentInvitations: {
     /** Seen 2026-11-11 on My Network → Manage invitations → Sent → People. */

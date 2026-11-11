@@ -42,7 +42,7 @@ export function parseConnections(html: string, options: ListParseOptions = {}): 
 }
 
 function parseRow(row: HTMLElement, label: string, wording: ListWording): ConnectionCard {
-  const links = row.querySelectorAll(hooks.profileLink).filter((element) => element.tagName === "A");
+  const links = row.querySelectorAll(hooks.profileLink);
   const identity = identityFrom(links[0] ?? null, PAGE, label);
   const textLink = links.find((link) => link.querySelector("p") !== null);
   const [name, headline] = (textLink?.querySelectorAll("p") ?? []).map(textOf);
