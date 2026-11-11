@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+.env*
+# Saved LinkedIn pages with real people's data. Never commit. Scrub into fixtures/ first.
+captures/
+test-results/
+playwright-report/
+*.tsbuildinfo
