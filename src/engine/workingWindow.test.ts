@@ -315,3 +315,41 @@ it("throws RangeError instead of searching forever when no day is a working day"
   expect(() => nextWorkingInstant(never, at("2026-11-12T09:00:00Z"))).toThrow(RangeError);
   expect(() => addDelay(never, "working_days", at("2026-11-12T09:00:00Z"), 1)).toThrow(RangeError);
 });
+
+describe("working hours inside the hour a daylight-saving change skips", () => {
+  // Europe/Rome skips 02:00–03:00 on 2026-03-29 (a Sunday).
+  const everyDay = [1, 2, 3, 4, 5, 6, 7];
+  const saturdayMorning = new Date("2026-03-28T05:00:00Z");
+
+  it.each([
+    { name: "inverted by the gap", hours: { start: "02:30", end: "03:15" }, next: "2026-03-30T00:30:00Z" },
+    { name: "collapsed by the gap", hours: { start: "02:00", end: "03:00" }, next: "2026-03-30T00:00:00Z" },
+  ])("skips the day whose window is $name", ({ hours, next }) => {
+    const settings = { timeZone: "Europe/Rome", workingDays: everyDay, workingHours: hours };
+    // Saturday's window (01:30Z / 01:00Z) is already over, Sunday has none, so Monday it is.
+    const result = nextWorkingInstant(settings, saturdayMorning);
+    expect(result.toISOString()).toBe(new Date(next).toISOString());
+    expect(isInWorkingWindow(settings, result)).toBe(true);
+    expect(() => endOfWorkingWindow(settings, result)).not.toThrow();
+  });
+
+  it("is never inside a window on that day", () => {
+    const settings = { timeZone: "Europe/Rome", workingDays: everyDay, workingHours: { start: "02:30", end: "03:15" } };
+    expect(isInWorkingWindow(settings, new Date("2026-03-29T01:20:00Z"))).toBe(false);
+    expect(isInWorkingWindow(settings, new Date("2026-03-29T01:40:00Z"))).toBe(false);
+  });
+
+  it("looks past a week whose only working day lost its window", () => {
+    const settings = { timeZone: "Europe/Rome", workingDays: [7], workingHours: { start: "02:30", end: "03:15" } };
+    const result = nextWorkingInstant(settings, saturdayMorning);
+    expect(result.toISOString()).toBe("2026-04-05T00:30:00.000Z");
+    expect(isInWorkingWindow(settings, result)).toBe(true);
+  });
+
+  it("lands a delay in a real window", () => {
+    const settings = { timeZone: "Europe/Rome", workingDays: everyDay, workingHours: { start: "02:30", end: "03:15" } };
+    for (const policy of ["calendar", "working_days"] as const) {
+      expect(isInWorkingWindow(settings, addDelay(settings, policy, saturdayMorning, 12))).toBe(true);
+    }
+  });
+});

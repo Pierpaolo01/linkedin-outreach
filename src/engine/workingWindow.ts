@@ -95,13 +95,16 @@ function minutesOf(clock: string): number {
   return hours * 60 + minutes;
 }
 
-/** The window on `date`, or null when `date` is not a working day. */
+/**
+ * The window on `date`, or null when `date` is not a working day. Also null on the one day a
+ * year when working hours set inside the hour a daylight-saving change skips leave no time at
+ * all (start moves forward past or onto end).
+ */
 function windowOn(settings: WindowSettings, date: LocalDate): { start: Date; end: Date } | null {
   if (!settings.workingDays.includes(isoWeekday(date))) return null;
-  return {
-    start: instantAt(settings.timeZone, date, minutesOf(settings.workingHours.start)),
-    end: instantAt(settings.timeZone, date, minutesOf(settings.workingHours.end)),
-  };
+  const start = instantAt(settings.timeZone, date, minutesOf(settings.workingHours.start));
+  const end = instantAt(settings.timeZone, date, minutesOf(settings.workingHours.end));
+  return start < end ? { start, end } : null;
 }
 
 /** True when `at` falls on a working day, at or after start and before end, in the app's time zone. */
@@ -113,8 +116,9 @@ export function isInWorkingWindow(settings: WindowSettings, at: Date): boolean {
 /** `at` itself when inside the window, otherwise the start of the next window. */
 export function nextWorkingInstant(settings: WindowSettings, at: Date): Date {
   const today = localDateOf(settings.timeZone, at);
-  // workingDays is never empty, so a window opens within the next 7 days.
-  for (let offset = 0; offset <= 7; offset++) {
+  // workingDays is never empty, so a window opens within the next 7 days; 14 covers the week
+  // whose only working day lost its window to a daylight-saving change.
+  for (let offset = 0; offset <= 14; offset++) {
     const window = windowOn(settings, addDays(today, offset));
     if (window === null || at >= window.end) continue;
     return at >= window.start ? new Date(at.getTime()) : window.start;
