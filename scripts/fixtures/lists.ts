@@ -6,6 +6,9 @@
  * - `captures/search-people.html` → `fixtures/search/people-en.html`
  * - `captures/connections.html` → `fixtures/connections/recent-en.html`
  * - `captures/invitations-sent.html` → `fixtures/invitations/sent-en.html`
+ * - `captures/later-search-people.html` → `fixtures/search/people-later-en.html`
+ *
+ * The `later-` captures are later page loads, which carry no `data-view-name` (see `selectors.lists.ts`).
  *
  * The parsers find the sensitive strings (names, headlines, locations, summary lines). Two kinds of
  * identifier `scrubHtml` leaves in place are replaced first: profile slugs inside `componentkey`
@@ -29,6 +32,8 @@ interface ListPage {
   readonly parse: (html: string) => readonly Card[];
   /** Personal text a card carries beyond name and headline. */
   readonly extraTexts: (card: Card) => readonly (string | null)[];
+  /** Names of other people the page shows besides the cards (mutual connections). */
+  readonly otherNames?: (html: string) => readonly string[];
 }
 
 const repoPath = (relative: string) => fileURLToPath(new URL(`../../${relative}`, import.meta.url));
@@ -39,6 +44,13 @@ const pages: readonly ListPage[] = [
     fixture: "fixtures/search/people-en.html",
     parse: (html) => parseSearchResults(html).cards,
     extraTexts: (card) => [card.location, "summary" in card && typeof card.summary === "string" ? card.summary : null],
+  },
+  {
+    capture: "captures/later-search-people.html",
+    fixture: "fixtures/search/people-later-en.html",
+    parse: (html) => parseSearchResults(html).cards,
+    extraTexts: (card) => [card.location, "summary" in card && typeof card.summary === "string" ? card.summary : null],
+    otherNames: mutualConnectionNames,
   },
   {
     capture: "captures/connections.html",
@@ -56,8 +68,17 @@ const pages: readonly ListPage[] = [
 
 const MEMBER_URN = /ACoAA[A-Za-z0-9_-]+/g;
 
-function sensitiveFrom(cards: readonly Card[], extraTexts: ListPage["extraTexts"]): Required<Sensitive> {
-  const names = new Set<string>();
+/** "<name> is a mutual connection" lines under a search result: every profile link in a row's paragraphs after its first (the row's own name). */
+function mutualConnectionNames(html: string): string[] {
+  return parse(html)
+    .querySelectorAll('[role="listitem"]')
+    .flatMap((row) => row.querySelectorAll('p a[href*="/in/"]').slice(1))
+    .map((link) => link.text.replace(/\s+/g, " ").trim())
+    .filter((name) => name !== "");
+}
+
+function sensitiveFrom(cards: readonly Card[], extraTexts: ListPage["extraTexts"], otherNames: readonly string[] = []): Required<Sensitive> {
+  const names = new Set<string>(otherNames);
   const texts = new Set<string>();
   const companies = new Set<string>();
   for (const card of cards) {
@@ -128,7 +149,7 @@ function main(): void {
   for (const page of pages) {
     const capture = readFileSync(repoPath(page.capture), "utf8");
     const cards = page.parse(capture);
-    const sensitive = sensitiveFrom(cards, page.extraTexts);
+    const sensitive = sensitiveFrom(cards, page.extraTexts, page.otherNames?.(capture));
     const { html, urns } = replaceIdentifiers(capture, cards);
     const fixture = scrubHtml(html, sensitive);
 

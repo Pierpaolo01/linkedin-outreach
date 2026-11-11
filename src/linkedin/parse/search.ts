@@ -47,7 +47,7 @@ export function parseSearchResults(html: string, options: ListParseOptions = {})
 
   const cards: SearchCard[] = [];
   let hiddenMembers = 0;
-  screen.querySelectorAll(hooks.result).forEach((result, index) => {
+  screen.querySelectorAll(hooks.row).forEach((result, index) => {
     const card = parseRow(result, `result ${index + 1}`, wording);
     if (card === "hidden") hiddenMembers += 1;
     else if (card.publicId !== options.selfPublicId) cards.push(card);
@@ -61,7 +61,7 @@ export function parseSearchResults(html: string, options: ListParseOptions = {})
 }
 
 function parseRow(result: HTMLElement, label: string, wording: ListWording): SearchCard | "hidden" {
-  const title = result.querySelector(hooks.title);
+  const title = result.querySelector(hooks.title) ?? result.querySelector(hooks.nameLink);
   const fullName = title === null ? "" : textOf(title);
   if (title === null || title.getAttribute("href") === undefined) {
     if (includesAny(textOf(result), wording.search.hiddenMember)) return "hidden";
@@ -74,17 +74,20 @@ function parseRow(result: HTMLElement, label: string, wording: ListWording): Sea
   const titleLine = title.closest("p") ?? title.parentNode;
   if (titleLine === null) throw new ParseError(PAGE, `${label}: name link outside any line`);
   const details = titleLine.parentNode ?? titleLine;
-  const actionWrapper = result.querySelector(hooks.action);
+  const actionWrapper = result.querySelector(hooks.action) ?? actionSlotOf(result);
   const outsideAction = (p: HTMLElement) => actionWrapper === null || !isInside(p, actionWrapper);
 
   const [headline, location] = details
     .querySelectorAll("p")
     .filter((p) => p !== titleLine && outsideAction(p))
     .map(textOf);
+  const snippet = result.querySelector(hooks.snippet);
+  const summaryLines =
+    snippet === null
+      ? result.querySelectorAll("p").filter((p) => !isInside(p, details) && outsideAction(p))
+      : snippet.querySelectorAll("p");
   const summary =
-    result
-      .querySelectorAll("p")
-      .filter((p) => !isInside(p, details) && outsideAction(p))
+    summaryLines
       .map(textOf)
       .filter((text) => text !== "")
       .join(" ") || null;
@@ -99,6 +102,12 @@ function parseRow(result: HTMLElement, label: string, wording: ListWording): Sea
     action: actionWrapper === null ? null : actionOf(actionWrapper, label, wording),
     summary,
   };
+}
+
+/** The action slot of a later page load, when it holds a control; null for a row with no action. */
+function actionSlotOf(result: HTMLElement): HTMLElement | null {
+  const slot = result.querySelector(hooks.actionSlot);
+  return slot !== null && slot.querySelector("a, button") !== null ? slot : null;
 }
 
 /** The company from an older-style "Current: <role> at <company>" line, in its original case. */
