@@ -175,6 +175,16 @@ describe("the live driver on saved pages", () => {
     await expect(driver.readThread({ memberId: "ACoAAgina", publicId: "someone-else" })).rejects.toThrow(Unexpected);
   });
 
+  it("reads earlier messages listed in the new-message pane of a connection", async () => {
+    const { driver } = fakeWindow((url) => ({ url, html: fixture("messaging/compose-existing-en.html") }));
+
+    const thread = await driver.readThread({ memberId: "person-1" });
+
+    expect(thread.isNew).toBe(false);
+    expect(thread.messages).toHaveLength(6);
+    await expect(driver.readThread({ memberId: "ACoAAsomeoneElse" })).rejects.toThrow(Unexpected);
+  });
+
   it("refuses to return a conversation with someone other than the person asked for", async () => {
     const { driver } = fakeWindow(linkedIn);
 

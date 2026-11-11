@@ -84,7 +84,14 @@ function sensitiveFrom(capture: string, { thread, list }: Parsed): Required<Sens
   ]) {
     addText(fragment);
   }
-  return { names: [...names], companies: [], texts: [...texts] };
+  // Page inboxes (company pages the user manages) show the page's name as "<name> picture" and as text.
+  const pages = new Set(
+    root
+      .querySelectorAll('img[alt$=" picture"]')
+      .map((img) => (img.getAttribute("alt") ?? "").replace(/ picture$/, "").trim())
+      .filter((name) => name !== "" && !names.has(name)),
+  );
+  return { names: [...names], companies: [...pages], texts: [...texts] };
 }
 
 const LOREM = "Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore";
@@ -185,6 +192,7 @@ function leaks(capture: string, fixture: string, sensitive: Required<Sensitive>,
     return needle !== "" && (withTags.includes(needle) || withoutTags.includes(needle));
   };
   sensitive.names.forEach((name, i) => contains(name) && found.push(`name #${i + 1}`));
+  sensitive.companies.forEach((name, i) => contains(name) && found.push(`page name #${i + 1}`));
   const nameWords = [...new Set(sensitive.names.flatMap((name) => name.split(/\s+/)).filter((word) => /^\p{L}{3,}$/u.test(word)))];
   nameWords.forEach((word, i) => {
     // Case-sensitive whole word: a capitalised name, not the same letters inside interface wording.

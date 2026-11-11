@@ -152,8 +152,12 @@ export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): R
       const html = await open(url.href);
       const thread = await read(html, parseThread);
       // LinkedIn opens the newest conversation when it cannot open the one asked for: never report that one.
+      // The new-message pane names nobody by id until the person has written; there the address bar,
+      // still on the compose URL for this member, is the evidence.
       const shown = thread.participant.publicId;
-      if (shown === null || (shown !== memberId && shown !== publicId)) {
+      const stillComposing = thread.viaCompose && new URL(page.url()).searchParams.get("recipient") === memberId;
+      const isThem = shown === null ? stillComposing : shown === memberId || (shown === publicId && stillComposing);
+      if (!isThem) {
         const artifacts = await savePage(page, html, "unknown", health);
         throw new Unexpected(`the conversation shown is not with the person asked for. Saved html ${artifacts.html}`, {
           artifacts,

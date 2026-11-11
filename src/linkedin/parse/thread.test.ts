@@ -102,6 +102,7 @@ describe("the New message pane for a person with no conversation yet", () => {
       kind: "unknown",
       messages: [],
       isNew: true,
+      viaCompose: true,
     });
   });
 
@@ -113,6 +114,24 @@ describe("the New message pane for a person with no conversation yet", () => {
 
   it("refuses a pane whose profile card links nobody", () => {
     expect(() => parseThread(html.replaceAll('href="/in/gina-prova/"', 'href="#"'))).toThrow(ParseError);
+  });
+});
+
+describe("the New message pane for a connection with earlier messages (scrubbed capture, English)", () => {
+  // Saved 2026-11-11 from /messaging/compose/?recipient=<member id> for a connection the user had written with.
+  const thread = parseThread(fixture("compose-existing-en.html"));
+
+  it("reads the earlier messages and who sent each", () => {
+    expect(thread.isNew).toBe(false);
+    expect(thread.viaCompose).toBe(true);
+    expect(thread.kind).toBe("message");
+    expect(thread.messages.map((m) => m.sender)).toEqual(["participant", "participant", "user", "user", "user", "participant"]);
+    expect(thread.messages.every((m) => m.text !== "")).toBe(true);
+  });
+
+  it("names the recipient from the pill and takes their member id from their messages", () => {
+    expect(thread.participant.fullName).toBe("Person 1");
+    expect(thread.participant.publicId).toBe("person-1");
   });
 });
 
