@@ -21,7 +21,7 @@ function row({ id = "person-1", name = "Person 1", headline = "Engineer at Compa
       ${connected === null ? "" : `<p>${connected}</p>`}
     </div></div>
     <div><div>
-      <div data-view-name="message-button"><a href="/messaging/compose/?profileUrn=x" aria-label="Send a message to ${name}"><span>Message</span></a></div>
+      <div data-view-name="message-button"><a href="/messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AID1&amp;recipient=ACoAAmember-${id}&amp;interop=msgOverlay" aria-label="Send a message to ${name}"><span>Message</span></a></div>
       <button aria-label="More actions for ${name}" data-view-name="connections-remove-connection-dropdown"></button>
     </div></div>
   </div></div>`;
@@ -44,6 +44,7 @@ describe("parseConnections on hand-written pages", () => {
         degree: 1,
         connectedOnText: "Connected on July 13, 2026",
         connectedOn: "2026-07-13",
+        memberId: "ACoAAmember-person-1",
       },
     ]);
   });
