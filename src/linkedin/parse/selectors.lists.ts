@@ -55,6 +55,7 @@ export const listStructure = {
     /** Seen 2026-11-11 on My Network → Manage invitations → Sent → People. */
     screen: "com.linkedin.sdui.flagshipnav.mynetwork.invitations.InvitationSentWithType",
     row: '[role="listitem"]',
+    /** First loads only; on any load the control labelled "Withdraw invitation sent to …" (wording below). */
     withdraw: '[data-view-name="sent-invitations-withdraw-single"]',
   },
 } as const;

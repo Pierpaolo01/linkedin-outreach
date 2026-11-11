@@ -104,6 +104,18 @@ describe("parseSentInvitations on hand-written pages", () => {
   });
 });
 
+describe("parseSentInvitations on a later page load (no data-view-name)", () => {
+  // LinkedIn writes data-view-name only into the first page a browser session loads (seen 2026-11-11).
+  // No later-load capture of this page exists; Withdraw is then found by its "Withdraw invitation sent to …" label.
+  it("reads the first-load fixture the same once every data-view-name is removed", () => {
+    const html = readFileSync(new URL("../../../fixtures/invitations/sent-en.html", import.meta.url), "utf8");
+    const later = html.replaceAll(/\sdata-view-name="[^"]*"/g, "");
+
+    expect(later).not.toContain("data-view-name");
+    expect(parseSentInvitations(later)).toEqual(parseSentInvitations(html));
+  });
+});
+
 describe("parseSentInvitations on the committed fixture", () => {
   const html = readFileSync(new URL("../../../fixtures/invitations/sent-en.html", import.meta.url), "utf8");
   const cards = parseSentInvitations(html);
