@@ -20,6 +20,9 @@
  */
 import type { InterfaceLanguage } from "../selectors";
 
+const nameBadge = '[data-view-name="profile-top-card-verified-badge"]';
+const primaryMessage = '[data-view-name="profile-primary-message"]';
+
 /** Seen 2026-11-11 on two profiles of people the user is not connected to. */
 export const profileStructure = {
   /** The page wrapper names the screen. */
@@ -34,13 +37,23 @@ export const profileStructure = {
    */
   profileCard: '[componentkey^="com.linkedin.sdui.profile.card."]',
   /** Wraps the owner's name heading. */
-  nameBadge: '[data-view-name="profile-top-card-verified-badge"]',
+  nameBadge,
+  /** The owner's name heading inside its badge wrapper. First loads only. */
+  name: `${nameBadge} h2`,
+  /** The owner's name on any load: the top card's first `h2`. */
+  nameFallback: "h2",
   /** The "Contact info" link sits in the location row and carries the owner's `/in/<id>/`. */
   contactInfoLink: 'a[href*="/overlay/contact-info"]',
   /** The bar that appears on scroll; its first link is the owner's profile. Fallback for the id. */
   stickyHeaderLink: '[data-view-name="profile-sticky-header"] a[href]',
+  /** What follows `/in/<id>/` in the Contact info link's href; stripped to read the id. */
+  contactInfoSuffix: /overlay\/contact-info\/?.*$/,
   /** Holds Message (a link to `/messaging/compose/`). First loads only. */
-  message: '[data-view-name="profile-primary-message"]',
+  message: primaryMessage,
+  /** The Message link inside it; its href names the member id. */
+  messageLink: `${primaryMessage} a[href]`,
+  /** The Message control inside it, link or button. */
+  messageControls: `${primaryMessage} a, ${primaryMessage} button`,
   /** The Message control on any load; a 2nd-degree page may show it as a secondary action. Seen 2026-11-11. */
   composeLink: 'a[href*="/messaging/compose/"]',
   /** Holds the one relationship action: Follow or Connect (and, by the same pattern, Pending). */
@@ -55,18 +68,28 @@ export const profileStructure = {
   overflow: '[data-view-name="profile-overflow-button"]',
   /** A rendered menu, when one is present (not seen on the profile captures). */
   menu: '[role="menu"], [role="menuitem"]',
+  /** Every control of the top card, in the card or in a rendered menu; read by their wording. */
+  controls: 'button, a, [role="menuitem"]',
+  /** Where the "profile not available" page puts its wording (below). */
+  unavailableHeadings: "h1, h2, h3, title",
   /** First loads only; on any load the card whose heading is the About wording below. */
   about: '[data-view-name="profile-card-about"]',
   /** First loads only; on any load the card whose heading is the Experience wording below. */
   experience: '[data-view-name="profile-card-experience"]',
   /** A card's heading. */
   cardHeading: "h2",
+  /** Name, headline, location, degree badges, About and role lines are `p` elements. */
+  textLine: "p",
   /** The full text of a clamped paragraph (About, an experience description). */
   expandableText: '[data-testid="expandable-text-box"]',
   /** The "… more" toggle inside an expandable text; its wording is not part of the text. */
   expandableButton: '[data-testid="expandable-text-button"]',
   /** One entry of the experience list; a company with several roles holds them in `ul > li`. */
   experienceItem: '[componentkey^="entity-collection-item"]',
+  /** A role inside an experience item that groups several roles at one company. */
+  experienceGroupRole: "ul > li",
+  /** The role a paragraph belongs to, inside such a group. */
+  experienceRole: "li",
   /** The media thumbnail link inside a role; its text is not part of the role. On any load its href ends in `/treasury/` (seen 2026-11-11). */
   experienceMedia: '[data-view-name="experience-see-media-button"], a[href*="/treasury/"]',
   /**

@@ -8,7 +8,8 @@
  */
 import { parse, type HTMLElement, type Node } from "node-html-parser";
 import { languageFromHtml, normaliseText } from "../selectors";
-import { ParseError, profileUrlFor, publicIdFromUrl } from "./card";
+import { isLinkedInHost, linkedInUrl, ParseError, profileUrlFor, publicIdFromUrl } from "./card";
+import { inlineText, publicIdOfLink } from "./dom";
 import { conversationList, thread, threadUrl, threadWordingFor, type ThreadWording } from "./selectors.thread";
 
 export type ConversationKind = "message" | "inmail" | "sponsored" | "unknown";
@@ -119,11 +120,6 @@ function isElement(node: Node): node is HTMLElement {
   return node.nodeType === 1 && "rawTagName" in node;
 }
 
-/** Single-line text of an element, whitespace collapsed. */
-function inlineText(element: HTMLElement | null): string {
-  return element === null ? "" : element.text.replace(/\s+/g, " ").trim();
-}
-
 function sameName(a: string | null, b: string | null): boolean {
   return a !== null && b !== null && a !== "" && normaliseText(a) === normaliseText(b);
 }
@@ -171,7 +167,7 @@ function groupSender(message: HTMLElement, participant: Participant, user: UserI
   const linkIds = new Set(
     message
       .querySelectorAll(thread.senderLinks)
-      .map((a) => publicIdFromUrl(a.getAttribute("href") ?? ""))
+      .map(publicIdOfLink)
       .filter((id): id is string => id !== undefined),
   );
   if (linkIds.size > 1) throw new ParseError(PAGE, `message ${index + 1} links more than one profile as its sender`);
@@ -300,7 +296,7 @@ function newConversation(pane: HTMLElement, fullName: string): Thread {
   const ids = new Set(
     pane
       .querySelectorAll(thread.newProfileCardLink)
-      .map((link) => publicIdFromUrl(link.getAttribute("href") ?? ""))
+      .map(publicIdOfLink)
       .filter((id) => id !== undefined),
   );
   const [publicId] = ids;
@@ -328,7 +324,7 @@ function composeParticipant(events: readonly HTMLElement[], user: UserIdentity, 
       .flatMap((li) => li.querySelectorAll(thread.message))
       .filter((message) => message.classList.contains(thread.fromOtherClass))
       .flatMap((message) => message.querySelectorAll(thread.senderLinks))
-      .map((a) => publicIdFromUrl(a.getAttribute("href") ?? ""))
+      .map(publicIdOfLink)
       .filter((id) => id !== undefined),
   );
   if (others.size > 1) throw new ParseError(PAGE, "a new message pane with messages from several people");
@@ -342,13 +338,8 @@ function composeParticipant(events: readonly HTMLElement[], user: UserIdentity, 
 /** Canonical thread URL from a relative or absolute link, or null when it is not one. */
 function threadUrlFrom(href: string | undefined): string | null {
   if (href === undefined) return null;
-  let url: URL;
-  try {
-    url = new URL(href, "https://www.linkedin.com");
-  } catch {
-    return null;
-  }
-  if (url.hostname !== "www.linkedin.com" && url.hostname !== "linkedin.com") return null;
+  const url = linkedInUrl(href);
+  if (url === undefined || !isLinkedInHost(url)) return null;
   const id = threadUrl.path.exec(url.pathname)?.[1];
   return id === undefined || id === "new" ? null : threadUrlForId(id);
 }
@@ -424,8 +415,8 @@ export function parseConversationList(html: string): ConversationSummary[] {
 export function findThreadUrl(html: string): string | null {
   const root = loadMessagingPage(html);
   const fromHead =
-    threadUrlFrom(root.querySelector("link[rel='canonical']")?.getAttribute("href")) ??
-    threadUrlFrom(root.querySelector("meta[property='og:url']")?.getAttribute("content"));
+    threadUrlFrom(root.querySelector(threadUrl.canonicalLink)?.getAttribute("href")) ??
+    threadUrlFrom(root.querySelector(threadUrl.ogUrl)?.getAttribute("content"));
   if (fromHead !== null) return fromHead;
 
   const active = root.querySelector(conversationList.activeItem);
@@ -439,7 +430,7 @@ export function findThreadUrl(html: string): string | null {
   if (pane === null) return null;
   const fromPaneLink = threadUrlFrom(pane.querySelector(threadUrl.link)?.getAttribute("href"));
   if (fromPaneLink !== null) return fromPaneLink;
-  for (const element of [pane, ...pane.querySelectorAll("*")]) {
+  for (const element of [pane, ...pane.querySelectorAll(threadUrl.urnCarrier)]) {
     for (const value of Object.values(element.attributes)) {
       const id = threadUrl.conversationUrn.exec(value)?.[1];
       if (id !== undefined) return threadUrlForId(id);

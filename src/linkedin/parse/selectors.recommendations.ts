@@ -20,6 +20,8 @@ export const recommendationsStructural = {
   growPath: "/mynetwork/grow/",
   /** Each group (invitations, a row of suggestions, the grid) is a `section` holding one of these. */
   list: '[role="list"]',
+  /** The element that wraps one group. */
+  section: "section",
   card: '[role="listitem"]',
   /** Group heading: `h3` for the rows ("People you may know from …"), `h2` for the grid and invitations. */
   heading: "h2, h3",
