@@ -33,7 +33,8 @@ export default defineConfig({
   reporter: "list",
   use: { channel: "chrome", baseURL: "http://127.0.0.1:4748" },
   webServer: [
-    fakeApp({ port: 4748, states: "logged_out,ok", delayMs: 500 }),
+    // The delay is how long Re-check stays disabled. 500 ms was shorter than one slow step on a CI runner.
+    fakeApp({ port: 4748, states: "logged_out,ok", delayMs: 2500 }),
     fakeApp({ port: 4750, states: "checkpoint", delayMs: 0 }),
   ],
 });
