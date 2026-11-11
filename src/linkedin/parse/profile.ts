@@ -10,6 +10,7 @@
 import { parse, HTMLElement, TextNode, type Node } from "node-html-parser";
 import { languageFromHtml, normaliseText } from "../selectors";
 import { memberIdFromComposeHref, ParseError, profileUrlFor, publicIdFromUrl } from "./card";
+import { isInside } from "./selectors.lists";
 import { MAX_EXPERIENCE, profileStructure as s, profileWording, type ProfileWording } from "./selectors.profile";
 
 /** One role as the profile's Experience section shows it. */
@@ -74,7 +75,7 @@ export class ProfileUnavailableError extends ParseError {
 export function parseProfile(html: string): Profile {
   const wording = profileWording[languageFromHtml(html)];
   const root = parse(html);
-  const card = root.querySelector(s.topCard);
+  const card = root.querySelector(s.topCard) ?? topCardByContactLink(root);
   if (card === null) {
     if (isUnavailablePage(root, wording)) throw new ProfileUnavailableError();
     throw new ParseError(PAGE, "no top card: not a profile page");
@@ -95,17 +96,39 @@ export function parseProfile(html: string): Profile {
     publicId,
     profileUrl: profileUrlFor(publicId),
     fullName,
-    headline: nameHeading === null ? null : headlineAfter(nameHeading, wording),
+    headline: nameHeading === null ? null : headlineAfter(nameHeading, card, wording),
     location: locationOf(card),
     degree,
-    about: aboutOf(root),
+    about: aboutOf(root, wording),
     currentTitle: current?.title ?? null,
     currentCompany: current?.company ?? null,
     experience,
     connectionState: connectionStateOf(actions, degree),
     messageAvailable: actions.message,
-    memberId: memberIdFromComposeHref(card.querySelector(`${s.message} a[href]`)?.getAttribute("href")),
+    memberId: memberIdFromComposeHref((card.querySelector(`${s.message} a[href]`) ?? composeLinks(card)[0])?.getAttribute("href")),
   };
+}
+
+/** On a later page load (no `data-view-name`): the profile card that holds the owner's Contact info link. */
+function topCardByContactLink(root: HTMLElement): HTMLElement | null {
+  return root.querySelector(s.contactInfoLink)?.closest(s.profileCard) ?? null;
+}
+
+const inMenu = (el: HTMLElement) => el.closest(s.menu) !== null;
+
+/** The top card's Message links outside any rendered menu. */
+function composeLinks(card: HTMLElement): HTMLElement[] {
+  return card.querySelectorAll(s.composeLink).filter((el) => !inMenu(el));
+}
+
+/** A card found by its heading, where no `data-view-name` names it. */
+function cardWithHeading(root: HTMLElement, headings: readonly string[]): HTMLElement | null {
+  return (
+    root.querySelectorAll(s.profileCard).find((card) => {
+      const heading = card.querySelector(s.cardHeading);
+      return heading !== null && headings.includes(normaliseText(heading.text));
+    }) ?? null
+  );
 }
 
 function isUnavailablePage(root: HTMLElement, wording: ProfileWording): boolean {
@@ -124,7 +147,6 @@ interface TopCardActions {
 /** What the top card offers. Only the top card: other people's cards on the page carry their own Connect buttons. */
 function actionsOf(card: HTMLElement, wording: ProfileWording): TopCardActions {
   const controls = card.querySelectorAll('button, a, [role="menuitem"]');
-  const inMenu = (el: HTMLElement) => el.closest(s.menu) !== null;
   const primary = controls.filter((el) => !inMenu(el));
   const menu = controls.filter(inMenu);
   const says = (words: readonly string[]) => (el: HTMLElement) => controlSays(el, words);
@@ -132,12 +154,12 @@ function actionsOf(card: HTMLElement, wording: ProfileWording): TopCardActions {
 
   const messageLinks = card.querySelectorAll(`${s.message} a, ${s.message} button`);
   return {
-    connect: notInMenu(s.connectAction) || primary.some(says(wording.connect)),
+    connect: notInMenu(s.connectAction) || notInMenu(s.connectLink) || primary.some(says(wording.connect)),
     connectInMenu: menu.some(says(wording.connect)),
     pending: card.querySelector(s.pendingAction) !== null || primary.some(says(wording.pending)),
     follow: notInMenu(s.followAction) || primary.some(says(wording.follow)),
     message:
-      messageLinks.some((el) => el.getAttribute("aria-disabled") !== "true") ||
+      [...messageLinks, ...composeLinks(card)].some((el) => el.getAttribute("aria-disabled") !== "true") ||
       primary.some((el) => el.getAttribute("aria-disabled") !== "true" && says(wording.message)(el)),
   };
 }
@@ -158,8 +180,8 @@ function connectionStateOf(actions: TopCardActions, degree: Profile["degree"]): 
   return "unknown";
 }
 
-function aboutOf(root: HTMLElement): string | null {
-  const section = root.querySelector(s.about);
+function aboutOf(root: HTMLElement, wording: ProfileWording): string | null {
+  const section = root.querySelector(s.about) ?? cardWithHeading(root, wording.headings.about);
   if (section === null) return null;
   const box = section.querySelector(s.expandableText);
   if (box !== null) return blockText(box);
@@ -168,7 +190,7 @@ function aboutOf(root: HTMLElement): string | null {
 }
 
 function experienceOf(root: HTMLElement, wording: ProfileWording): ExperienceEntry[] {
-  const section = root.querySelector(s.experience);
+  const section = root.querySelector(s.experience) ?? cardWithHeading(root, wording.headings.experience);
   if (section === null) return [];
   const entries: ExperienceEntry[] = [];
   for (const item of section.querySelectorAll(s.experienceItem)) {
@@ -253,12 +275,15 @@ function ownerPublicId(root: HTMLElement, card: HTMLElement): string | undefined
 }
 
 /**
- * The headline is the first paragraph after the name that is not the degree
- * badge. The name sits a few wrappers deep, so walk up until a following
- * sibling paragraph turns up.
+ * The headline is the first paragraph after the name row (the name, pronouns
+ * and degree badges) that is not a degree badge. The name sits a few wrappers
+ * deep, so walk up until a following sibling paragraph turns up.
  */
-function headlineAfter(name: HTMLElement, wording: ProfileWording): string | null {
-  for (let el: HTMLElement | null = name; el !== null && el.rawTagName !== "section"; el = el.parentNode) {
+function headlineAfter(name: HTMLElement, card: HTMLElement, wording: ProfileWording): string | null {
+  const badge = degreeBadges(card, wording)[0];
+  let row: HTMLElement | null = name;
+  while (badge !== undefined && row !== null && row !== card && !isInside(badge, row)) row = row.parentNode;
+  for (let el: HTMLElement | null = row === card ? name : row; el !== null && el.rawTagName !== "section"; el = el.parentNode) {
     for (let sibling = el.nextElementSibling; sibling !== null; sibling = sibling.nextElementSibling) {
       if (sibling.rawTagName !== "p") continue;
       const text = textOf(sibling);
@@ -276,12 +301,16 @@ function locationOf(card: HTMLElement): string | null {
   return textOf(first);
 }
 
+/** The badge outside a display-contents slot wins over one inside it (see `degreeSlot`). */
 function degreeOf(card: HTMLElement, wording: ProfileWording): 1 | 2 | 3 | null {
-  for (const p of card.querySelectorAll("p")) {
-    const degree = degreeFromText(p.text, wording);
-    if (degree !== null) return degree;
-  }
-  return null;
+  const badges = degreeBadges(card, wording);
+  const inSlot = (p: HTMLElement) => p.parentNode !== null && p.parentNode.closest(s.degreeSlot) === p.parentNode;
+  const badge = badges.find((p) => !inSlot(p)) ?? badges[0];
+  return badge === undefined ? null : degreeFromText(badge.text, wording);
+}
+
+function degreeBadges(card: HTMLElement, wording: ProfileWording): HTMLElement[] {
+  return card.querySelectorAll("p").filter((p) => degreeFromText(p.text, wording) !== null);
 }
 
 function degreeFromText(text: string, wording: ProfileWording): 1 | 2 | 3 | null {

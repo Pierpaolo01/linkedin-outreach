@@ -212,6 +212,121 @@ describe("parseProfile connection state", () => {
   });
 });
 
+/**
+ * LinkedIn writes `data-view-name` only into the first page a browser session loads; every later
+ * load of the same page has none (seen 2026-11-11). A long-running app mostly sees later loads.
+ */
+const withoutViewNames = (html: string) => html.replaceAll(/\sdata-view-name="[^"]*"/g, "");
+
+/** A later-load page: each card is a profile card (`componentkey` "com.linkedin.sdui.profile.card.ref…"), no data-view-name anywhere. */
+function laterPage(...cards: readonly string[]): string {
+  const body = cards.map((card, i) => `<div componentkey="com.linkedin.sdui.profile.card.refACoAAcard${i + 1}">${card}</div>`).join("");
+  return withoutViewNames(page({ body }));
+}
+
+/** The name row of a 2026 top card: name, pronouns, then the degree badges, one of them in a display-contents slot. */
+function nameRow(badges: string): string {
+  return `<div data-view-name="profile-top-card"><section>
+<div><div><div><div><a href="https://www.linkedin.com/in/test-person/"><div><h2>Test Person</h2></div></a></div><p>He/Him</p>${badges}</div>
+<p>Owner at Test Company</p><p>Test Company · Test School</p>
+<div><p>Brescia, Lombardy, Italy</p><p>·</p><p><a href="https://www.linkedin.com/in/test-person/overlay/contact-info/">Contact info</a></p></div></div></div>
+<div>${message()}${more()}</div>
+</section></div>`;
+}
+
+describe("parseProfile on a later page load (no data-view-name)", () => {
+  it.each(fixtures)("reads $name the same once every data-view-name is removed", (f) => {
+    const html = fixture(f.name);
+
+    expect(parseProfile(withoutViewNames(html))).toEqual(parseProfile(html));
+  });
+
+  it("finds the top card as the profile card holding the Contact info link, and reads its actions only", () => {
+    const sidebar = `<aside><div componentkey="com.linkedin.sdui.profile.card.refACoAAmember2">${connectButton("Connect", "Invite Someone Else to connect")}</div></aside>`;
+    const profile = parseProfile(laterPage(topCard({ degree: "· 2nd", actions: followActions })).replace("</main>", `${sidebar}</main>`));
+
+    expect(profile).toMatchObject({ fullName: "Test Person", publicId: "test-person", degree: 2, connectionState: "follow_only", messageAvailable: true });
+  });
+
+  it("reads Connect from its invite link when the label is not recognised", () => {
+    const connect = `<div><a href="/preload/custom-invite/?vanityName=test-person" aria-label="Something new"><span>Something new</span></a></div>`;
+    const profile = parseProfile(laterPage(topCard({ degree: "· 2nd", actions: connect + more() })));
+
+    expect(profile.connectionState).toBe("can_connect");
+  });
+
+  it("reads the member id from the top card's compose link", () => {
+    const actions = `<div><a href="/messaging/compose/?profileUrn=x&amp;recipient=ACoAAmember1"><span>Message</span></a></div>${more()}`;
+    const profile = parseProfile(laterPage(topCard({ degree: "· 1st", actions })));
+
+    expect(profile).toMatchObject({ memberId: "ACoAAmember1", connectionState: "connected", messageAvailable: true });
+  });
+
+  it("reads About and Experience by their headings", () => {
+    const later = parseProfile(laterPage(topCard(), about, experience));
+    const first = parseProfile(page({ body: topCard() + about + experience }));
+
+    expect(later.about).toBe("We build and restore houses.\nSince 1990.");
+    expect(later.experience).toHaveLength(3);
+    expect(later.experience).toEqual(first.experience);
+  });
+
+  it("throws ParseError on a profile page whose top card it cannot find", () => {
+    expect(() => parseProfile(laterPage("<section><h2>Test Person</h2><p>· 2nd</p></section>"))).toThrow(/no top card/);
+  });
+});
+
+describe("parseProfile on a top card with two degree badges", () => {
+  // Seen 2026-11-11: '· 1st' and '· 2nd' side by side, one wrapped in a data-display-contents slot.
+  // On a 1st-degree connection's page the plain badge said 1st; on a page offering Connect it said 2nd.
+  it.each([
+    ['<p>· 1st</p><div data-display-contents="true"><p>· 2nd</p></div>', 1],
+    ['<div data-display-contents="true"><p>· 1st</p></div><p>· 2nd</p>', 2],
+  ] as const)("reads the badge outside the slot: %s", (badges, expected) => {
+    expect(parseProfile(page({ body: nameRow(badges) })).degree).toBe(expected);
+  });
+
+  it("does not take the pronouns in the name row for the headline", () => {
+    expect(parseProfile(page({ body: nameRow("<p>· 2nd</p>") })).headline).toBe("Owner at Test Company");
+  });
+});
+
+/**
+ * Scrubbed from two later page loads saved 2026-11-11. Neither page had rendered its
+ * Experience card yet. `connected-later-en.html` is a 1st-degree connection (the person is in
+ * the user's connections list); `not-connected-later-en.html` is a 2nd-degree person whose
+ * top card offers Connect and Message.
+ */
+describe.each([
+  { name: "connected-later-en.html", degree: 1, connectionState: "connected" },
+  { name: "not-connected-later-en.html", degree: 2, connectionState: "can_connect" },
+] as const)("parseProfile on the later-load fixture $name", (f) => {
+  const profile = parseProfile(fixture(f.name));
+
+  it("reads the owner's identity from the top card", () => {
+    expect(profile.publicId).toMatch(/^person-\d+$/);
+    expect(profile.profileUrl).toBe(`https://www.linkedin.com/in/${profile.publicId}/`);
+    expect(profile.fullName).toMatch(/^Person \d+$/);
+  });
+
+  it("finds headline, location and About, and not the pronouns as headline", () => {
+    for (const field of [profile.headline, profile.location, profile.about]) {
+      expect(typeof field).toBe("string");
+      expect(field?.length).toBeGreaterThan(0);
+    }
+    expect(profile.headline).not.toBe("He/Him");
+  });
+
+  it("reads degree, connection state, Message and the member id", () => {
+    expect(profile).toMatchObject({ degree: f.degree, connectionState: f.connectionState, messageAvailable: true });
+    expect(profile.memberId).toMatch(/^ACoA\w+$/);
+  });
+
+  it("returns no experience, as the page had not rendered it", () => {
+    expect(profile.experience).toEqual([]);
+  });
+});
+
 describe("parseProfile errors", () => {
   it("throws ParseError on a page that is not a profile", () => {
     const feed = `<!DOCTYPE html><html lang="en"><body><div data-testid="primary-nav"></div><main><h2>Feed</h2></main></body></html>`;
