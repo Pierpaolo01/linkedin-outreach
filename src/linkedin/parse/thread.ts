@@ -21,7 +21,7 @@ export interface Participant {
   /**
    * The `<id>` of the profile link the page shows, or null when it links none. On the messaging
    * page this is the member id form (`ACoAA…`), not the vanity id used on profile pages;
-   * `profileUrl` still opens the profile.
+   * `profileUrl` still opens the profile. In a new conversation (`isNew`) it is the vanity id.
    */
   readonly publicId: string | null;
   readonly profileUrl: string | null;
@@ -44,6 +44,17 @@ export interface Thread {
   readonly kind: ConversationKind;
   /** Oldest first. Empty for a new conversation. */
   readonly messages: readonly Message[];
+  /**
+   * True for LinkedIn's "New message" pane: there is no conversation with this person yet. The
+   * participant's `publicId` is then the vanity id of their profile, not the member id.
+   */
+  readonly isNew: boolean;
+  /**
+   * True when the page is the "New message" pane (`/messaging/compose/?recipient=…`), which names
+   * the person on a recipient pill and lists any earlier messages below it. The participant's
+   * `publicId` is then null until the participant has written.
+   */
+  readonly viaCompose: boolean;
 }
 
 export interface ConversationSummary {
@@ -215,11 +226,14 @@ export function parseThread(html: string): Thread {
   const root = loadMessagingPage(html);
   const pane = root.querySelector(thread.pane);
   if (pane === null) throw new ParseError(PAGE, "no conversation is open");
-  const participant = parseParticipant(pane);
   const wording = threadWordingFor(languageFromHtml(html));
 
   const events = pane.querySelectorAll(thread.listEvent);
   const user = identifyUser(root, events.flatMap((li) => li.querySelectorAll(thread.message)));
+  const recipient = composeRecipient(pane);
+  if (recipient !== null && events.length === 0) return newConversation(pane, recipient);
+  const participant = recipient === null ? parseParticipant(pane) : composeParticipant(events, user, recipient);
+  const viaCompose = recipient !== null;
 
   const messages: Message[] = [];
   let day = "";
@@ -265,7 +279,64 @@ export function parseThread(html: string): Thread {
       });
     }
   }
-  return { participant, kind, messages };
+  return { participant, kind, messages, isNew: false, viaCompose };
+}
+
+/**
+ * The name on the recipient pill of the "New message" pane, or null when the pane is an open
+ * conversation instead. Fails closed on several recipients.
+ */
+function composeRecipient(pane: HTMLElement): string | null {
+  const pills = pane.querySelectorAll(thread.newRecipientPill);
+  if (pills.length === 0) return null;
+  if (pills.length > 1) throw new ParseError(PAGE, "a new message addressed to several people");
+  const fullName = inlineText(pills[0]?.querySelector(thread.newRecipientName) ?? null);
+  if (fullName === "") throw new ParseError(PAGE, "a new message pane that does not name its recipient");
+  return fullName;
+}
+
+/** The "New message" pane with no earlier messages: there is no conversation with this person yet. */
+function newConversation(pane: HTMLElement, fullName: string): Thread {
+  const ids = new Set(
+    pane
+      .querySelectorAll(thread.newProfileCardLink)
+      .map((link) => publicIdFromUrl(link.getAttribute("href") ?? ""))
+      .filter((id) => id !== undefined),
+  );
+  const [publicId] = ids;
+  if (publicId === undefined || ids.size !== 1) {
+    throw new ParseError(PAGE, "a new message pane that does not link one person");
+  }
+  return {
+    participant: { fullName, headline: null, publicId, profileUrl: profileUrlFor(publicId) },
+    kind: "unknown",
+    messages: [],
+    isNew: true,
+    viaCompose: true,
+  };
+}
+
+/**
+ * The participant of a "New message" pane that lists earlier messages (seen 2026-11-11 for a
+ * connection the user had already written with). The pane has no title-bar link and no profile
+ * card; the participant's member id is the sender link of the messages LinkedIn marks as not the
+ * user's, and is null while only the user has written.
+ */
+function composeParticipant(events: readonly HTMLElement[], user: UserIdentity, fullName: string): Participant {
+  const others = new Set(
+    events
+      .flatMap((li) => li.querySelectorAll(thread.message))
+      .filter((message) => message.classList.contains(thread.fromOtherClass))
+      .flatMap((message) => message.querySelectorAll(thread.senderLinks))
+      .map((a) => publicIdFromUrl(a.getAttribute("href") ?? ""))
+      .filter((id) => id !== undefined),
+  );
+  if (others.size > 1) throw new ParseError(PAGE, "a new message pane with messages from several people");
+  const [publicId = null] = others;
+  if (publicId !== null && publicId === user.profileId) {
+    throw new ParseError(PAGE, "the page contradicts itself on who the recipient is");
+  }
+  return { fullName, headline: null, publicId, profileUrl: publicId === null ? null : profileUrlFor(publicId) };
 }
 
 /** Canonical thread URL from a relative or absolute link, or null when it is not one. */

@@ -8,6 +8,12 @@
  * `data-testid` (name components), roles, `href` patterns, and only where
  * nothing else exists, visible wording.
  *
+ * `data-view-name` is written only into the first page a browser session loads;
+ * every later load of the same page has none (seen 2026-11-11). Every
+ * `data-view-name` hook below that the parser relies on comes with a hook
+ * present on both loads: `componentkey`, `data-testid`, `href` patterns,
+ * headings or document structure.
+ *
  * Wording is stored in the form `normaliseText` produces: lower case,
  * straight apostrophes, single spaces. Both captures so far are English; an
  * Italian string marked `// unverified` has not been seen on a real page.
@@ -18,19 +24,30 @@ import type { InterfaceLanguage } from "../selectors";
 export const profileStructure = {
   /** The page wrapper names the screen. */
   screen: '[data-sdui-screen="com.linkedin.sdui.flagshipnav.profile.Profile"]',
-  /** The owner's card at the top of the main column. Everything about the owner is read inside it. */
+  /** The owner's card at the top of the main column. Everything about the owner is read inside it. First loads only. */
   topCard: '[data-view-name="profile-top-card"]',
+  /**
+   * Each card of the page, the top card included, sits in one of these on any load
+   * (`componentkey="com.linkedin.sdui.profile.card.ref<member id>"`). The top card is the one
+   * holding the Contact info link. Seen 2026-11-11. The prefix stops before "ref": fixtures
+   * have the rest replaced by TOKEN.
+   */
+  profileCard: '[componentkey^="com.linkedin.sdui.profile.card."]',
   /** Wraps the owner's name heading. */
   nameBadge: '[data-view-name="profile-top-card-verified-badge"]',
   /** The "Contact info" link sits in the location row and carries the owner's `/in/<id>/`. */
   contactInfoLink: 'a[href*="/overlay/contact-info"]',
   /** The bar that appears on scroll; its first link is the owner's profile. Fallback for the id. */
   stickyHeaderLink: '[data-view-name="profile-sticky-header"] a[href]',
-  /** Holds Message (a link to `/messaging/compose/`). */
+  /** Holds Message (a link to `/messaging/compose/`). First loads only. */
   message: '[data-view-name="profile-primary-message"]',
+  /** The Message control on any load; a 2nd-degree page may show it as a secondary action. Seen 2026-11-11. */
+  composeLink: 'a[href*="/messaging/compose/"]',
   /** Holds the one relationship action: Follow or Connect (and, by the same pattern, Pending). */
   relationship: '[data-view-name="relationship-building-button"]',
   connectAction: '[data-view-name="edge-creation-connect-action"]',
+  /** Connect on any load: a link to `/preload/custom-invite/?vanityName=<id>`. Seen 2026-11-11 on a later load. */
+  connectLink: 'a[href*="/custom-invite/"]',
   followAction: '[data-view-name="edge-creation-follow-action"]',
   /** Not seen: a guess following the pattern above. Wording below is the fallback. */
   pendingAction: '[data-view-name="edge-creation-pending-action"], [data-view-name="edge-creation-withdraw-action"]',
@@ -38,16 +55,26 @@ export const profileStructure = {
   overflow: '[data-view-name="profile-overflow-button"]',
   /** A rendered menu, when one is present (not seen on the profile captures). */
   menu: '[role="menu"], [role="menuitem"]',
+  /** First loads only; on any load the card whose heading is the About wording below. */
   about: '[data-view-name="profile-card-about"]',
+  /** First loads only; on any load the card whose heading is the Experience wording below. */
   experience: '[data-view-name="profile-card-experience"]',
+  /** A card's heading. */
+  cardHeading: "h2",
   /** The full text of a clamped paragraph (About, an experience description). */
   expandableText: '[data-testid="expandable-text-box"]',
   /** The "… more" toggle inside an expandable text; its wording is not part of the text. */
   expandableButton: '[data-testid="expandable-text-button"]',
   /** One entry of the experience list; a company with several roles holds them in `ul > li`. */
   experienceItem: '[componentkey^="entity-collection-item"]',
-  /** The media thumbnail link inside a role; its text is not part of the role. */
-  experienceMedia: '[data-view-name="experience-see-media-button"]',
+  /** The media thumbnail link inside a role; its text is not part of the role. On any load its href ends in `/treasury/` (seen 2026-11-11). */
+  experienceMedia: '[data-view-name="experience-see-media-button"], a[href*="/treasury/"]',
+  /**
+   * Seen 2026-11-11: a top card can hold two degree badges ("· 1st" and "· 2nd"), one of them
+   * wrapped in this slot. On a 1st-degree connection's page the badge outside the slot said 1st;
+   * on a page offering Connect it said 2nd. So the badge outside the slot is read first.
+   */
+  degreeSlot: "[data-display-contents]",
 } as const;
 
 export const MAX_EXPERIENCE = 5;
@@ -65,6 +92,8 @@ export interface ProfileWording {
   readonly message: readonly string[];
   /** Headings of the page LinkedIn shows for a profile that does not exist or is hidden. */
   readonly unavailable: readonly string[];
+  /** Card headings, to find a card where no `data-view-name` names it. */
+  readonly headings: { readonly about: readonly string[]; readonly experience: readonly string[] };
 }
 
 export const profileWording = {
@@ -77,6 +106,7 @@ export const profileWording = {
     follow: ["follow"],
     message: ["message"],
     unavailable: ["this profile is not available", "profile not available", "this page doesn't exist"], // unverified
+    headings: { about: ["about"], experience: ["experience"] },
   },
   it: {
     degrees: { "1°": 1, "2°": 2, "3°": 3, "3°+": 3 }, // unverified
@@ -86,5 +116,6 @@ export const profileWording = {
     follow: ["segui"], // unverified
     message: ["messaggio"], // unverified
     unavailable: ["questo profilo non è disponibile", "profilo non disponibile", "questa pagina non esiste"], // unverified
+    headings: { about: ["informazioni"], experience: ["esperienza"] }, // unverified
   },
 } as const satisfies Record<InterfaceLanguage, ProfileWording>;

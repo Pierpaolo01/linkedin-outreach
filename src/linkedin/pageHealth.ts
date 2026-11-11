@@ -65,7 +65,8 @@ function errorFor(state: Exclude<SessionState, "ok">, message: string, options: 
   }
 }
 
-async function savePage(
+/** Saves the page as it is now (HTML and a full-page screenshot) for a page the driver will not act on. */
+export async function savePage(
   page: InspectablePage,
   html: string,
   state: SessionState,

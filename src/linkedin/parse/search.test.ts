@@ -190,6 +190,68 @@ describe("parseSearchResults on hand-written pages", () => {
   });
 });
 
+/**
+ * LinkedIn writes `data-view-name` only into the first page a browser session loads; every later
+ * load of the same page has none (seen 2026-11-11). A long-running app mostly sees later loads.
+ */
+const withoutViewNames = (html: string) => html.replaceAll(/\sdata-view-name="[^"]*"/g, "");
+
+describe("parseSearchResults on a later page load (no data-view-name)", () => {
+  it("reads the first-load fixture the same once every data-view-name is removed", () => {
+    const html = readFileSync(new URL("../../../fixtures/search/people-en.html", import.meta.url), "utf8");
+
+    expect(parseSearchResults(withoutViewNames(html))).toEqual(parseSearchResults(html));
+  });
+
+  it("reads a hand-written row with no data-view-name, its action from the control's label", () => {
+    const connect = '<div><button aria-label="Invite Person 1 to connect">Connect</button></div>';
+    const html = withoutViewNames(page(row({ action: connect }))).replace("<div><div><button", '<div componentkey="SearchResultsACoAAmember1"><div><button');
+
+    expect(parseSearchResults(html).cards[0]).toMatchObject({ fullName: "Person 1", degree: 3, action: "connect" });
+  });
+
+  describe("on the committed later-load fixture", () => {
+    const html = readFileSync(new URL("../../../fixtures/search/people-later-en.html", import.meta.url), "utf8");
+    const result = parseSearchResults(html);
+
+    it("reads every result the capture had and sees the next page", () => {
+      expect(result.cards).toHaveLength(10);
+      expect(result).toMatchObject({ hasNextPage: true, capped: false, hiddenMembers: 0 });
+      expect(new Set(result.cards.map((card) => card.publicId)).size).toBe(10);
+    });
+
+    it("gives each card its name, headline, location and summary", () => {
+      for (const card of result.cards) {
+        expect(card.publicId).toMatch(/^person-\d+$/);
+        expect(card.profileUrl).toBe(`https://www.linkedin.com/in/${card.publicId}/`);
+        expect(card.fullName).toMatch(/^Person \d+$/);
+        expect(card.headline).not.toBeNull();
+        expect(card.location).not.toBeNull();
+        expect(card.summary).not.toBeNull();
+      }
+    });
+
+    it("reads each row's degree and action as the capture showed them", () => {
+      expect(result.cards.map((card) => [card.degree, card.action])).toEqual([
+        [2, "connect"],
+        [2, "connect"],
+        [2, "follow"],
+        [3, "follow"],
+        [3, "follow"],
+        [3, "follow"],
+        [3, "follow"],
+        [3, "follow"],
+        [3, "follow"],
+        [3, "follow"],
+      ]);
+    });
+
+    it("keeps mutual-connection lines out of the summary", () => {
+      for (const card of result.cards) expect(card.summary).not.toMatch(/Person \d+/);
+    });
+  });
+});
+
 describe("parseSearchResults on the committed fixture", () => {
   const html = readFileSync(new URL("../../../fixtures/search/people-en.html", import.meta.url), "utf8");
   const result = parseSearchResults(html);

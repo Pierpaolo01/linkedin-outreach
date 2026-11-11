@@ -9,6 +9,12 @@
  * `data-testid` (name components), roles, `href` patterns, and only where
  * nothing else exists, visible wording.
  *
+ * `data-view-name` is written only into the first page a browser session loads;
+ * every later load of the same page has none (seen 2026-11-11: 94 on a first
+ * load, 0 on a later one). So a `data-view-name` hook is never the only way to
+ * find something: `componentkey` prefixes, roles, `href` patterns and document
+ * structure, all present in both variants, come with it or instead of it.
+ *
  * Wording is stored in the form `normaliseText` produces: lower case,
  * straight apostrophes, single spaces. Every capture so far is English; an
  * Italian string marked `// unverified` has not been seen on a real page.
@@ -21,28 +27,35 @@ export const listStructure = {
   search: {
     /** Seen 2026-11-11 on a people search. */
     screen: "com.linkedin.sdui.flagshipnav.search.SearchResultsPeople",
+    /** One result. Seen 2026-11-11 on first and later loads: the list holds only results. */
     row: '[role="listitem"]',
-    /** Wraps one result inside its list item. */
-    result: '[data-view-name="people-search-result"]',
-    /** The name link; its `p` also holds the degree ("• 3rd+"). */
+    /** The name link; its `p` also holds the degree ("• 3rd+"). First loads only. */
     title: '[data-view-name="search-result-lockup-title"]',
-    /** Holds the row's one action (Message, Connect, Follow, Pending). */
+    /** The name link on any load: the first link inside a paragraph (mutual-connection links come after it). Seen 2026-11-11. */
+    nameLink: "p a",
+    /** Holds the row's one action (Message, Connect, Follow, Pending). First loads only. */
     action: '[data-view-name="relationship-building-button"]',
+    /** Holds the action wrapper on any load: `componentkey="SearchResults<member id>"`. Seen 2026-11-11. */
+    actionSlot: '[componentkey^="SearchResultsACoA"]',
+    /** The generated summary under the location. Later loads add mutual-connection and follower lines after it. Seen 2026-11-11. */
+    snippet: '[componentkey^="SearchResultssnippet"], [id^="SearchResultssnippet"]',
     nextPage: '[data-testid="pagination-controls-next-button-visible"]',
   },
   connections: {
     /** Seen 2026-11-11 on My Network → Connections. */
     screen: "com.linkedin.sdui.flagshipnav.mynetwork.Connections",
-    row: '[data-view-name="connections-list"]',
+    /** One row: `componentkey="ConnectionCard_<n>-<public id>"`. Seen 2026-11-11 on first and later loads. */
+    row: '[componentkey^="ConnectionCard_"]',
     /** Two per row: the photo link (holds a `figure`) and the text link (name, headline). */
-    profileLink: '[data-view-name="connections-profile"]',
-    /** Controls whose text is not part of the card. */
-    controls: '[data-view-name="message-button"], [data-view-name="connections-remove-connection-dropdown"]',
+    profileLink: 'a[href*="/in/"]',
+    /** Controls whose text is not part of the card: the Message link and the More actions button. */
+    controls: 'a[href*="/messaging/compose/"], button',
   },
   sentInvitations: {
     /** Seen 2026-11-11 on My Network → Manage invitations → Sent → People. */
     screen: "com.linkedin.sdui.flagshipnav.mynetwork.invitations.InvitationSentWithType",
     row: '[role="listitem"]',
+    /** First loads only; on any load the control labelled "Withdraw invitation sent to …" (wording below). */
     withdraw: '[data-view-name="sent-invitations-withdraw-single"]',
   },
 } as const;

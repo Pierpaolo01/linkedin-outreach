@@ -81,7 +81,8 @@ export async function openDedicatedWindow(options: OpenOptions = {}): Promise<De
 
   const holder = profileLockHolder(profileDir);
   if (holder !== undefined) throw new ProfileInUse(profileDir, holder);
-  mkdirSync(profileDir, { recursive: true });
+  // 0700 also for the data directory itself when this runs before `npm run setup`.
+  mkdirSync(profileDir, { recursive: true, mode: 0o700 });
 
   let context: BrowserContext;
   let browser: DedicatedWindow["browser"];

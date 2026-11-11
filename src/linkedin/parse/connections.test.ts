@@ -21,7 +21,7 @@ function row({ id = "person-1", name = "Person 1", headline = "Engineer at Compa
       ${connected === null ? "" : `<p>${connected}</p>`}
     </div></div>
     <div><div>
-      <div data-view-name="message-button"><a href="/messaging/compose/?profileUrn=x" aria-label="Send a message to ${name}"><span>Message</span></a></div>
+      <div data-view-name="message-button"><a href="/messaging/compose/?profileUrn=urn%3Ali%3Afsd_profile%3AID1&amp;recipient=ACoAAmember-${id}&amp;interop=msgOverlay" aria-label="Send a message to ${name}"><span>Message</span></a></div>
       <button aria-label="More actions for ${name}" data-view-name="connections-remove-connection-dropdown"></button>
     </div></div>
   </div></div>`;
@@ -44,6 +44,7 @@ describe("parseConnections on hand-written pages", () => {
         degree: 1,
         connectedOnText: "Connected on July 13, 2026",
         connectedOn: "2026-07-13",
+        memberId: "ACoAAmember-person-1",
       },
     ]);
   });
@@ -110,6 +111,55 @@ describe("parseConnections on hand-written pages", () => {
 
   it("returns an empty list on an Italian page with no connections (wording unverified)", () => {
     expect(parseConnections(page("", { lang: "it", extra: "<p>Non hai ancora nessun collegamento</p>" }))).toEqual([]);
+  });
+});
+
+/**
+ * LinkedIn writes `data-view-name` only into the first page a browser session loads; every later
+ * load of the same page has none (seen 2026-11-11). A long-running app mostly sees later loads.
+ */
+const withoutViewNames = (html: string) => html.replaceAll(/\sdata-view-name="[^"]*"/g, "");
+
+describe("parseConnections on a later page load (no data-view-name)", () => {
+  it("reads the first-load fixture the same once every data-view-name is removed", () => {
+    const html = readFileSync(new URL("../../../fixtures/connections/recent-en.html", import.meta.url), "utf8");
+
+    expect(parseConnections(withoutViewNames(html))).toEqual(parseConnections(html));
+  });
+
+  it("reads a hand-written row with no data-view-name", () => {
+    expect(parseConnections(withoutViewNames(page(row())))).toEqual(parseConnections(page(row())));
+  });
+
+  describe("on the committed later-load fixture", () => {
+    const html = readFileSync(new URL("../../../fixtures/connections/recent-later-en.html", import.meta.url), "utf8");
+    const cards = parseConnections(html);
+
+    it("reads every connection the capture had", () => {
+      expect(cards).toHaveLength(48);
+      expect(new Set(cards.map((card) => card.publicId)).size).toBe(48);
+    });
+
+    it("gives each card its name, headline, absolute connection date and member id", () => {
+      for (const card of cards) {
+        expect(card.profileUrl).toBe(`https://www.linkedin.com/in/${card.publicId}/`);
+        expect(card.publicId).toMatch(/^person-\d+$/);
+        expect(card.fullName).toMatch(/^Person \d+$/);
+        expect(card.headline).not.toBeNull();
+        expect(card.degree).toBe(1);
+        expect(card.connectedOnText).toMatch(/^Connected on /);
+        expect(card.connectedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(card.memberId).toMatch(/^ACoAAmember\d+$/);
+      }
+      expect(new Set(cards.map((card) => card.memberId)).size).toBe(48);
+    });
+
+    it("keeps LinkedIn's recently-added order", () => {
+      const dates = cards.map((card) => card.connectedOn ?? "");
+
+      expect(dates[0]).toBe("2026-07-13");
+      expect([...dates].sort().reverse()).toEqual(dates);
+    });
   });
 });
 
