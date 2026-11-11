@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: hand-written in the markup shape of the real messaging page.
+     A conversation is open with nobody having written yet (new conversation). Names and ids are invented. -->
+<html lang="en" class="theme theme--mercado artdeco osx">
+<head><title>Messaging | LinkedIn</title></head>
+<body>
+<header id="global-nav" class="global-nav">
+  <nav class="global-nav__nav"><ul class="global-nav__primary-items">
+    <li class="global-nav__primary-item global-nav__me">
+      <button class="global-nav__primary-link global-nav__primary-link-me-menu-trigger" type="button">
+        <img width="24" height="24" alt="Ada Example" class="global-nav__me-photo evi-image ember-view">
+        <span class="global-nav__primary-link-text">Me</span>
+      </button>
+    </li>
+  </ul></nav>
+</header>
+<main class="scaffold-layout__main">
+  <div class="msg-conversations-container">
+    <ul class="list-style-none msg-conversations-container__conversations-list"></ul>
+  </div>
+  <div class="msg-convo-wrapper msg-thread msg-thread--pillar">
+    <div class="relative display-flex flex-column flex-grow-1">
+      <div class="msg-title-bar global-title-container shared-title-bar">
+        <div class="shared-title-bar__title msg-title-bar__title-bar-title">
+          <a class="msg-thread__link-to-profile" title="Open Gina Prova’s profile" href="https://www.linkedin.com/in/ACoAAPARTICIPANT0000000000000000000000004">
+            <div class="msg-entity-lockup truncate"><dl class="truncate">
+              <dt class="msg-entity-lockup__entity-title-wrapper"><h2 class="msg-entity-lockup__entity-title truncate pr2 hoverable-link-text">Gina Prova</h2></dt>
+              <dd class="msg-entity-lockup__entity-info truncate">Example headline</dd>
+            </dl></div>
+          </a>
+        </div>
+      </div>
+      <div class="msg-s-message-list-container relative display-flex mbA">
+        <div class="msg-s-message-list full-width scrollable">
+          <ul class="msg-s-message-list-content list-style-none full-width mbA">
+            <li class="msg-s-message-list__top-of-list"></li>
+            <li class="msg-s-message-list__bottom-of-list"></li>
+          </ul>
+        </div>
+      </div>
+      <form class="msg-form msg-form--thread-footer-feature">
+        <div class="msg-form__contenteditable" contenteditable="true" role="textbox" aria-label="Write a message…"><p><br></p></div>
+        <button class="msg-form__send-button artdeco-button" disabled type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+</main>
+</body>
+</html>
