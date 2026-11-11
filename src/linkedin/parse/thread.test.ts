@@ -126,6 +126,31 @@ describe("the real messaging page (scrubbed capture, English)", () => {
   });
 });
 
+describe("a real two-way conversation (scrubbed capture, English)", () => {
+  // Saved 2026-11-11: an InMail the participant started and the user answered, opened from the messaging page.
+  const html = fixture("two-way-en.html");
+
+  it("attributes every message to the user or the participant, both of whom wrote", () => {
+    const { messages } = parseThread(html);
+
+    expect(messages.map((m) => (m.sender === "user" ? "u" : "p")).join("")).toBe("pupupupupuppuupp");
+    expect(new Set(messages.filter((m) => m.sender === "user").map((m) => m.senderName))).toEqual(new Set(["Person 2"]));
+    expect(new Set(messages.filter((m) => m.sender === "participant").map((m) => m.senderName))).toEqual(new Set(["Person 1"]));
+    expect(messages.every((m) => m.text !== "")).toBe(true);
+  });
+
+  it("reads the participant, the InMail subject on the first message and the one absolute date", () => {
+    const thread = parseThread(html);
+
+    expect(thread.kind).toBe("inmail");
+    expect(thread.participant).toMatchObject({ fullName: "Person 1", publicId: "person-1" });
+    expect(thread.messages[0]?.subject).not.toBeNull();
+    expect(thread.messages.slice(1).every((m) => m.subject === null)).toBe(true);
+    expect(thread.messages[0]?.sentAt).toBeInstanceOf(Date);
+    expect(thread.messages.slice(1).every((m) => m.sentAt === null)).toBe(true);
+  });
+});
+
 describe("parseThread refuses to guess", () => {
   const twoWay = fixture("synthetic-two-way-en.html");
   const USER_ID = "ACoAAUSER00000000000000000000000000000001";

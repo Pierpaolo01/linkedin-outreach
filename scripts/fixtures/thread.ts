@@ -1,8 +1,9 @@
 /**
- * `npx tsx scripts/fixtures/thread.ts`
+ * `npx tsx scripts/fixtures/thread.ts [<capture> <fixture>]`
  *
- * Turns the messaging capture (real people's private messages, git-ignored) into a committed fixture:
- * `captures/messaging.html` → `fixtures/messaging/inbox-inmail-en.html`.
+ * Turns a messaging capture (real people's private messages, git-ignored) into a committed fixture:
+ * by default `captures/messaging.html` → `fixtures/messaging/inbox-inmail-en.html`; also
+ * `captures/inv-thread-direct.html` → `fixtures/messaging/two-way-en.html`.
  *
  * The parsers find the sensitive strings: every name in the list and the open conversation, the
  * user's own name ("Me" menu), the participant's headline, InMail subjects, message bodies and
@@ -22,8 +23,8 @@ import { thread as threadSelectors } from "../../src/linkedin/parse/selectors.th
 import { parseConversationList, parseThread, type ConversationSummary, type Thread } from "../../src/linkedin/parse/thread";
 import { scrubHtml, type Sensitive } from "../../src/linkedin/scrub";
 
-const CAPTURE = "captures/messaging.html";
-const FIXTURE = "fixtures/messaging/inbox-inmail-en.html";
+/** Defaults to the inbox capture; `npx tsx scripts/fixtures/thread.ts <capture> <fixture>` scrubs another one. */
+const [CAPTURE = "captures/messaging.html", FIXTURE = "fixtures/messaging/inbox-inmail-en.html"] = process.argv.slice(2);
 /** Shorter text-node fragments are words or punctuation, not sentences; replacing them would also hit interface wording. */
 const MIN_FRAGMENT = 8;
 /** Sentences of a message body shorter than this are not checked on their own ("Hi X,"). */
@@ -106,6 +107,16 @@ function decodeEntities(value: string): string {
     .replace(/&amp;/g, "&");
 }
 
+/** Some attribute copies are encoded twice (`&amp;#39;`), so decode until nothing changes. */
+function decodeFully(value: string): string {
+  let previous = value;
+  for (;;) {
+    const next = decodeEntities(previous);
+    if (next === previous) return next;
+    previous = next;
+  }
+}
+
 /**
  * LinkedIn repeats a whole message body, flattened, inside attributes (the hidden "Options for the
  * message from <name>: <body>" label of each message). Flattening joins list items and lines in ways no
@@ -116,7 +127,7 @@ function blankBodyCopies(html: string, fragments: readonly string[]): { html: st
   const needles = fragments.map(fold).filter((needle) => needle.length >= MIN_FRAGMENT);
   let blanked = 0;
   const out = html.replace(/(\s[^\s"'>/=]+\s*=\s*")([^"]*)(")/g, (whole, start: string, raw: string, end: string) => {
-    const value = decodeEntities(raw).replace(/\s+/g, " ");
+    const value = decodeFully(raw).replace(/\s+/g, " ");
     const lower = fold(value);
     const at = Math.min(...needles.map((needle) => lower.indexOf(needle)).filter((index) => index >= 0));
     if (!Number.isFinite(at)) return whole;
@@ -156,7 +167,8 @@ function readable(html: string): { withTags: string; withoutTags: string } {
       .replace(/&amp;/g, "&")
       .replace(/[‘’ʼ]/g, "'")
       .replace(/[“”]/g, '"');
-  const fold = (value: string) => decode(value).toLowerCase().replace(/\s+/g, " ");
+  // Twice: LinkedIn encodes some attribute copies twice (`&amp;#39;`).
+  const fold = (value: string) => decode(decode(value)).toLowerCase().replace(/\s+/g, " ");
   return { withTags: fold(html), withoutTags: fold(html.replace(/<[^>]*>/g, " ")) };
 }
 
