@@ -4,7 +4,7 @@ import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { ActionError, Announce, EmptyState, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
+import { ActionError, Announce, DEF_LIST, DEF_TERM, EmptyState, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
 import { IconChevron, IconExternal } from "../icons";
 import { tabTitle } from "../format";
 import { Link } from "../router";
@@ -292,7 +292,7 @@ function ProspectRow(props: {
       </td>
       <td role="cell" className={`whitespace-nowrap ${STACK_CELL} @max-people:col-start-1 @max-people:row-start-2`}>
         <span data-testid="prospect-stage">
-          <StageWords stage={p.stage} extra={stopped} />
+          <StageWords stage={p.stage} extra={stopped} replied={p.stopReason === "replied"} />
         </span>
       </td>
       <td role="cell" className={`${STACK_CELL} @max-people:col-start-3 @max-people:row-start-1 @max-people:self-start`}>
@@ -336,11 +336,14 @@ function ProspectRow(props: {
   );
 }
 
-/** Stages that wait on the user lead the column; stages where the sequence is over step back. */
+/**
+ * Stages that wait on the user lead the column; stages where the sequence is over step back, except a sequence
+ * stopped because the person replied: that is the outcome the campaign is for, so it stays in Ink.
+ */
 const WAITING_STAGES: ReadonlySet<Stage> = new Set<Stage>(["pending_approval", "needs_review"]);
 const CLOSED_STAGES: ReadonlySet<Stage> = new Set<Stage>(["rejected", "withdrawn", "stopped", "completed"]);
 
-function StageWords({ stage, extra }: { readonly stage: Stage; readonly extra: string }) {
+function StageWords({ stage, extra, replied }: { readonly stage: Stage; readonly extra: string; readonly replied: boolean }) {
   if (WAITING_STAGES.has(stage)) {
     return (
       <span className="inline-flex items-center gap-1.5 font-medium">
@@ -351,7 +354,7 @@ function StageWords({ stage, extra }: { readonly stage: Stage; readonly extra: s
     );
   }
   return (
-    <span className={CLOSED_STAGES.has(stage) ? "text-muted" : ""}>
+    <span className={CLOSED_STAGES.has(stage) && !(stage === "stopped" && replied) ? "text-muted" : ""}>
       {stageWords(stage)}
       {extra}
     </span>
@@ -493,18 +496,18 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
               {campaign.status === "draft" ? "A draft is changed in its setup steps." : `A${campaign.status === "archived" ? "n archived" : " finished"} campaign cannot be changed.`}
             </p>
           )}
-          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[12rem_minmax(0,1fr)]">
-            <dt className="text-muted">Invite note</dt>
+          <dl className={`${DEF_LIST} text-sm sm:grid-cols-[12rem_minmax(0,1fr)]`} data-testid="messages-list">
+            <dt className={`${DEF_TERM} text-muted`}>Invite note</dt>
             <dd className="whitespace-pre-line">{campaign.inviteNote === null || campaign.inviteNote === "" ? <span className="text-muted">No note</span> : campaign.inviteNote}</dd>
-            <dt className="text-muted">First message</dt>
+            <dt className={`${DEF_TERM} text-muted`}>First message</dt>
             <dd className="whitespace-pre-line">{campaign.firstMessage === "" ? <span className="text-muted">Not written</span> : campaign.firstMessage}</dd>
-            <dt className="text-muted">Follow-up</dt>
+            <dt className={`${DEF_TERM} text-muted`}>Follow-up</dt>
             <dd className="whitespace-pre-line" data-testid="current-follow-up">
               {campaign.followUp === "" ? <span className="text-muted">No follow-up</span> : campaign.followUp}
             </dd>
-            <dt className="text-muted">AI-written line</dt>
+            <dt className={`${DEF_TERM} text-muted`}>AI-written line</dt>
             <dd>{campaign.aiPersonalise ? "On" : "Off"}</dd>
-            <dt className="text-muted">Waits</dt>
+            <dt className={`${DEF_TERM} text-muted`}>Waits</dt>
             <dd>
               First message {campaign.acceptToMessageMinHours} to {campaign.acceptToMessageMaxHours} hours after they accept; follow-up{" "}
               {campaign.followUpDelayMinHours} to {campaign.followUpDelayMaxHours} hours after that; {POLICY_WORDS[campaign.delayPolicy]}. Unaccepted

@@ -23,8 +23,8 @@ colors:
   base-300: "#dce0d8"
   base-content: "#1d2521"
   score-high: "#d5e8dc"
-  score-mid: "#f6e3bb"
-  score-mid-content: "#5c3f07"
+  score-mid: "#dce0d8"
+  score-low-edge: "#dce0d8"
 typography:
   display:
     fontFamily: "Seravek, Avenir Next, system-ui, sans-serif"
@@ -137,11 +137,12 @@ components:
     size: "2.5rem"
   score-chip-mid:
     backgroundColor: "{colors.score-mid}"
-    textColor: "{colors.score-mid-content}"
+    textColor: "{colors.base-content}"
     rounded: "{rounded.field}"
     size: "2.5rem"
   score-chip-low:
-    backgroundColor: "{colors.base-200}"
+    backgroundColor: "{colors.base-100}"
+    borderColor: "{colors.score-low-edge}"
     textColor: "{colors.base-content}"
     rounded: "{rounded.field}"
     size: "2.5rem"
@@ -217,12 +218,12 @@ A green-grey neutral family with one deep green for action, one amber for waitin
 
 ### Neutral
 - **Desk Paper** (`base-100`, #f7f8f5): the page, cards, inputs and outlined buttons.
-- **Sidebar Sage** (`base-200`, #edefea): the sidebar, filter toolbars, the usage panel, the variables panel, code blocks, the low score chip, skeletons, and (at 60%) the open or focused row.
-- **Hairline Sage** (`base-300`, #dce0d8): every border and divider, the track of a meter, the idle step number in the wizard.
+- **Sidebar Sage** (`base-200`, #edefea): the sidebar, filter toolbars, the usage panel, the variables panel, code blocks, skeletons, and (at 60%) the open or focused row.
+- **Hairline Sage** (`base-300`, #dce0d8): every border and divider, the track of a meter, the idle step number in the wizard, and the mid score chip (Score Sage).
 - **Ink** (`base-content`, #1d2521): all text. Secondary lines use it at 65% opacity and lead paragraphs under a page title at 75%.
 - **Dark Moss** (`neutral`, #26302b, with `neutral-content` #f2f4f0): the selected state. The current sidebar item, the current wizard step, the chosen segment in a filter, a working day that is on, and the dot of a draft, paused, completed or archived campaign.
 - **Score Mint** (`score-high`, #d5e8dc) with Desk Green text: the chip of a score of 7 or more; also the "Nothing needs you" tile and a passed AI test.
-- **Score Sand** (`score-mid`, #f6e3bb) with `score-mid-content` (#5c3f07) text: the chip of a score from 5 to under 7.
+- **Score Sage** (`score-mid`, #dce0d8, the Hairline Sage value) with Ink text (11.72:1): the chip of a score from 5 to under 7. Not amber: amber means "waits for you". Below 5, or not scored, the chip is Desk Paper inside a Hairline Sage edge with Ink text (14.71:1); never red.
 
 ### Status map
 | Meaning | Colour | Form |
@@ -234,7 +235,7 @@ A green-grey neutral family with one deep green for action, one amber for waitin
 | Campaign stopped by a safety stop; session checkpoint or restricted | Stop Red | dot + words |
 | Budget with room | Desk Green | meter fill |
 | Budget spent ("Budget spent, resumes …") | Waiting Amber | full meter + sentence |
-| Score 7 to 10 / 5 to under 7 / under 5 or not scored | Score Mint / Score Sand / Sidebar Sage | square chip with the number |
+| Score 7 to 10 / 5 to under 7 / under 5 or not scored | Score Mint / Score Sage / Desk Paper with a Hairline Sage edge | square chip with the number |
 | Safety stop | Stop Red | full-width banner + red session card |
 
 ### Named Rules
@@ -322,7 +323,7 @@ Built on daisyUI's button, mostly at the small size (2rem high, 0.875rem, 600); 
 ### Badges and chips
 - **Count badge:** small amber pill with a tabular number at 600, at the right of "Approval queue" and "Needs review" in the sidebar. Hidden at zero.
 - **Count tile:** a 2.75rem amber square (8px radius) with the number at 1.25rem, 600, opening each row of "Needs you". When nothing waits, the tile is Score Mint with a green check.
-- **Score chip:** a square with the score, 600, tabular. 2.5rem in the approval queue, 1.75rem in a campaign's people table. Mint for 7 and up, sand for 5 to under 7, Sidebar Sage with faded ink below 5 or when not scored.
+- **Score chip:** a square with the score, 600, tabular. 2.5rem in the approval queue, 1.75rem in a campaign's people table. Mint for 7 and up, Score Sage for 5 to under 7, an outline (Desk Paper, Hairline Sage edge, Ink) below 5 or when not scored: filled to empty, never amber or red.
 - **Status dot:** daisyUI's small status circle in the colour from the status map, always followed by its label.
 - **Do not contact:** a small borderless badge, Stop Red text on Stop Red at 15%.
 - **Key cap:** daisyUI's extra-small `kbd` for A, R and the arrow keys.

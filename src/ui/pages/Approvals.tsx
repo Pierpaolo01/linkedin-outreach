@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { approveAll, approveProspect, listApprovals, rejectProspect, toApiError } from "../api";
-import type { ApprovalItem, Evidence, Person, PreviewText } from "../apiSchemas";
+import { approveAll, approveProspect, listApprovals, listCampaigns, rejectProspect, toApiError } from "../api";
+import type { ApprovalItem, Campaign, Evidence, PreviewText } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatScore, plural } from "../format";
-import { ActionError, Announce, CampaignSelect, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
+import { filledSegments } from "../filled";
+import { ActionError, Announce, CampaignSelect, Disclosure, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -18,6 +19,9 @@ const SCORE_STEPS = [0, 5, 6, 7, 8] as const;
 const COLUMNS = "@queue:grid-cols-[3.25rem_minmax(12rem,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_8.75rem]";
 
 type Decision = "approve" | "reject";
+/** A campaign's three templates, where the texts in the queue were filled from. */
+type Templates = Pick<Campaign, "inviteNote" | "firstMessage" | "followUp">;
+const NO_TEMPLATES: ReadonlyMap<number, Templates> = new Map();
 /** A decided row folding away, and the row it sat above when it was decided (none when it was last). */
 type Leaving = { readonly item: ApprovalItem; readonly before: number | undefined };
 
@@ -26,10 +30,20 @@ export function Approvals() {
   const { home, refresh } = useAppData();
   const [minScore, setMinScore] = useState<number>(0);
   const [campaignId, setCampaignId] = useState<number | null>(null);
+  // The campaigns' templates come with the list, so the filled-in values are set apart from the first draw. Without
+  // them (a failed load) the texts show plain, never guessed.
   const loaded = useLoad(
-    () => listApprovals({ campaignId, minScore: minScore === 0 ? null : minScore, pageSize: 200 }),
+    () =>
+      Promise.all([
+        listApprovals({ campaignId, minScore: minScore === 0 ? null : minScore, pageSize: 200 }),
+        listCampaigns().then(
+          ({ campaigns }) => new Map(campaigns.map((c) => [c.id, { inviteNote: c.inviteNote, firstMessage: c.firstMessage, followUp: c.followUp }] as const)),
+          () => NO_TEMPLATES,
+        ),
+      ]).then(([page, templates]) => ({ ...page, templates })),
     `${campaignId ?? "all"}|${minScore}`,
   );
+  const templates = loaded.data?.templates ?? NO_TEMPLATES;
   /** Rows decided (or being decided) on this visit: they leave the list at once. */
   const [gone, setGone] = useState<ReadonlySet<number>>(new Set());
   /**
@@ -190,7 +204,7 @@ export function Approvals() {
       }}
     >
       <div className="min-h-0 overflow-hidden">
-        <Row item={item} showCampaign={campaignId === null} error={undefined} leaving />
+        <Row item={item} templates={templates.get(item.campaignId)} showCampaign={campaignId === null} error={undefined} leaving />
       </div>
     </div>
   );
@@ -304,6 +318,7 @@ export function Approvals() {
                 {ghostsBefore(item.id)}
                 <Row
                   item={item}
+                  templates={templates.get(item.campaignId)}
                   showCampaign={campaignId === null}
                   error={rowErrors.get(item.id)}
                   onDecide={(decision) => decide(item, decision)}
@@ -353,6 +368,7 @@ export function Approvals() {
 
 function Row({
   item,
+  templates,
   showCampaign,
   error,
   onDecide,
@@ -361,6 +377,8 @@ function Row({
   leaving = false,
 }: {
   readonly item: ApprovalItem;
+  /** Undefined until known: the texts then show without the filled-in values set apart. */
+  readonly templates: Templates | undefined;
   readonly showCampaign: boolean;
   readonly error: string | undefined;
   readonly onDecide?: (decision: Decision) => void;
@@ -403,9 +421,9 @@ function Row({
         <EvidenceLines industry={person.industryEvidence} size={person.sizeEvidence} aiLine={item.aiLineEvidence ?? null} />
       </div>
       <div role="cell" className="col-span-2 flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm text-base-content @queue:col-span-1">
-        {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} person={person} />}
-        <Text label="First message, after they accept" text={item.preview.firstMessage} person={person} />
-        <FollowUp text={item.followUpPreview} person={person} />
+        {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} template={templates?.inviteNote ?? undefined} />}
+        <Text label="First message, after they accept" text={item.preview.firstMessage} template={templates?.firstMessage} />
+        <FollowUp text={item.followUpPreview} template={templates?.followUp} />
       </div>
       <div role="cell" className="col-span-2 flex items-start gap-2 @queue:col-span-1 @queue:flex-col @queue:items-stretch">
         <button type="button" className="btn btn-sm flex-1 border-primary/50 bg-base-100 text-primary hover:not-disabled:bg-base-200 @queue:flex-none" onClick={() => onDecide?.("approve")}>
@@ -428,37 +446,37 @@ function Row({
   );
 }
 
-/** The person's own values that a text's variables are filled from (the AI line is not sent with the queue). */
-function filledValues(person: Person): readonly string[] {
-  const values = [person.firstName, person.company, person.title, person.location, person.industryEvidence?.value ?? null];
-  return [...new Set(values.flatMap((v) => (v === null || v.trim().length < 2 ? [] : [v.trim()])))].sort((a, b) => b.length - a.length);
-}
-
-/** A text as it will be sent, with the values filled in for this person at 500, so the fixed words and the personal ones read apart. */
-function Filled({ text, person }: { readonly text: string; readonly person: Person }) {
-  const values = filledValues(person);
-  if (values.length === 0) return <>{text}</>;
-  const escaped = values.map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const pattern = new RegExp(`(${escaped.join("|")})`, "g");
-  const parts: ReactNode[] = text.split(pattern).map((part, i) =>
-    i % 2 === 1 ? (
-      <span key={i} className="font-medium">
-        {part}
-      </span>
-    ) : (
-      part
-    ),
+/**
+ * A text as it will be sent, with the words its variables filled in for this person at 500, so the fixed words and the
+ * personal ones read apart. Read from the template's `{{variable}}` positions (`filledSegments`), so a fixed word that
+ * happens to equal one of the person's values stays plain. Plain throughout when the template is unknown or the text
+ * does not follow it.
+ */
+function Filled({ text, template }: { readonly text: string; readonly template: string | undefined }) {
+  const segments = template === undefined ? null : filledSegments(template, text);
+  if (segments === null) return <>{text}</>;
+  return (
+    <>
+      {segments.map((segment, i) =>
+        segment.filled ? (
+          <span key={i} className="font-medium">
+            {segment.text}
+          </span>
+        ) : (
+          segment.text
+        ),
+      )}
+    </>
   );
-  return <>{parts}</>;
 }
 
-function Text({ label, text, person }: { readonly label: string; readonly text: PreviewText; readonly person: Person }) {
+function Text({ label, text, template }: { readonly label: string; readonly text: PreviewText; readonly template: string | undefined }) {
   return (
     <div>
       <p className="text-caption text-muted">{label}</p>
       {text.ok ? (
-        <p className="whitespace-pre-line">
-          <Filled text={text.text} person={person} />
+        <p className="whitespace-pre-line" data-testid="sent-text">
+          <Filled text={text.text} template={template} />
         </p>
       ) : (
         <Notice tone="waits" className="text-base-content">
@@ -472,7 +490,7 @@ function Text({ label, text, person }: { readonly label: string; readonly text: 
 const FOLLOW_UP_LABEL = "Follow-up, if they do not reply";
 
 /** The follow-up, folded away to keep the row short; open at once when it cannot be written. */
-function FollowUp({ text, person }: { readonly text: PreviewText | null; readonly person: Person }) {
+function FollowUp({ text, template }: { readonly text: PreviewText | null; readonly template: string | undefined }) {
   if (text === null) {
     return (
       <div>
@@ -481,14 +499,17 @@ function FollowUp({ text, person }: { readonly text: PreviewText | null; readonl
       </div>
     );
   }
-  if (!text.ok) return <Text label={FOLLOW_UP_LABEL} text={text} person={person} />;
+  if (!text.ok) return <Text label={FOLLOW_UP_LABEL} text={text} template={template} />;
   return (
-    <details data-testid="follow-up">
-      <summary className="-my-2 cursor-pointer py-2 text-caption text-muted hover:text-base-content max-lg:-my-3.25 max-lg:py-3.25">{FOLLOW_UP_LABEL}</summary>
-      <p className="mt-0.5 whitespace-pre-line">
-        <Filled text={text.text} person={person} />
+    <Disclosure
+      testId="follow-up"
+      summary={FOLLOW_UP_LABEL}
+      summaryClassName="-my-2 py-2 text-caption text-muted hover:text-base-content max-lg:-my-3.25 max-lg:py-3.25"
+    >
+      <p className="mt-0.5 whitespace-pre-line" data-testid="sent-text">
+        <Filled text={text.text} template={template} />
       </p>
-    </details>
+    </Disclosure>
   );
 }
 

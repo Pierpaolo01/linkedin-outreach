@@ -1,9 +1,9 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { backUpNow, getOps, prospectsCsvUrl, testAi, toApiError, updateSettings } from "../api";
 import { AI_PROVIDERS, type AiProvider, type AiTest, type BackupResult, type Ops, type Settings as SettingsData, type SettingsPatch } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatWhen } from "../format";
-import { ActionError, Announce, describedByError, errorProps, FieldError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
+import { ActionError, Announce, describedByError, Disclosure, errorProps, FieldError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
 import { sessionView } from "../shell/sessionView";
 import { useRecheck } from "../shell/useRecheck";
 import { useLoad, type Loaded } from "../useLoad";
@@ -133,6 +133,21 @@ const PROVIDER_LABEL: Readonly<Record<AiProvider, string>> = {
 /** The id of a setting's control (or of a group's error line), from its path: "limits.invitesPerDay" is "setting-limits-invitesPerDay". */
 const fieldId = (path: string) => `setting-${path.replaceAll(".", "-")}`;
 
+/**
+ * Moves the focus to the first control the form marked, and brings it to the middle of the window (clear of the sticky
+ * save bar). Found from the first error line: the control that points at it (`aria-describedby`), or the first control
+ * of a group (a fieldset) that does.
+ */
+function focusFirstError(form: HTMLElement) {
+  const line = form.querySelector<HTMLElement>('[data-testid="field-error"][id]');
+  if (line === null) return;
+  const owner = form.querySelector<HTMLElement>(`[aria-describedby~="${CSS.escape(line.id)}"]`);
+  const control = owner?.matches("input, select, textarea, button") === true ? owner : owner?.querySelector<HTMLElement>("input, select, textarea, button");
+  if (control === null || control === undefined) return;
+  control.focus({ preventScroll: true });
+  control.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+}
+
 // ------------------------------------------------------------ the page
 
 export function Settings() {
@@ -160,6 +175,12 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
   const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string } | undefined>(undefined);
   const ops = useLoad(getOps, "ops");
   const ids = { zone: useId(), start: useId(), end: useId(), model: useId(), provider: useId(), warm: useId(), awake: useId() };
+  /** How many saves were refused with marked fields: each one moves the focus to the first of them, once they show. */
+  const [refusals, setRefusals] = useState(0);
+  const fields = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (refusals > 0 && fields.current !== null) focusFirstError(fields.current);
+  }, [refusals]);
 
   const pending = toPatch(form, base);
   const dirty = Object.keys(pending.patch).length > 0 || Object.keys(pending.errors).length > 0;
@@ -177,6 +198,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
     if (Object.keys(built.errors).length > 0) {
       setErrors(built.errors);
       setResult({ ok: false, text: "Some settings need attention. They are marked." });
+      setRefusals((n) => n + 1);
       return;
     }
     setSaving(true);
@@ -193,6 +215,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         const error = toApiError(failure);
         setErrors(Object.fromEntries(Object.entries(error.fields).map(([path, message]) => [path, words(message)])));
         setResult({ ok: false, text: Object.keys(error.fields).length > 0 ? "Nothing was saved: some settings are not valid. They are marked." : error.message });
+        if (Object.keys(error.fields).length > 0) setRefusals((n) => n + 1);
       })
       .finally(() => setSaving(false));
   };
@@ -227,7 +250,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
     <>
       <PageHeader title="Settings" lead="These apply to the whole app and to every campaign." />
 
-      <div className="flex max-w-3xl flex-col gap-section pb-4">
+      <div ref={fields} className="flex max-w-3xl flex-col gap-section pb-4">
         <Group title="How the app works on LinkedIn">
           <LinkedInWindow />
 
@@ -412,7 +435,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
           </Section>
         </Group>
 
-        <Group title="This Mac">
+        <Group title="The app on this Mac">
           <Section title="Keep the Mac awake" lead="A Mac that sleeps stops the app. This keeps it awake only when there is work to do.">
             <SwitchRow
               id={ids.awake}
@@ -790,9 +813,13 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
 /** Terminal commands and paths, folded away: they are for the user's AI coding tool, not for reading. */
 function ForYourAiTool({ children, testId }: { readonly children: ReactNode; readonly testId?: string }) {
   return (
-    <details className="mt-block text-sm" data-testid={testId}>
-      <summary className="-my-2 cursor-pointer py-2 text-muted hover:text-base-content max-lg:-my-3 max-lg:py-3">For your AI coding tool</summary>
+    <Disclosure
+      className="mt-block text-sm"
+      testId={testId}
+      summary="For your AI coding tool"
+      summaryClassName="-my-2 py-2 text-muted hover:text-base-content max-lg:-my-3 max-lg:py-3"
+    >
       <div className="mt-2">{children}</div>
-    </details>
+    </Disclosure>
   );
 }

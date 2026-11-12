@@ -17,6 +17,20 @@ const TEST_PNG =
 
 const sidebar = (page: Page) => page.getByRole("complementary", { name: "Sidebar" });
 
+/** The baseline of each element's first line: the top of an empty inline-block put at its start (its bottom edge sits on the baseline). */
+async function baselines(locator: ReturnType<Page["locator"]>): Promise<number[]> {
+  return locator.evaluateAll((elements) =>
+    elements.map((element) => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+      element.prepend(probe);
+      const top = probe.getBoundingClientRect().top;
+      probe.remove();
+      return top;
+    }),
+  );
+}
+
 async function badge(page: Page, which: "approvals" | "review"): Promise<number> {
   const locator = page.getByTestId(`count-${which}`);
   await expect(locator).toBeVisible();
@@ -88,8 +102,23 @@ test("the approval queue shows each follow-up folded under the first message, or
   const first = rows.first().getByTestId("follow-up");
   const text = first.locator("p");
   await expect(text).toBeHidden();
+  // The disclosure draws the app's chevron, not the browser's triangle, and turns it when open.
+  const summary = first.locator("summary");
+  await expect(summary).toHaveCSS("list-style-type", "none");
+  const chevron = summary.locator("svg");
+  await expect(chevron).toHaveCount(1);
+  await expect(chevron).not.toHaveCSS("rotate", "90deg");
   await first.getByText("Follow-up, if they do not reply").click();
   await expect(text).toBeVisible();
+  await expect(chevron).toHaveCSS("rotate", "90deg");
+
+  // Only what a variable filled in is set at 500: the invite note's "{{first_name}}", never the user's own "in Rome".
+  const note = rows.first().getByTestId("sent-text").first();
+  await expect(note).toContainText("I work with independent hotels in Rome and would like to connect.");
+  await expect(note.locator(".font-medium")).toHaveCount(1);
+  const message = rows.first().getByTestId("sent-text").nth(1);
+  await expect(message.locator(".font-medium")).toHaveCount(2);
+  await expect(message.locator(".font-medium").first()).toHaveText(await note.locator(".font-medium").innerText());
   await expect(text).toContainText("just checking whether my last message reached you.");
   await expect(rows.filter({ hasText: "No follow-up" })).toHaveCount(0);
 
@@ -478,6 +507,24 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
   const detailRight = await page.getByTestId("prospect-detail").evaluate((detail) => detail.getBoundingClientRect().right - window.innerWidth);
   expect(detailRight, "an opened person's texts run past the screen").toBeLessThanOrEqual(0);
 
+  // A person who replied is the best outcome: in Ink, while a rejected person steps back in the muted tone.
+  const stageColour = (name: string) => page.getByTestId("prospect-row").filter({ hasText: name }).getByTestId("prospect-stage").locator("span").first();
+  await expect(stageColour("Hotel Navona Test")).toHaveText("Stopped (they replied)");
+  await expect(stageColour("Hotel Navona Test")).toHaveCSS("color", INK);
+  await expect(stageColour("Catena Alberghiera Esempio")).not.toHaveCSS("color", INK);
+
+  // Messages and timings, stacked: each label sits 2px over its value, and 12px under the value before it.
+  const pairs = await page
+    .getByTestId("messages-list")
+    .evaluate((list) => [...list.children].map((child) => ({ tag: child.tagName, top: child.getBoundingClientRect().top, bottom: child.getBoundingClientRect().bottom })));
+  for (const [index, item] of pairs.entries()) {
+    const next = pairs[index + 1];
+    if (next === undefined) continue;
+    const gap = next.top - item.bottom;
+    if (item.tag === "DT") expect(Math.abs(gap - 2), "a label is not 2px over its value").toBeLessThanOrEqual(1);
+    else expect(Math.abs(gap - 12), "a value is not 12px over the next label").toBeLessThanOrEqual(1);
+  }
+
   // Stats: one block per campaign, nothing hidden sideways.
   await page.goto("/stats");
   await expect(page.getByTestId("stats-row").first().getByText("Median time to accept", { exact: true })).toBeVisible();
@@ -490,6 +537,11 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
     .getByRole("cell")
     .evaluateAll((cells) => cells.slice(0, 2).map((cell) => cell.children[1]?.getBoundingClientRect().top ?? Number.NaN));
   expect(Math.abs((valueTops[0] ?? 0) - (valueTops[1] ?? Infinity)), "the values of a pair of measures sit at different heights").toBeLessThanOrEqual(1);
+  // A large figure and the small sentence or count beside it share a baseline.
+  const hotelValues = await baselines(page.getByTestId("stats-row").filter({ hasText: "Hotel owners, Rome" }).getByTestId("stat-value"));
+  expect(hotelValues).toHaveLength(4);
+  expect(Math.abs((hotelValues[0] ?? 0) - (hotelValues[1] ?? Infinity)), "the first pair of values is off the baseline").toBeLessThanOrEqual(0.5);
+  expect(Math.abs((hotelValues[2] ?? 0) - (hotelValues[3] ?? Infinity)), "the second pair of values is off the baseline").toBeLessThanOrEqual(0.5);
 
   // Activity: the Campaign filter's label and its select wrap to a line together.
   await page.goto("/activity");
@@ -609,6 +661,18 @@ test("phone width: the menu is a modal; Escape and the overlay close it and give
   await expect(nav).toBeHidden();
   await expect(button).toBeFocused();
 
+  // A touch screen reader has a labelled control inside the menu to close it: a 44px "Close menu" button.
+  await button.click();
+  await expect(nav).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Home" })).toBeFocused();
+  const close = sidebar(page).getByRole("button", { name: "Close menu" });
+  const closeBox = await close.boundingBox();
+  expect(closeBox?.width ?? 0, "Close menu is too small to tap").toBeGreaterThanOrEqual(44);
+  expect(closeBox?.height ?? 0, "Close menu is too small to tap").toBeGreaterThanOrEqual(44);
+  await close.click();
+  await expect(nav).toBeHidden();
+  await expect(button).toBeFocused();
+
   await button.click();
   await expect(nav).toBeVisible();
   // The overlay is the strip to the right of the 16rem menu.
@@ -618,6 +682,21 @@ test("phone width: the menu is a modal; Escape and the overlay close it and give
 });
 
 test("the safety-stop banner says what to do, and Resume asks first", async ({ page }) => {
+  // The log's stop line leads with "Safety stop:" and no "Error:" before it; a red dot marks it, and a warning line a ring.
+  await page.goto(appUrl("stop", "/activity"));
+  const stopLine = page.getByTestId("activity-line").filter({ hasText: "Safety stop:" });
+  await expect(stopLine).toHaveCount(1);
+  await expect(stopLine).not.toContainText("Error:");
+  await expect(stopLine.getByTestId("level-mark")).toHaveClass(/status-error/);
+  const warning = page.locator('[data-testid="activity-line"][data-level="warning"]').first();
+  await expect(warning.getByTestId("level-mark")).toHaveClass(/status-hollow/);
+  await expect(page.locator('[data-testid="activity-line"][data-level="info"]').first().getByTestId("level-mark")).toHaveCount(0);
+  // An info line's text starts where a warning line's does.
+  const starts = await page
+    .getByTestId("activity-line")
+    .evaluateAll((lines) => [...new Set(lines.map((line) => Math.round(line.children[1]?.getBoundingClientRect().left ?? Number.NaN)))]);
+  expect(starts, "the log lines' texts do not start at one edge").toHaveLength(1);
+
   await page.goto(appUrl("stop"));
 
   const banner = page.getByTestId("safety-stop");
@@ -627,7 +706,7 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
   await expect(page.getByRole("region", { name: "Campaigns" })).toContainText("Stopped by safety stop");
   // The red session card leads with the stop; the window's state is one plain secondary line, never an all-clear light.
   const card = sidebar(page).getByTestId("session-status").locator("xpath=..");
-  await expect(card).toHaveText(/^Window logged in\. (Last checked \d\d:\d\d|Never checked)\.$/);
+  await expect(card).toHaveText(/^The dedicated window is still logged in\. (Last checked \d\d:\d\d|Never checked)\.$/);
   await expect(sidebar(page).locator(".status-success")).toHaveCount(0);
 
   await banner.getByRole("button", { name: "Resume" }).click();

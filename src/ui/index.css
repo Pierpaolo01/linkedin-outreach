@@ -119,9 +119,14 @@
     }
   }
 
+  /*
+   * Score chips, filled to empty and never amber or red: Score Mint from 7 (Desk Green number, 5.82:1), a sage grey
+   * from 5 (Hairline Sage fill, Ink number, 11.72:1), and below 5 or unscored Desk Paper inside a Hairline Sage edge
+   * (Ink, 14.71:1).
+   */
   --color-score-high: #d5e8dc;
-  --color-score-mid: #f6e3bb;
-  --color-score-mid-content: #5c3f07;
+  --color-score-mid: #dce0d8;
+  --color-score-low-edge: #dce0d8;
 }
 
 body {
@@ -234,9 +239,17 @@ p {
 .skip-link:focus {
   translate: 0 0;
 }
-/* A page heading or the page itself takes focus only from a script (after a link or a skip link): no ring. */
-:where(h1, main)[tabindex="-1"]:focus {
+/* A page or wizard-step heading, or the page itself, takes focus only from a script (after a link, a skip link or a step change): no ring. */
+:where(h1, h2, main)[tabindex="-1"]:focus {
   outline: none;
+}
+
+/* A folded part draws the app's chevron (the Disclosure in formParts.tsx), never the browser's triangle. */
+summary {
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
 }
 
 /*

@@ -382,7 +382,8 @@ function fill(db: Conn, now: Date, withSafetyStop: boolean): { prospects: number
     .run();
   log(today(200), "Found 30 people in your recommendations", { campaignId: architects });
   log(today(185), "Scored 18 people from their cards; 10 were below the open-profile threshold", { campaignId: architects });
-  log(today(190), "Discovery paused: the daily limit of 10 discovery pages is reached. It resumes on the next working day.", { campaignId: trades }, "warning");
+  // A spent budget is quiet (CONTEXT.md, "Budget"): information, not a warning.
+  log(today(190), "Discovery paused: the daily limit of 10 discovery pages is reached. It resumes on the next working day.", { campaignId: trades });
   log(today(140), "Withdrew the invite to Test Person 39 after 21 days");
   log(today(95), "Test Person 14 accepted your invite", { campaignId: hotels });
   log(today(40), "Sent the first message to Test Person 16", { campaignId: hotels });

@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createCampaign, getCampaign, startCampaign, toApiError, updateCampaign } from "../api";
 import type { Campaign } from "../apiSchemas";
@@ -20,7 +20,7 @@ import {
 import { MessageFields, TimingFields } from "../CampaignFields";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatClock } from "../format";
-import { ActionError, describedByError, EmptyState, errorProps, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
+import { ActionError, DEF_LIST, DEF_TERM, describedByError, EmptyState, errorProps, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link, navigate } from "../router";
 import { useLoad } from "../useLoad";
@@ -30,18 +30,29 @@ import { PageHeader } from "./PageHeader";
 /** The step names, in order: the six steps, then the review. */
 const STEP_TITLES: readonly string[] = [...STEPS.map((s) => s.title), "Review and start"];
 
-/** A fade at each end of the step strip that has more steps beyond it, so the strip says it scrolls. */
-function stripMask(start: boolean, end: boolean): string | undefined {
-  if (!start && !end) return undefined;
-  const from = start ? "transparent, #000 2.5rem" : "#000";
-  const to = end ? "#000 calc(100% - 2.5rem), transparent" : "#000";
-  return `linear-gradient(to right, ${from}, ${to})`;
-}
+/** The space between two steps on the strip (`gap-1`). */
+const STRIP_GAP = 4;
+/** A step's number circle ends this far into the step (10px padding, 24px circle): a step cut before that shows a sliced circle. */
+const CIRCLE_END = 34;
 
 /**
- * The wizard's steps: a left column from 1024px, a strip that scrolls sideways below it. On the strip a line
- * says which step of how many this is, the current step is brought to the middle when it changes, and an
- * end fades while there are more steps past it.
+ * The strip's mask: everything up to the first step that does not fit (`cut`, px from the strip's left) shows in full.
+ * That step fades out as a sign that the strip scrolls, from 45% to nothing, when its number circle fits whole; when
+ * the circle would be sliced, the step is hidden instead.
+ */
+function stripMask(cut: number | null, width: number): string | undefined {
+  if (cut === null) return undefined;
+  if (cut + CIRCLE_END > width) return `linear-gradient(to right, #000 ${cut}px, transparent ${cut}px)`;
+  return `linear-gradient(to right, #000 ${cut}px, rgb(0 0 0 / 0.45) ${cut}px, transparent 100%)`;
+}
+
+const reducedMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/**
+ * The wizard's steps: a left column from 1024px, a strip that scrolls sideways below it. On the strip a line says
+ * which step of how many this is, and the strip shows whole steps only: it snaps to a step's start at its left edge,
+ * and when the step changes it scrolls just enough to show the current step in full, with the step before it either
+ * whole or out of view. A step cut by the right edge fades out (or hides, rather than show a sliced number).
  */
 function StepStrip(props: {
   readonly step: number;
@@ -54,32 +65,58 @@ function StepStrip(props: {
 }) {
   const { step } = props;
   const strip = useRef<HTMLOListElement>(null);
-  const [more, setMore] = useState({ start: false, end: false });
+  const spacer = useRef<HTMLLIElement>(null);
+  const [mask, setMask] = useState<string | undefined>(undefined);
+  const placed = useRef(false);
+
+  const stepsOf = (ol: HTMLOListElement) => [...ol.querySelectorAll<HTMLElement>(":scope > li[data-step]")];
+  /** The strip scrolls sideways (below 1024px) and has more steps than room. */
+  const scrolls = (ol: HTMLOListElement) => getComputedStyle(ol).flexDirection === "row";
 
   const measure = () => {
     const ol = strip.current;
     if (ol === null) return;
-    setMore({ start: ol.scrollLeft > 1, end: ol.scrollLeft + ol.clientWidth < ol.scrollWidth - 1 });
+    const steps = stepsOf(ol);
+    const last = steps.at(-1);
+    if (!scrolls(ol) || last === undefined) {
+      setMask(undefined);
+      return;
+    }
+    // Room after the last step, so every step (the last ones too) can stand at the left edge, where the strip snaps.
+    if (spacer.current !== null) spacer.current.style.width = `${Math.max(0, ol.clientWidth - last.offsetWidth - STRIP_GAP)}px`;
+    const right = ol.scrollLeft + ol.clientWidth;
+    const cut = steps.find((li) => li.offsetLeft + li.offsetWidth > right + 1 && li.offsetLeft < right);
+    setMask(stripMask(cut === undefined ? null : cut.offsetLeft - ol.scrollLeft, ol.clientWidth));
   };
 
+  const remeasure = useEffectEvent(measure);
   useEffect(() => {
     const ol = strip.current;
     if (ol === null) return;
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(() => remeasure());
     observer.observe(ol);
     return () => observer.disconnect();
   }, []);
 
-  // Bring the current step to the middle of the strip. Only the strip scrolls, never the page.
+  // Show the current step in full, with the step before it whole when both fit. Only the strip scrolls, never the page.
   useEffect(() => {
     const ol = strip.current;
-    const current = ol?.querySelector<HTMLElement>('[aria-current="step"]')?.parentElement;
-    if (ol === null || ol === undefined || current === null || current === undefined || ol.scrollWidth <= ol.clientWidth) return;
-    ol.scrollLeft = current.offsetLeft - (ol.clientWidth - current.offsetWidth) / 2;
-    measure();
+    if (ol === null || !scrolls(ol)) return;
+    const steps = stepsOf(ol);
+    const here = steps[step];
+    if (here === undefined) return;
+    const before = steps[step - 1];
+    const inView = here.offsetLeft >= ol.scrollLeft - 1 && here.offsetLeft + here.offsetWidth <= ol.scrollLeft + ol.clientWidth + 1;
+    const beforeWhole = before === undefined || before.offsetLeft >= ol.scrollLeft - 1 || before.offsetLeft + before.offsetWidth <= ol.scrollLeft + 1;
+    const first = !placed.current;
+    placed.current = true;
+    if (!(inView && beforeWhole)) {
+      const withBefore = before !== undefined && here.offsetLeft + here.offsetWidth - before.offsetLeft <= ol.clientWidth;
+      ol.scrollTo({ left: withBefore ? before.offsetLeft : here.offsetLeft, behavior: first || reducedMotion() ? "instant" : "smooth" });
+    }
+    remeasure();
   }, [step]);
 
-  const mask = stripMask(more.start, more.end);
   return (
     <nav aria-label="Wizard steps" className="min-w-0">
       <p className="mb-2 text-sm text-muted lg:hidden">
@@ -89,14 +126,14 @@ function StepStrip(props: {
         ref={strip}
         onScroll={measure}
         style={mask === undefined ? undefined : { maskImage: mask, WebkitMaskImage: mask }}
-        className="relative flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible"
+        className="relative flex snap-x snap-mandatory gap-1 overflow-x-auto pb-1 lg:snap-none lg:flex-col lg:overflow-visible"
       >
         {STEP_TITLES.map((title, index) => {
           const here = index === step;
           const problem = props.problems.has(index);
           const done = !here && !problem && !props.unfinished.has(index) && index < props.furthest;
           return (
-            <li key={title} className="shrink-0">
+            <li key={title} data-step={index} className="shrink-0 snap-start">
               <button
                 type="button"
                 disabled={!props.created && index > 0}
@@ -127,6 +164,7 @@ function StepStrip(props: {
             </li>
           );
         })}
+        <li ref={spacer} aria-hidden="true" className="shrink-0 lg:hidden" />
       </ol>
     </nav>
   );
@@ -316,6 +354,12 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       await tail;
     } while (tail !== queue.current.tail || queue.current.waiting !== null);
   };
+
+  // After a step change the keyboard and a screen reader land on the new step's heading (the Name field keeps its own
+  // focus when the wizard first opens). As with a page title, the heading takes focus from the script only: no ring.
+  useEffect(() => {
+    if (stepMoved) document.getElementById(STEP_TITLE_ID)?.focus({ preventScroll: true });
+  }, [step, stepMoved]);
 
   // Save the current step in the background once typing pauses, so nothing is lost.
   const current = form === null || step >= REVIEW ? "" : stepJson(form, step);
@@ -518,10 +562,13 @@ function unfinishedSteps(form: CampaignForm): ReadonlySet<number> {
   return new Set(missing.flatMap(([step, gap]) => (gap ? [step] : [])));
 }
 
+/** The id of the current step's heading, which takes the focus when the step changes. */
+const STEP_TITLE_ID = "step-title";
+
 function StepFrame({ title, lead, children }: { readonly title: string; readonly lead: string; readonly children: ReactNode }) {
   return (
-    <section aria-labelledby="step-title">
-      <h2 id="step-title" className="text-xl font-semibold">
+    <section aria-labelledby={STEP_TITLE_ID}>
+      <h2 id={STEP_TITLE_ID} tabIndex={-1} className="text-xl font-semibold">
         {title}
       </h2>
       <p className="mt-1 max-w-2xl text-base-content">{lead}</p>
@@ -818,8 +865,8 @@ function Review({
   ];
 
   return (
-    <section aria-labelledby="step-title">
-      <h2 id="step-title" className="text-xl font-semibold">
+    <section aria-labelledby={STEP_TITLE_ID}>
+      <h2 id={STEP_TITLE_ID} tabIndex={-1} className="text-xl font-semibold">
         Review and start
       </h2>
       <p className="mt-1 max-w-2xl text-base-content">Check everything once more. The app checks it too when you press Start.</p>
@@ -846,13 +893,17 @@ function Review({
                   Change<span className="sr-only"> {STEPS[step]?.title}</span>
                 </button>
               </div>
-              <dl className="mt-2 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-[13rem_minmax(0,1fr)]">
-                {rows.map(([label, value]) => (
-                  <div key={label} className="contents">
-                    <dt className="text-muted">{label}</dt>
-                    <dd className="min-w-0 wrap-break-word">{value}</dd>
-                  </div>
-                ))}
+              <dl className={`mt-2 ${DEF_LIST} text-sm sm:grid-cols-[13rem_minmax(0,1fr)]`}>
+                {rows.map(([label, value]) => {
+                  // A row named like its step ("Name" under "Name") would say the heading twice: its label is for screen readers only.
+                  const repeats = label === STEPS[step]?.title;
+                  return (
+                    <Fragment key={label}>
+                      <dt className={repeats ? "sr-only" : `${DEF_TERM} text-muted`}>{label}</dt>
+                      <dd className={`min-w-0 wrap-break-word ${repeats ? "col-span-full" : ""}`}>{value}</dd>
+                    </Fragment>
+                  );
+                })}
               </dl>
               {list.length > 0 && (
                 <ul className="mt-3 flex flex-col gap-1">

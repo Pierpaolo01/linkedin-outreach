@@ -1,14 +1,19 @@
 import { useAppData } from "../appData";
 import { formatClock, formatDays, workingNow } from "../format";
-import { ON_RED_BUTTON, SECONDARY_BUTTON, StatusDot, statusLabel } from "../formParts";
+import { ON_RED_BUTTON, QUIET_BUTTON, SECONDARY_BUTTON, StatusDot, statusLabel } from "../formParts";
+import { IconX } from "../icons";
 import { Link } from "../router";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
 
 export const SIDEBAR_ID = "sidebar";
 
-/** The left column on a wide screen, the menu on a phone: session, the eight destinations, the working window. */
-export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; readonly recheck: Recheck; readonly onNavigate: () => void }) {
+/**
+ * The left column on a wide screen, the menu on a phone: session, the eight destinations, the working window. As a menu
+ * (below 1024px) it has its own Close button, so a touch screen reader can close it from inside.
+ */
+export function Sidebar(props: { readonly path: string; readonly recheck: Recheck; readonly onNavigate: () => void; readonly onClose: () => void }) {
+  const { path, recheck, onNavigate } = props;
   const { home } = useAppData();
   const campaigns = home?.campaigns ?? [];
   const stopped = home?.safetyStop != null;
@@ -16,7 +21,12 @@ export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; 
     <aside id={SIDEBAR_ID} className="flex min-h-full w-64 flex-col border-r border-base-300 bg-base-200" aria-label="Sidebar">
       {/* Boxes (the session card, the menu's items) start 12px in; text starts 24px in, the menu's own text inset. */}
       <div className="px-3 pt-6 pb-4">
-        <p className="px-3 text-lg font-semibold">Outreach</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="px-3 text-lg font-semibold">Outreach</p>
+          <button type="button" className={`${QUIET_BUTTON} btn-square -my-2.5 size-11 lg:hidden`} aria-label="Close menu" onClick={props.onClose}>
+            <IconX className="size-5" />
+          </button>
+        </div>
         <SessionCard recheck={recheck} />
       </div>
       <nav aria-label="Main">
@@ -97,7 +107,8 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
           Safety stop: {STOP_REASON[stop.reason].short.toLowerCase()}, since {formatClock(stop.raisedAt, timeZone)}
         </p>
       )}
-      <div className="flex items-center justify-between gap-2">
+      {/* During a stop the window's sentence takes the card's width, with Re-check under it. */}
+      <div className={stop === null ? "flex items-center justify-between gap-2" : "flex flex-col items-start gap-2"}>
         {stop === null ? (
           <p className="flex min-w-0 items-center gap-2 font-medium">
             <span className={`status ${view.light}`} aria-hidden="true" />

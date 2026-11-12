@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { getStats } from "../api";
 import type { Stats as StatsData } from "../apiSchemas";
 import { useAppData } from "../appData";
@@ -31,14 +32,29 @@ function StackLabel({ children }: { readonly children: string }) {
   );
 }
 
+/**
+ * A measure's value, on a line as tall as the large figures (24px type on a 28px line). The value itself is an inline
+ * grid on that line's baseline, so a small sentence or count beside a figure ("Not enough data yet", "1") sits on the
+ * figure's baseline, in the table and in the block, and a sentence that wraps keeps its own line spacing.
+ */
+function Value({ className, testId, children }: { readonly className: string; readonly testId?: string; readonly children: ReactNode }) {
+  return (
+    <p className="text-2xl leading-7" data-testid="stat-value">
+      <span className={`inline-grid align-baseline ${className}`} data-testid={testId}>
+        {children}
+      </span>
+    </p>
+  );
+}
+
 /** "60%", or "Not enough data yet" when the count behind it is too small to mean much. */
 function Rate({ value, part, whole, of }: { readonly value: number | null; readonly part: number; readonly whole: number; readonly of: string }) {
   if (value === null || whole < ENOUGH) {
     return (
       <>
-        <p className="text-muted" data-testid="not-enough">
+        <Value className="text-sm text-muted" testId="not-enough">
           Not enough data yet
-        </p>
+        </Value>
         <p className="nums text-sm text-muted">
           {part} of {whole} {of}
         </p>
@@ -47,7 +63,7 @@ function Rate({ value, part, whole, of }: { readonly value: number | null; reado
   }
   return (
     <>
-      <p className="nums text-2xl font-semibold">{Math.round(value * 100)}%</p>
+      <Value className="nums text-2xl leading-7 font-semibold">{Math.round(value * 100)}%</Value>
       <p className="nums text-sm text-muted">
         {part} of {whole} {of}
       </p>
@@ -101,7 +117,8 @@ export function Stats() {
 function StatsRow({ row, replyLabel }: { readonly row: Row; readonly replyLabel: string }) {
   const { home } = useAppData();
   return (
-    <tr role="row" data-testid="stats-row" className="align-top @max-stats:grid @max-stats:grid-cols-2 @max-stats:gap-x-4 @max-stats:px-4 @max-stats:py-3 @max-stats:not-last:border-b @max-stats:not-last:border-base-300">
+    // In the table every cell sits on the row's first baseline: the name and the values' 28px line read as one row.
+    <tr role="row" data-testid="stats-row" className="*:align-baseline @max-stats:grid @max-stats:grid-cols-2 @max-stats:gap-x-4 @max-stats:px-4 @max-stats:py-3 @max-stats:not-last:border-b @max-stats:not-last:border-base-300">
       <th role="rowheader" scope="row" className="text-left font-normal @max-stats:col-span-2 @max-stats:border-0 @max-stats:p-0">
         <Link to={`/campaigns/${row.campaignId}`} className="inline-flex min-h-6 items-center font-semibold hover:underline">
           {row.name}
@@ -119,15 +136,15 @@ function StatsRow({ row, replyLabel }: { readonly row: Row; readonly replyLabel:
       <td role="cell" className={STACK_MEASURE}>
         <StackLabel>Median time to accept</StackLabel>
         {row.medianHoursToAccept === null ? (
-          <p className="text-muted">No acceptances yet</p>
+          <Value className="text-sm text-muted">No acceptances yet</Value>
         ) : (
-          <p className="nums text-lg font-semibold">{formatHours(row.medianHoursToAccept)}</p>
+          <Value className="nums text-lg font-semibold">{formatHours(row.medianHoursToAccept)}</Value>
         )}
       </td>
       {/* A count, not a rate: at the row's own weight, so a "0" is not the loudest thing beside "Not enough data yet". */}
-      <td role="cell" className={`nums text-right ${row.invitesWithdrawn === 0 ? "text-muted" : ""} ${STACK_MEASURE}`}>
+      <td role="cell" className={`text-right ${STACK_MEASURE}`}>
         <StackLabel>Invites withdrawn</StackLabel>
-        {row.invitesWithdrawn}
+        <Value className={`nums text-sm ${row.invitesWithdrawn === 0 ? "text-muted" : ""}`}>{row.invitesWithdrawn}</Value>
       </td>
     </tr>
   );

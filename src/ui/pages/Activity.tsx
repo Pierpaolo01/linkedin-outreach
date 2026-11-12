@@ -3,7 +3,7 @@ import { listActivity, listCampaigns } from "../api";
 import type { ActivityItem, Page } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatToday } from "../format";
-import { ActivityMessage, CampaignSelect, EmptyState, LoadError, Pager, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
+import { ActivityMessage, CampaignSelect, LevelMark, EmptyState, LoadError, Pager, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { useLoad } from "../useLoad";
 import { formatStamp } from "../words";
 import { PageHeader } from "./PageHeader";
@@ -121,7 +121,11 @@ export function Activity() {
                   data-level={item.level}
                   className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm sm:grid-cols-[7rem_minmax(0,1fr)_12rem]"
                 >
-                  <span className="nums text-muted">{formatStamp(item.at, timeZone)}</span>
+                  {/* A warning's ring or an error's dot ends the time column, so every line's text starts at one edge. */}
+                  <span className="nums flex items-center gap-2 text-muted sm:justify-between">
+                    {formatStamp(item.at, timeZone)}
+                    <LevelMark level={item.level} />
+                  </span>
                   <ActivityMessage level={item.level} message={item.message} />
                   <span className="truncate text-muted sm:text-right">{campaign ?? ""}</span>
                 </li>

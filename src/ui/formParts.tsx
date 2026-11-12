@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { CampaignStatus, EventLevel } from "../db/schema";
 import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone } from "./format";
+import { IconChevron } from "./icons";
 import { PAUSABLE, plainMessage } from "./words";
 
 /**
@@ -101,19 +102,67 @@ export function Notice(props: { readonly tone: keyof typeof NOTICE_TONE; readonl
 
 /**
  * One line of what the app did. A warning or an error leads with its word at 600; an error is Stop Red text.
+ * A safety stop's line already leads with "Safety stop:", so it takes no "Error:" before it.
  * No stripe and no amber: amber means "waits for you", and a solid red is the safety stop.
  */
 export function ActivityMessage({ level, message }: { readonly level: EventLevel; readonly message: string }) {
+  const text = plainMessage(message);
   return (
     <span className={level === "error" ? "text-error" : ""}>
       {level === "warning" && <span className="mr-1.5 font-semibold">Warning:</span>}
-      {level === "error" && <span className="mr-1.5 font-semibold">Error:</span>}
-      {plainMessage(message)}
+      {level === "error" && !text.startsWith("Safety stop:") && <span className="mr-1.5 font-semibold">Error:</span>}
+      {text}
     </span>
   );
 }
 
+/**
+ * The mark that lets a warning or an error line be found at a glance in a log: a hollow Ink ring for a warning, a
+ * solid red dot for an error, nothing for information. The status-dot recipe, not amber and not a stripe; the words
+ * of the line carry the level, so it is hidden from screen readers.
+ */
+export function LevelMark({ level }: { readonly level: EventLevel }) {
+  if (level === "info") return null;
+  return (
+    <span
+      className={`status shrink-0 ${level === "error" ? "status-error" : "status-hollow text-base-content"}`}
+      aria-hidden="true"
+      data-testid="level-mark"
+    />
+  );
+}
+
 // ------------------------------------------------------------ page structure
+
+/**
+ * A label and value list (`dl`) that is two columns from 640px and stacked below it. Stacked, each label sits 2px
+ * over its value and the next label 12px (`group`) under it, so the pairs read as pairs. Put `DEF_TERM` on every `dt`
+ * and add the columns (`sm:grid-cols-[…]`) where it is used.
+ */
+export const DEF_LIST = "grid gap-x-6 gap-y-0.5 sm:gap-y-2";
+export const DEF_TERM = "max-sm:not-first:mt-2.5";
+
+/**
+ * A folded part of a page: the summary line with the app's chevron (turned a quarter when open, as a person's row
+ * does), never the browser's triangle. `summaryClassName` sets its size and colour.
+ */
+export function Disclosure(props: {
+  readonly summary: ReactNode;
+  readonly summaryClassName?: string;
+  readonly className?: string;
+  readonly testId?: string | undefined;
+  readonly children: ReactNode;
+}) {
+  return (
+    <details className={`group ${props.className ?? ""}`} data-testid={props.testId}>
+      <summary className={`inline-flex cursor-pointer list-none items-center gap-1 ${props.summaryClassName ?? ""}`}>
+        {props.summary}
+        <IconChevron className="size-3.5 shrink-0 transition-transform duration-(--duration-appear) ease-settle group-open:rotate-90" />
+      </summary>
+      {props.children}
+    </details>
+  );
+}
 
 /** The grey bar that holds a list's filters. Put it `group` (12px) above the list it filters. */
 export const TOOLBAR = "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 p-3";
@@ -204,14 +253,18 @@ export function StatusLine(props: { readonly status: CampaignStatus; readonly sa
   );
 }
 
+/*
+ * Three steps, filled to empty, none of them amber (amber means "waits for you") or red: mint from 7, a sage grey from
+ * 5, a hairline outline below 5 or when not scored. The number is Ink or Desk Green on each (4.5:1 and over).
+ */
 const SCORE_CHIP = {
   high: "bg-score-high text-primary",
-  mid: "bg-score-mid text-score-mid-content",
-  low: "bg-base-200 text-base-content",
+  mid: "bg-score-mid text-base-content",
+  low: "bg-base-100 text-base-content ring-1 ring-score-low-edge ring-inset",
 } as const;
 const SCORE_SIZE = { sm: "size-7", lg: "size-10 text-lg" } as const;
 
-/** A prospect's score in a square chip: mint from 7, sand from 5, quiet below or when not scored. */
+/** A prospect's score in a square chip: mint from 7, sage grey from 5, an outline below or when not scored. */
 export function ScoreChip({ score, size, role }: { readonly score: number | null; readonly size: keyof typeof SCORE_SIZE; readonly role?: "cell" }) {
   return (
     <span

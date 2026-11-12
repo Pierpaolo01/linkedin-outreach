@@ -3,7 +3,7 @@ import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, 
 import type { Budget, BudgetKind, Campaign, Home as HomeData, Settings } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatResume, formatShort, formatToday, joinWords } from "../format";
-import { ActionError, ActivityMessage, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
+import { ActionError, ActivityMessage, EmptyState, LevelMark, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
@@ -345,8 +345,11 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
       ) : (
         <ol className="flex flex-col gap-2.5 text-sm">
           {items.map((item) => (
-            <li key={item.id} className="grid grid-cols-[3.25rem_1fr] gap-2">
-              <span className="nums text-muted">{formatShort(item.at, timeZone, now)}</span>
+            <li key={item.id} className="grid grid-cols-[4rem_1fr] gap-2">
+              <span className="nums flex items-center justify-between gap-1.5 text-muted">
+                {formatShort(item.at, timeZone, now)}
+                <LevelMark level={item.level} />
+              </span>
               <ActivityMessage level={item.level} message={item.message} />
             </li>
           ))}

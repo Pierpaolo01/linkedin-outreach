@@ -86,13 +86,17 @@ function Shell() {
     return () => wide.removeEventListener("change", onChange);
   }, []);
 
-  // A new page takes focus at its title, so the keyboard and a screen reader start there and not on the link left behind.
+  // A new page takes focus at its title, so the keyboard and a screen reader start there and not on the link left behind,
+  // unless the page has already put the focus on something of its own (the wizard's Name field).
   const shownPage = useRef<string | null>(null);
   const pageKey = found === null ? "none" : WIZARD.has(found.route.path) ? "wizard" : path;
   useEffect(() => {
     const before = shownPage.current;
     shownPage.current = pageKey;
     if (before === null || before === pageKey) return;
+    const page = document.getElementById(MAIN_ID);
+    const active = document.activeElement;
+    if (page !== null && active !== null && active !== page && page.contains(active)) return;
     document.getElementById(PAGE_TITLE_ID)?.focus({ preventScroll: true });
   }, [pageKey]);
 
@@ -142,7 +146,7 @@ function Shell() {
 
       <div className="drawer-side z-40">
         <label htmlFor={DRAWER_ID} aria-label="Close menu" className="drawer-overlay" />
-        <Sidebar path={path} recheck={recheck} onNavigate={() => setMenuOpenAt(null)} />
+        <Sidebar path={path} recheck={recheck} onNavigate={() => setMenuOpenAt(null)} onClose={() => setMenuOpenAt(null)} />
       </div>
       <SessionNews label={session?.label} />
     </div>

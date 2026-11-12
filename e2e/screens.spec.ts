@@ -20,13 +20,15 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await page.getByRole("link", { name: "New campaign" }).click();
   await expect(page).toHaveURL(/\/campaigns\/new$/);
 
-  // 1. Name. The draft is created here and the address moves to it.
+  // 1. Name. The draft is created here and the address moves to it. The name field has the focus when the wizard opens.
+  await expect(page.getByLabel("Campaign name")).toBeFocused();
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page.getByText("Give the campaign a name")).toBeVisible();
   await page.getByLabel("Campaign name").fill(name);
   await page.getByRole("button", { name: "Save and continue" }).click();
   await expect(page).toHaveURL(/\/campaigns\/\d+\/edit$/);
-  await expect(page.getByRole("heading", { name: "Where people come from" })).toBeVisible();
+  // The keyboard and a screen reader land on the new step's heading.
+  await expect(page.getByRole("heading", { name: "Where people come from" })).toBeFocused();
   const id = Number(/\/campaigns\/(\d+)\/edit/.exec(page.url())?.[1]);
 
   // 2. A people search with an address that is not one.
@@ -41,6 +43,10 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await expect(whoFits.getByRole("heading", { name: "Who fits (not finished)" })).toBeVisible();
   await expect(whoFits.getByText("Not written yet")).toHaveCSS("font-weight", "500");
   await expect(whoFits.locator(".status-error, .text-error")).toHaveCount(0);
+  // A row named like its step ("Name" under "Name", "Who fits" under "Who fits") keeps its label for screen readers only.
+  await expect(page.getByTestId("review-step-1").locator("dt")).toHaveClass(/sr-only/);
+  await expect(whoFits.locator("dt")).toHaveClass(/sr-only/);
+  await expect(page.getByTestId("review-step-2").locator("dt").first()).not.toHaveClass(/sr-only/);
   await page.getByRole("button", { name: "Change Who fits" }).click();
 
   // 3. Who fits: an empty box with guidance, no example text.
@@ -345,10 +351,13 @@ test("activity log: warnings and errors only, and one campaign", async ({ page }
   for (const level of await lines.evaluateAll((els) => els.map((el) => el.getAttribute("data-level")))) expect(["warning", "error"]).toContain(level);
 
   await page.getByLabel("Campaign").selectOption({ label: "Local trades, Milan" });
-  await expect(lines.filter({ hasText: "Discovery waits" })).toHaveCount(1);
+  await expect(lines.filter({ hasText: "needs review" })).toHaveCount(1);
   await expect(lines.filter({ hasText: "Hotel owners, Rome" })).toHaveCount(0);
+  // A spent budget is quiet: its line is information, not a warning.
+  await expect(lines.filter({ hasText: "Discovery waits" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Everything" }).click();
+  await expect(lines.filter({ hasText: "Discovery waits" })).toHaveAttribute("data-level", "info");
   await page.getByLabel("Campaign").selectOption({ label: "Architects, Turin" });
   await expect(lines).toHaveCount(2);
   await expect(lines.filter({ hasText: "Found 30 people in your recommendations" })).toHaveCount(1);
@@ -377,6 +386,20 @@ test("stats: the labels, rates and Not enough data yet", async ({ page }) => {
   await expect(hotels.getByTestId("not-enough")).toHaveText("Not enough data yet");
   await expect(hotels).toContainText("1 of 4 messaged");
   await expect(page.getByTestId("stats-row").filter({ hasText: "Architects, Turin" }).getByTestId("not-enough")).toHaveCount(2);
+
+  // In the table, the large figures and the small sentence and count beside them share one baseline.
+  const lines = await hotels.getByTestId("stat-value").evaluateAll((values) =>
+    values.map((value) => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+      value.prepend(probe);
+      const top = probe.getBoundingClientRect().top;
+      probe.remove();
+      return top;
+    }),
+  );
+  expect(lines).toHaveLength(4);
+  expect(Math.max(...lines) - Math.min(...lines), "the values of a row are off one baseline").toBeLessThanOrEqual(0.5);
 });
 
 test("settings: the dedicated window section says the session state, when it was checked, and how to log in again", async ({ page }) => {
@@ -435,11 +458,25 @@ test("settings: a refused save shows the problem in place, a good one saves; AI 
   await page.goto("/settings");
   await expect(page.getByText("What you do by hand on LinkedIn also counts.")).toBeVisible();
 
+  await expect(page.getByRole("heading", { name: "The app on this Mac" })).toBeVisible();
+
+  // A number that is not one: refused before it is sent, and the focus goes to the field.
+  const invites = page.getByLabel("Invites per day");
+  await invites.fill("many");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByTestId("settings-result")).toHaveText("Some settings need attention. They are marked.");
+  await expect(invites).toBeFocused();
+  await expect(invites).toBeInViewport();
+
   await page.getByLabel("End of the working day").fill("08:00");
-  await page.getByLabel("Invites per day").fill("-1");
+  await invites.fill("-1");
+  await page.getByLabel("End of the working day").focus();
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByTestId("settings-result")).toHaveText("Nothing was saved: some settings are not valid. They are marked.");
   await expect(page.getByText("Enter 0 or more.")).toBeVisible();
+  // Refused by the app: the focus goes to the first field it marked, in sight.
+  await expect(invites).toBeFocused();
+  await expect(invites).toBeInViewport();
 
   await page.getByLabel("Invites per day").fill("12");
   await page.getByRole("button", { name: "Save settings" }).click();
@@ -473,4 +510,54 @@ test("settings: a refused save shows the problem in place, a good one saves; AI 
   await page.getByLabel("Invites per day").fill("15");
   await page.getByRole("button", { name: "Save settings" }).click();
   await expect(page.getByTestId("settings-result")).toHaveText("Settings saved.");
+});
+
+test("wizard on a phone: the step strip shows whole steps at its left edge, the current one in full", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const created = (await (await page.request.post("/api/campaigns", { data: { name: "Test strip campaign" } })).json()) as { campaign: { id: number } };
+  await page.goto(`/campaigns/${created.campaign.id}/edit`);
+  const strip = page.getByRole("navigation", { name: "Wizard steps" }).locator("ol");
+  const opened = Number(/^Step (\d) of 7/.exec(await page.getByText(/^Step \d of 7:/).innerText())?.[1]);
+  for (let at = opened; at > 1; at -= 1) {
+    await page.getByRole("button", { name: "Back" }).click();
+    await expect(page.getByText(new RegExp(`^Step ${at - 1} of 7:`))).toBeVisible();
+  }
+  await expect(page.getByRole("heading", { name: "Name", exact: true })).toBeVisible();
+
+  for (let step = 1; step <= 7; step += 1) {
+    await expect(page.getByText(new RegExp(`^Step ${step} of 7:`))).toBeVisible();
+    const items = await strip.evaluate((ol) => {
+      const box = ol.getBoundingClientRect();
+      return [...ol.querySelectorAll(":scope > li:not([aria-hidden])")].map((li) => {
+        const r = li.getBoundingClientRect();
+        return { left: r.left - box.left, right: r.right - box.left, current: li.querySelector('[aria-current="step"]') !== null, width: box.width };
+      });
+    });
+    const current = items.findIndex((item) => item.current);
+    const here = items[current];
+    expect(here, `step ${step}: no current step in the strip`).toBeDefined();
+    expect(here?.left ?? -1, `step ${step}: the current step starts off the strip`).toBeGreaterThanOrEqual(-1);
+    expect(here?.right ?? Infinity, `step ${step}: the current step ends off the strip`).toBeLessThanOrEqual((here?.width ?? 0) + 1);
+    for (const [index, item] of items.entries()) {
+      expect(item.left < -1 && item.right > 1, `step ${step}: step ${index + 1} is cut at the strip's left edge`).toBe(false);
+    }
+    if (step < 7) await page.getByRole("button", { name: step === 6 ? "Save and review" : "Save and continue" }).click();
+  }
+
+  // The review's definition lists group each label with its value on a phone: 2px under the label, 12px to the next one.
+  const pairs = await page
+    .getByTestId("review-step-6")
+    .locator("dl")
+    .evaluate((list) =>
+      [...list.querySelectorAll("dt, dd")].map((child) => ({ tag: child.tagName, top: child.getBoundingClientRect().top, bottom: child.getBoundingClientRect().bottom })),
+    );
+  expect(pairs.length).toBeGreaterThanOrEqual(4);
+  for (const [index, item] of pairs.entries()) {
+    const next = pairs[index + 1];
+    if (next === undefined) continue;
+    const gap = next.top - item.bottom;
+    if (item.tag === "DT") expect(Math.abs(gap - 2), "a label is not 2px over its value").toBeLessThanOrEqual(1);
+    else expect(Math.abs(gap - 12), "a value is not 12px over the next label").toBeLessThanOrEqual(1);
+  }
 });
