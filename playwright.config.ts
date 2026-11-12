@@ -2,21 +2,27 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
+import { APPS, type AppKey } from "./e2e/apps";
 
 // Dashboard browser tests. They run the app on the fake driver and never touch LinkedIn.
-// Each app gets its own empty data directory, so the real one is never read or written.
+// Each app gets its own empty data directory, so the real one is never read or written; the
+// seeded ones are filled with invented people by scripts/seed-demo.ts before the app starts.
+// The engine is off (ENGINE=off) so the seeded numbers do not move during a test.
 
-function fakeApp({ port, states, delayMs }: { port: number; states: string; delayMs: number }) {
+function fakeApp(key: AppKey) {
+  const { port, states, delayMs, seed } = APPS[key];
+  const seedCommand = seed === "none" ? "" : `npx tsx scripts/seed-demo.ts${seed === "safety-stop" ? " --safety-stop" : ""} && `;
   return {
-    command: "npm start",
+    command: `${seedCommand}npm start`,
     url: `http://127.0.0.1:${port}/api/health`,
     // Never reuse a server already on the port: it could be the real app.
     reuseExistingServer: false,
-    timeout: 30_000,
+    timeout: 60_000,
     stdout: "pipe" as const,
     gracefulShutdown: { signal: "SIGTERM" as const, timeout: 5_000 },
     env: {
       LINKEDIN_DRIVER: "fake",
+      ENGINE: "off",
       NO_OPEN: "1",
       PORT: String(port),
       FAKE_SESSION_STATES: states,
@@ -31,10 +37,6 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: "list",
-  use: { channel: "chrome", baseURL: "http://127.0.0.1:4748" },
-  webServer: [
-    // The delay is how long Re-check stays disabled. 500 ms was shorter than one slow step on a CI runner.
-    fakeApp({ port: 4748, states: "logged_out,ok", delayMs: 2500 }),
-    fakeApp({ port: 4750, states: "checkpoint", delayMs: 0 }),
-  ],
+  use: { channel: "chrome", baseURL: `http://127.0.0.1:${APPS.demo.port}` },
+  webServer: [fakeApp("demo"), fakeApp("stop"), fakeApp("recheck"), fakeApp("checkpoint")],
 });
