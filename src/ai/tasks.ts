@@ -42,11 +42,37 @@ const personalisedSchema = z.object({
   evidence: z.string().trim().min(1).nullable(),
 });
 
-/** Most of a validation error, kept short enough to append to a prompt. */
+/**
+ * A path segment safe to show the model: an array index, or a plain field name (ours, since every
+ * object schema here is fixed). Anything else could be a key the model invented, so it is masked.
+ */
+function safeSegment(segment: PropertyKey): string {
+  if (typeof segment === "number") return String(segment);
+  return typeof segment === "string" && /^[A-Za-z]{1,32}$/.test(segment) ? segment : "?";
+}
+
+/** One fixed sentence per issue code. `issue.message` is never used: zod may quote received values in it. */
+function issueSentence(issue: z.core.$ZodIssue): string {
+  switch (issue.code) {
+    case "invalid_type":
+      return "is missing or has the wrong type";
+    case "too_big":
+      return `is too large or too long (at most ${String(issue.maximum)})`;
+    case "too_small":
+      return `is too small or too short (at least ${String(issue.minimum)})`;
+    default:
+      return "is not valid";
+  }
+}
+
+/**
+ * Most of a validation error, kept short enough to append to a prompt. Built only from fixed
+ * sentences, field names and limits from our schema, so nothing the model wrote is echoed back.
+ */
 function describe(error: z.ZodError): string {
   return error.issues
     .slice(0, 5)
-    .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "answer"}: ${issue.message}`)
+    .map((issue) => `${issue.path.length > 0 ? issue.path.map(safeSegment).join(".") : "answer"} ${issueSentence(issue)}`)
     .join("; ");
 }
 
@@ -100,17 +126,23 @@ async function ask<T>(
   throw new AiUnavailable(`The AI answered ${task.name} in the wrong shape twice (${lastError}).`);
 }
 
+/**
+ * Every card scored exactly once. Problems are told by position (entry N of the answer, card N of
+ * the data sent), never by id: ids in the answer are the model's text and ids sent are LinkedIn's.
+ */
 function sameCards(cards: readonly CardForScoring[]) {
   return (value: z.infer<typeof cardScoresSchema>): string | null => {
     const expected = new Set(cards.map((card) => card.publicId));
     const seen = new Set<string>();
-    for (const entry of value.scores) {
-      if (!expected.has(entry.publicId)) return `publicId "${entry.publicId}" is not one of the cards given`;
-      if (seen.has(entry.publicId)) return `publicId "${entry.publicId}" appears more than once`;
+    for (const [index, entry] of value.scores.entries()) {
+      const where = `scores entry ${index + 1}`;
+      if (!expected.has(entry.publicId)) return `${where} has a publicId that is not one of the cards given`;
+      if (seen.has(entry.publicId)) return `${where} repeats a publicId already scored`;
       seen.add(entry.publicId);
     }
-    const missing = [...expected].filter((id) => !seen.has(id));
-    return missing.length === 0 ? null : `missing a score for publicId ${missing.map((id) => `"${id}"`).join(", ")}`;
+    const missing = cards.flatMap((card, index) => (seen.has(card.publicId) ? [] : [index + 1]));
+    if (missing.length === 0) return null;
+    return `no score for card ${missing.join(", card ")} of the ${cards.length} in the LinkedIn data`;
   };
 }
 
@@ -131,12 +163,18 @@ function profileText(profile: ProfileForScoring): string {
   return normalise(parts.filter((part): part is string => part !== null).join("\n"));
 }
 
+/** Shorter evidence (after normalising), or evidence with no letter, supports no line: "" is in every profile. */
+const MIN_EVIDENCE = 12;
+
 function quotedFrom(profile: ProfileForScoring) {
   const text = profileText(profile);
   return (value: z.infer<typeof personalisedSchema>): string | null => {
     if (value.line === null && value.evidence === null) return null;
     if (value.line === null || value.evidence === null) return "line and evidence must both be text or both be null";
     const quoted = normalise(value.evidence.replace(/^["'“‘]+|["'”’]+$/g, ""));
+    if (quoted.length < MIN_EVIDENCE || !/\p{L}/u.test(quoted)) {
+      return `evidence must quote at least ${MIN_EVIDENCE} characters of profile text, including words`;
+    }
     return text.includes(quoted) ? null : "evidence must be copied word for word from the profile";
   };
 }
