@@ -1,4 +1,5 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { dataPaths, type DataPaths } from "../config/paths";
 import { ensureDataDir } from "../db/index";
+import { LOCK_FILE } from "../worker/instanceLock";
 import { isPortListening, restoreBackup } from "./restore";
 
 let dir: string;
@@ -104,6 +106,75 @@ describe("restoreBackup", () => {
     expect(outcome.kind).toBe("restored");
     const aside = outcome.kind === "restored" ? outcome.aside : null;
     expect(aside !== null && statSync(aside).size).toBe(7000);
+  });
+});
+
+describe("restoreBackup and the app's instance lock", () => {
+  let holder: ChildProcess | undefined;
+  afterEach(() => {
+    holder?.kill("SIGKILL");
+    holder = undefined;
+  });
+
+  /** A live process, standing in for an app started in a terminal on another PORT. */
+  async function liveProcess(): Promise<number> {
+    holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    await new Promise<void>((resolve) => holder?.once("spawn", () => resolve()));
+    const pid = holder.pid;
+    if (pid === undefined) throw new Error("the stand-in app did not start");
+    return pid;
+  }
+
+  it("refuses while a live process holds app.lock, says which one, and leaves every byte as it was", async () => {
+    const pid = await liveProcess();
+    writeFileSync(join(paths.root, LOCK_FILE), String(pid));
+    writeFileSync(`${paths.db}-wal`, "the running app's WAL");
+    const before = readFileSync(paths.db);
+
+    const outcome = await restoreBackup({ paths, backup: "app-2026-11-10.db", now: NOW, isAppRunning: notRunning });
+
+    expect(outcome.kind).toBe("refused");
+    expect(outcome.kind === "refused" && outcome.reason).toContain(`process ${pid}`);
+    expect(readFileSync(paths.db).equals(before)).toBe(true);
+    expect(readFileSync(`${paths.db}-wal`, "utf8")).toBe("the running app's WAL");
+    expect(readdirSync(paths.root).filter((n) => n.includes("before-restore") || n.includes("restoring"))).toEqual([]);
+    expect(readFileSync(join(paths.root, LOCK_FILE), "utf8")).toBe(String(pid));
+  });
+
+  it("takes over a stale lock, restores, and leaves no lock behind", async () => {
+    writeFileSync(join(paths.root, LOCK_FILE), String(spawnSync(process.execPath, ["-e", ""]).pid));
+
+    const outcome = await restoreBackup({ paths, backup: "app-2026-11-10.db", now: NOW, isAppRunning: notRunning });
+
+    expect(outcome.kind).toBe("restored");
+    expect(marker(paths.db)).toBe("backup of the 10th");
+    expect(existsSync(join(paths.root, LOCK_FILE))).toBe(false);
+  });
+
+  it("holds the lock for the whole run, so an app started meanwhile cannot open the database", async () => {
+    let lockDuringRun: string | null = null;
+    const outcome = await restoreBackup({
+      paths,
+      backup: "app-2026-11-10.db",
+      now: NOW,
+      isAppRunning: async () => {
+        lockDuringRun = existsSync(join(paths.root, LOCK_FILE)) ? readFileSync(join(paths.root, LOCK_FILE), "utf8") : null;
+        return false;
+      },
+    });
+    expect(outcome.kind).toBe("restored");
+    expect(lockDuringRun).toBe(String(process.pid));
+    expect(existsSync(join(paths.root, LOCK_FILE))).toBe(false);
+  });
+
+  it("releases the lock when the restore fails part way", async () => {
+    rmSync(paths.db);
+    // A directory where the database goes: the final rename fails.
+    mkdirSync(paths.db);
+    writeFileSync(join(paths.db, "x"), "x");
+
+    await expect(restoreBackup({ paths, backup: "app-2026-11-10.db", now: NOW, isAppRunning: notRunning })).rejects.toThrow();
+    expect(existsSync(join(paths.root, LOCK_FILE))).toBe(false);
   });
 });
 

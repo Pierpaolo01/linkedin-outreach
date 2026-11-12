@@ -2,12 +2,17 @@ import { chmodSync, copyFileSync, existsSync, renameSync, rmSync, statSync } fro
 import { connect } from "node:net";
 import { isAbsolute, join, resolve } from "node:path";
 import type { DataPaths } from "../config/paths";
+import { takeInstanceLock } from "../worker/instanceLock";
 import { integrityOf } from "./backup";
 
 /**
  * `npm run restore -- <file>`: puts a backup in place of `app.db` after copying
  * the current database aside. Refuses while the app is running, because the
  * app holds the database open and would keep writing to the replaced file.
+ *
+ * The app's instance lock (`app.lock`, decision 54) decides: an app on any port holds it while it
+ * runs. The restore takes it for its whole run, so no app can open the database meanwhile, and
+ * releases it when done, also when a step throws.
  */
 
 export type RestoreOutcome =
@@ -19,7 +24,7 @@ export interface RestoreOptions {
   /** A file name in `backups/` (`app-2026-11-10.db`) or a path to a backup file. */
   readonly backup: string;
   readonly now: Date;
-  /** True while the app is running; the restore then changes nothing. */
+  /** An extra check beside `app.lock` (port, auto-start service); true means the restore changes nothing. */
   readonly isAppRunning: () => Promise<boolean>;
 }
 
@@ -49,11 +54,29 @@ function copyPrivate(from: string, to: string): void {
 }
 
 export async function restoreBackup(options: RestoreOptions): Promise<RestoreOutcome> {
-  const { paths, backup, now } = options;
+  const { paths, backup } = options;
   const from = isAbsolute(backup) || backup.includes("/") ? resolve(backup) : join(paths.backups, backup);
   if (!existsSync(from) || !statSync(from).isFile()) {
     return { kind: "refused", reason: `no backup at ${from}. \`npm run doctor\` lists the backups` };
   }
+  const lock = takeInstanceLock(paths.root);
+  if (lock.kind === "held") {
+    const who = lock.pid === null ? "another process" : `process ${lock.pid}`;
+    return {
+      kind: "refused",
+      reason: `the app is running (${who} holds ${lock.path}). Stop it first (Ctrl+C in its terminal, or \`npm run service:stop\` if it starts at login), then run the restore again. If no copy of the app is running, delete ${lock.path}`,
+    };
+  }
+  try {
+    return await restoreHoldingLock(options, from);
+  } finally {
+    lock.release();
+  }
+}
+
+async function restoreHoldingLock(options: RestoreOptions, from: string): Promise<RestoreOutcome> {
+  const { paths, now } = options;
+  // An extra check beside the lock: the port and the auto-start service.
   if (await options.isAppRunning()) {
     return {
       kind: "refused",
