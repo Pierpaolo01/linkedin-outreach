@@ -120,7 +120,7 @@ function NeedRow(props: {
         </p>
         {props.detail !== undefined && <p className="text-sm text-muted">{props.detail}</p>}
       </div>
-      <Link to={props.to} className={props.primary === true ? "btn btn-sm btn-primary" : `${SECONDARY_BUTTON} btn-sm`}>
+      <Link to={props.to} className={`${props.primary === true ? "btn btn-sm btn-primary" : `${SECONDARY_BUTTON} btn-sm`} max-sm:w-full`}>
         {props.action}
       </Link>
     </div>
@@ -155,7 +155,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
   return (
     <section aria-labelledby="home-campaigns">
       <SectionHead id="home-campaigns" title="Campaigns">
-        <Link to="/campaigns" className="link text-sm link-hover">
+        <Link to="/campaigns" className="link inline-flex min-h-6 items-center text-sm link-hover">
           All campaigns
         </Link>
       </SectionHead>
@@ -176,13 +176,13 @@ function Campaigns({ home }: { readonly home: HomeData }) {
           A campaign finds people, scores them and, once you approve them, invites and messages them.
         </EmptyState>
       ) : (
-        <div className="overflow-x-auto rounded-box border border-base-300">
+        <div className="@container overflow-x-auto rounded-box border border-base-300">
           <table className="table table-sm">
             <thead>
               <tr className="text-muted">
                 <th className="font-medium">Campaign</th>
                 {FUNNEL.map((step) => (
-                  <th key={step} className="hidden text-right font-medium md:table-cell">
+                  <th key={step} className="hidden text-right font-medium @funnel:table-cell">
                     {FUNNEL_LABEL[step]}
                   </th>
                 ))}
@@ -196,17 +196,17 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                 const halted = haltedBy(c.status, stopped);
                 return (
                   <tr key={c.id}>
-                    <td className="md:min-w-[10.5rem]">
-                      <Link to={`/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
+                    <td className="@funnel:min-w-[10.5rem]">
+                      <Link to={`/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                         {c.name}
                       </Link>
                       <StatusLine status={c.status} safetyStop={stopped} className="mt-0.5 text-sm text-muted" />
-                      <p className="mt-0.5 text-sm text-muted md:hidden">
+                      <p className="mt-0.5 text-sm text-muted @funnel:hidden">
                         {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                       </p>
                     </td>
                     {FUNNEL.map((step) => (
-                      <td key={step} className="hidden text-right md:table-cell">
+                      <td key={step} className="hidden text-right @funnel:table-cell">
                         {c.funnel[step]}
                       </td>
                     ))}
@@ -303,7 +303,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
   return (
     <section aria-labelledby="home-activity">
       <SectionHead id="home-activity" title="What the app did">
-        <Link to="/activity" className="link text-sm link-hover">
+        <Link to="/activity" className="link inline-flex min-h-6 items-center text-sm link-hover">
           Activity log
         </Link>
       </SectionHead>

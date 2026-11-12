@@ -195,7 +195,7 @@ test("campaigns: funnel counts follow the engine by themselves, without a click 
   await page.goto("/campaigns");
   const turin = row(page, "Architects, Turin");
   await expect(turin).toBeVisible();
-  const cells = turin.locator("td.md\\:table-cell");
+  const cells = turin.locator("td.\\@funnel\\:table-cell");
   const before = Number(await cells.nth(2).innerText());
   invitedMore = true;
   await expect(cells.nth(2)).toHaveText(String(before + 100), { timeout: 25_000 });

@@ -126,7 +126,7 @@ const words = (message: string) => RULE_WORDS[message] ?? asSentence(message);
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const PROVIDER_LABEL: Readonly<Record<AiProvider, string>> = {
-  claude_cli: "Claude Code on this Mac (the claude command)",
+  claude_cli: "Claude Code on this Mac",
   anthropic_api: "Anthropic API, with your API key",
 };
 
@@ -238,7 +238,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               </div>
               <fieldset className="min-w-0">
                 <legend className="font-medium">Working days</legend>
-                <div className="mt-1.5 grid max-w-md grid-cols-7 gap-1">
+                <div className="mt-1.5 grid max-w-md grid-cols-4 gap-1 sm:grid-cols-7">
                   {DAYS.map((day, i) => {
                     const iso = i + 1;
                     const on = form.workingDays.includes(iso);
@@ -259,25 +259,29 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               </fieldset>
               <fieldset>
                 <legend className="font-medium">Hours</legend>
-                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <div className="mt-1.5 grid max-w-md grid-cols-2 gap-3 sm:flex sm:items-center sm:gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
                   <span>From</span>
                   <input
                     id={ids.start}
                     type="time"
                     aria-label="Start of the working day"
-                    className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.start"] === undefined ? "" : "input-error"}`}
+                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${errors["workingHours.start"] === undefined ? "" : "input-error"}`}
                     value={form.start}
                     onChange={(event) => change({ start: event.target.value }, "workingHours")}
                   />
+                  </span>
+                  <span className="flex min-w-0 items-center gap-2">
                   <span>to</span>
                   <input
                     id={ids.end}
                     type="time"
                     aria-label="End of the working day"
-                    className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.end"] === undefined && errors["workingHours"] === undefined ? "" : "input-error"}`}
+                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${errors["workingHours.end"] === undefined && errors["workingHours"] === undefined ? "" : "input-error"}`}
                     value={form.end}
                     onChange={(event) => change({ end: event.target.value }, "workingHours")}
                   />
+                  </span>
                 </div>
                 <FieldError message={errorOf("workingHours", "workingHours.start", "workingHours.end")} />
               </fieldset>
@@ -336,12 +340,13 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                   hint="Starts with few invites a day and adds more each day until it reaches the daily limit."
                 />
                 {form.warmUpEnabled && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 pl-14 text-sm">
-                    <span>Start at</span>
-                    {num("warmUp.invitesStartPerDay", "Warm-up: invites on the first day")}
-                    <span>invites a day and add</span>
-                    {num("warmUp.invitesIncreasePerDay", "Warm-up: invites added each day")}
-                    <span>each day.</span>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm sm:pl-14">
+                    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                      Start at {num("warmUp.invitesStartPerDay", "Warm-up: invites on the first day")} invites a day
+                    </span>
+                    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                      and add {num("warmUp.invitesIncreasePerDay", "Warm-up: invites added each day")} each day.
+                    </span>
                   </div>
                 )}
                 <FieldError message={errorOf("warmUp", "warmUp.invitesStartPerDay", "warmUp.invitesIncreasePerDay")} />
@@ -350,11 +355,12 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 <p className="font-medium">Gap between actions</p>
                 <p className="text-sm text-muted">A random wait between two actions on LinkedIn.</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
-                  <span>Between</span>
-                  {num("actionGapSeconds.min", "Shortest gap in seconds")}
-                  <span>and</span>
-                  {num("actionGapSeconds.max", "Longest gap in seconds")}
-                  <span>seconds.</span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    Between {num("actionGapSeconds.min", "Shortest gap in seconds")}
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    and {num("actionGapSeconds.max", "Longest gap in seconds")} seconds.
+                  </span>
                 </div>
                 <FieldError message={errorOf("actionGapSeconds", "actionGapSeconds.min", "actionGapSeconds.max")} />
               </div>
@@ -362,15 +368,18 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 <p className="font-medium">Breaks</p>
                 <p className="text-sm text-muted">A longer pause now and then, as a person would take.</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
-                  <span>A break of</span>
-                  {num("breaks.minutesMin", "Shortest break in minutes")}
-                  <span>to</span>
-                  {num("breaks.minutesMax", "Longest break in minutes")}
-                  <span>minutes every</span>
-                  {num("breaks.everyActionsMin", "Fewest actions between breaks")}
-                  <span>to</span>
-                  {num("breaks.everyActionsMax", "Most actions between breaks")}
-                  <span>actions.</span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    A break of {num("breaks.minutesMin", "Shortest break in minutes")}
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    to {num("breaks.minutesMax", "Longest break in minutes")} minutes
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    every {num("breaks.everyActionsMin", "Fewest actions between breaks")}
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    to {num("breaks.everyActionsMax", "Most actions between breaks")} actions.
+                  </span>
                 </div>
                 <FieldError message={errorOf("breaks", "breaks.minutesMin", "breaks.minutesMax", "breaks.everyActionsMin", "breaks.everyActionsMax")} />
               </div>
@@ -398,6 +407,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 <label htmlFor={ids.provider} className="block font-medium">
                   Which AI
                 </label>
+                <p className="text-sm text-muted">Claude Code is the claude command on this Mac.</p>
                 <select
                   id={ids.provider}
                   className="select mt-1.5 w-full max-w-sm bg-base-100"
@@ -686,7 +696,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
           Stop the app first. Then, in Terminal, in the app&rsquo;s folder, run this with the name of the backup you want
           {backups[0] === undefined ? "" : " (here, the newest)"}:
         </p>
-        <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono">
+        <pre className="mt-2 rounded-field bg-base-200 px-3 py-2 font-mono break-all whitespace-pre-wrap">
           <code>npm run restore -- {backups[0]?.file.split("/").at(-1) ?? "<backup file name>"}</code>
         </pre>
         <p className="mt-1">
@@ -729,7 +739,7 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
       {service !== undefined && !(service.installed && service.loaded) && (service.note == null || service.note === "") && (
         <ForYourAiTool>
           <p>To set it up, run this in Terminal, in the app&rsquo;s folder:</p>
-          <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono">
+          <pre className="mt-2 rounded-field bg-base-200 px-3 py-2 font-mono break-all whitespace-pre-wrap">
             <code>npm run service:install</code>
           </pre>
         </ForYourAiTool>
@@ -742,7 +752,7 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
 function ForYourAiTool({ children, testId }: { readonly children: ReactNode; readonly testId?: string }) {
   return (
     <details className="mt-block text-sm" data-testid={testId}>
-      <summary className="cursor-pointer text-muted hover:text-base-content">For your AI coding tool</summary>
+      <summary className="-my-2 cursor-pointer py-2 text-muted hover:text-base-content max-lg:-my-3 max-lg:py-3">For your AI coding tool</summary>
       <div className="mt-2">{children}</div>
     </details>
   );

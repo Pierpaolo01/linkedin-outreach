@@ -27,6 +27,109 @@ import { useLoad } from "../useLoad";
 import { POLICY_WORDS } from "../words";
 import { PageHeader } from "./PageHeader";
 
+/** The step names, in order: the six steps, then the review. */
+const STEP_TITLES: readonly string[] = [...STEPS.map((s) => s.title), "Review and start"];
+
+/** A fade at each end of the step strip that has more steps beyond it, so the strip says it scrolls. */
+function stripMask(start: boolean, end: boolean): string | undefined {
+  if (!start && !end) return undefined;
+  const from = start ? "transparent, #000 2.5rem" : "#000";
+  const to = end ? "#000 calc(100% - 2.5rem), transparent" : "#000";
+  return `linear-gradient(to right, ${from}, ${to})`;
+}
+
+/**
+ * The wizard's steps: a left column from 1024px, a strip that scrolls sideways below it. On the strip a line
+ * says which step of how many this is, the current step is brought to the middle when it changes, and an
+ * end fades while there are more steps past it.
+ */
+function StepStrip(props: {
+  readonly step: number;
+  readonly furthest: number;
+  readonly problems: ReadonlySet<number>;
+  readonly created: boolean;
+  readonly onGo: (step: number) => void;
+}) {
+  const { step } = props;
+  const strip = useRef<HTMLOListElement>(null);
+  const [more, setMore] = useState({ start: false, end: false });
+
+  const measure = () => {
+    const ol = strip.current;
+    if (ol === null) return;
+    setMore({ start: ol.scrollLeft > 1, end: ol.scrollLeft + ol.clientWidth < ol.scrollWidth - 1 });
+  };
+
+  useEffect(() => {
+    const ol = strip.current;
+    if (ol === null) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(ol);
+    return () => observer.disconnect();
+  }, []);
+
+  // Bring the current step to the middle of the strip. Only the strip scrolls, never the page.
+  useEffect(() => {
+    const ol = strip.current;
+    const current = ol?.querySelector<HTMLElement>('[aria-current="step"]')?.parentElement;
+    if (ol === null || ol === undefined || current === null || current === undefined || ol.scrollWidth <= ol.clientWidth) return;
+    ol.scrollLeft = current.offsetLeft - (ol.clientWidth - current.offsetWidth) / 2;
+    measure();
+  }, [step]);
+
+  const mask = stripMask(more.start, more.end);
+  return (
+    <nav aria-label="Wizard steps" className="min-w-0">
+      <p className="mb-2 text-sm text-muted lg:hidden">
+        Step {step + 1} of {STEP_TITLES.length}: {STEP_TITLES[step]}
+      </p>
+      <ol
+        ref={strip}
+        onScroll={measure}
+        style={mask === undefined ? undefined : { maskImage: mask, WebkitMaskImage: mask }}
+        className="relative flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible"
+      >
+        {STEP_TITLES.map((title, index) => {
+          const here = index === step;
+          const problem = props.problems.has(index);
+          const done = !here && !problem && index < props.furthest;
+          return (
+            <li key={title} className="shrink-0">
+              <button
+                type="button"
+                disabled={!props.created && index > 0}
+                aria-current={here ? "step" : undefined}
+                onClick={() => props.onGo(index)}
+                className={`relative flex w-full items-center gap-2.5 rounded-field px-2.5 py-2 text-left text-sm max-lg:min-h-11 ${
+                  here ? "bg-neutral text-neutral-content" : "hover:bg-base-200 disabled:text-muted"
+                }`}
+              >
+                <span
+                  className={`nums flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                    problem
+                      ? "border-2 border-error bg-base-100 text-error"
+                      : here
+                        ? "bg-neutral-content text-neutral"
+                        : done
+                          ? "bg-score-high text-primary"
+                          : "bg-base-300"
+                  }`}
+                  aria-hidden="true"
+                >
+                  {done ? <IconCheck className="size-3.5" /> : index + 1}
+                </span>
+                <span className="whitespace-nowrap">{title}</span>
+                {problem && <span className="sr-only">(needs attention)</span>}
+                {done && <span className="sr-only">(done)</span>}
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 const SEARCH_PREFIX = "https://www.linkedin.com/search/results/people/";
 const MAX_SEARCHES = 20;
 const REVIEW = STEPS.length;
@@ -318,46 +421,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         aside={saving ? "Saving…" : savedAt !== null ? `Draft saved at ${formatClock(savedAt.toISOString(), timeZone)}` : created ? "Draft" : undefined}
       />
       <div className="grid gap-section lg:grid-cols-[13rem_minmax(0,1fr)]">
-        <nav aria-label="Wizard steps" className="min-w-0">
-          <ol className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
-            {[...STEPS.map((s) => s.title), "Review and start"].map((title, index) => {
-              const here = index === step;
-              const problem = stepsWithProblems.has(index);
-              const done = !here && !problem && index < furthest;
-              return (
-                <li key={title} className="shrink-0">
-                  <button
-                    type="button"
-                    disabled={!created && index > 0}
-                    aria-current={here ? "step" : undefined}
-                    onClick={() => void goTo(index)}
-                    className={`relative flex w-full items-center gap-2.5 rounded-field px-2.5 py-2 text-left text-sm ${
-                      here ? "bg-neutral text-neutral-content" : "hover:bg-base-200 disabled:text-muted"
-                    }`}
-                  >
-                    <span
-                      className={`nums flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                        problem
-                          ? "border-2 border-error bg-base-100 text-error"
-                          : here
-                            ? "bg-neutral-content text-neutral"
-                            : done
-                              ? "bg-score-high text-primary"
-                              : "bg-base-300"
-                      }`}
-                      aria-hidden="true"
-                    >
-                      {done ? <IconCheck className="size-3.5" /> : index + 1}
-                    </span>
-                    <span className="whitespace-nowrap">{title}</span>
-                    {problem && <span className="sr-only">(needs attention)</span>}
-                    {done && <span className="sr-only">(done)</span>}
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        </nav>
+        <StepStrip step={step} furthest={furthest} problems={stepsWithProblems} created={created} onGo={(index) => void goTo(index)} />
 
         <div className="min-w-0">
           <ActionError message={saveError} className="mb-group" />
@@ -737,7 +801,7 @@ function Review({
                   {list.length === 0 ? <IconCheck className="size-4 text-primary" /> : <span className="status status-error" aria-hidden="true" />}
                   {STEPS[step]?.title}
                 </h3>
-                <button type="button" className="link text-sm link-hover" onClick={() => onChange(step)}>
+                <button type="button" className="link inline-flex min-h-6 shrink-0 items-center text-sm link-hover max-lg:min-h-11" onClick={() => onChange(step)}>
                   Change<span className="sr-only"> {STEPS[step]?.title}</span>
                 </button>
               </div>
@@ -745,7 +809,7 @@ function Review({
                 {rows.map(([label, value]) => (
                   <div key={label} className="contents">
                     <dt className="text-muted">{label}</dt>
-                    <dd className="min-w-0">{value}</dd>
+                    <dd className="min-w-0 wrap-break-word">{value}</dd>
                   </div>
                 ))}
               </dl>

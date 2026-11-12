@@ -53,6 +53,17 @@
   --container-page: 1180px; /* the page column */
 
   /*
+   * The box widths from which a table has room for all its columns (container queries on the table's box).
+   * Below them a campaign table drops its six funnel columns for one sentence, and the People and Stats
+   * tables show one block per row. Measured from the tables' own content, not from the viewport.
+   */
+  --container-funnel: 45rem;
+  --container-people: 58rem;
+  --container-stats: 50rem;
+  /* The box width from which the Messages fields show their preview beside the form (19rem) instead of below it. */
+  --container-preview: 44rem;
+
+  /*
    * The page rhythm, named once: each relationship has one step.
    * section: between the sections of a page, and between the columns of a split layout (32px).
    * block: after the title block, and between the fields of a form (24px).
@@ -90,6 +101,14 @@ body {
 
 .btn.btn-xs {
   --fontsize: var(--text-caption);
+}
+
+/* Below 1024px an extra-small button is a 44px target (see the utilities layer), so it takes the small size's text and padding. */
+@media (width < 64rem) {
+  .btn.btn-xs {
+    --fontsize: var(--text-sm);
+    --btn-p: 0.75rem;
+  }
 }
 
 .nums {
@@ -132,6 +151,21 @@ body {
   }
   :where(.table-sm tbody) :where(th, td) {
     padding-block: 0.75rem;
+  }
+
+  /*
+   * Below 1024px (the drawer layout) every control is a 44px target: buttons, fields and the menu's items,
+   * with an extra-small button in a row growing to the small one. From 1024px the desk keeps its pointer
+   * density. Switches and radios reach 44px through their label rows (formParts.tsx and the radio lists).
+   */
+  @media (width < 64rem) {
+    :where(.btn, .input, .select, .menu li > a) {
+      min-height: 2.75rem;
+    }
+    /* 16px in a field, so a phone does not zoom the page when the field takes focus. */
+    :where(.input, .select, .textarea) {
+      font-size: 1rem;
+    }
   }
 }
 

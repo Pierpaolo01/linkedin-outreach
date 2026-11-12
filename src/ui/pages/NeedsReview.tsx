@@ -176,7 +176,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{person.fullName}</h2>
-          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 text-sm text-base-content link-hover">
+          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-6 items-center gap-1 text-sm text-base-content link-hover">
             LinkedIn profile
             <IconExternal />
             <span className="sr-only">(opens in your browser)</span>
@@ -214,9 +214,9 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
                 <p className="mb-1 text-caption text-muted" aria-hidden="true">
                   {group.caption}
                 </p>
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col">
                   {group.stages.map((stage) => (
-                    <label key={stage} className="flex cursor-pointer items-start gap-2">
+                    <label key={stage} className="flex cursor-pointer items-start gap-2 py-1 max-lg:py-3">
                       <input
                         type="radio"
                         className="radio radio-sm radio-primary mt-0.5"

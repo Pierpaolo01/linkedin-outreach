@@ -42,7 +42,7 @@ export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
 
   return (
     <div role="alert" className={BAR} data-testid="safety-stop">
-      <IconStop className="hidden size-7 shrink-0 sm:block" />
+      <IconStop className="size-7 shrink-0" />
       <div className="min-w-0">
         <p className="font-semibold">Safety stop. All LinkedIn activity is stopped.</p>
         <p className="text-error-content/90">
@@ -87,7 +87,7 @@ export function SessionBanner({ session, recheck }: { readonly session: Session;
   if (view.problem === undefined) return null;
   return (
     <div role="alert" className={BAR} data-testid="session-problem">
-      <IconStop className="hidden size-7 shrink-0 sm:block" />
+      <IconStop className="size-7 shrink-0" />
       <div className="min-w-0">
         <p className="font-semibold">LinkedIn needs you.</p>
         <p className="text-error-content/90">{view.problem}</p>

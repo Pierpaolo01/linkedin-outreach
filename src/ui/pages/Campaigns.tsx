@@ -95,7 +95,7 @@ export function Campaigns() {
       {archived.length > 0 && (
         <section className="mt-section" aria-labelledby="archived-campaigns">
           <SectionHead id="archived-campaigns" title="Archived">
-            <button type="button" className="link mr-auto text-sm link-hover" aria-expanded={showArchived} onClick={() => setShowArchived((open) => !open)}>
+            <button type="button" className="link mr-auto inline-flex min-h-6 items-center text-sm link-hover max-lg:min-h-11" aria-expanded={showArchived} onClick={() => setShowArchived((open) => !open)}>
               {showArchived ? "Hide" : `Show ${archived.length}`}
             </button>
           </SectionHead>
@@ -130,13 +130,13 @@ function CampaignTable(props: {
 }) {
   const { timeZone } = useAppData();
   return (
-    <div className="overflow-x-auto rounded-box border border-base-300">
+    <div className="@container overflow-x-auto rounded-box border border-base-300">
       <table className="table table-sm" data-testid="campaigns-table">
         <thead>
           <tr className="text-muted">
             <th className="font-medium">Campaign</th>
             {FUNNEL.map((step) => (
-              <th key={step} className="hidden text-right font-medium md:table-cell">
+              <th key={step} className="hidden text-right font-medium @funnel:table-cell">
                 {FUNNEL_LABEL[step]}
               </th>
             ))}
@@ -152,18 +152,18 @@ function CampaignTable(props: {
             const busy = props.busyId === c.id;
             return (
               <tr key={c.id} data-testid="campaign-row">
-                <td className="md:min-w-[14rem]">
-                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
+                <td className="@funnel:min-w-[10.5rem]">
+                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
                   <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-muted" testId="campaign-status" />
                   {wait !== null && <p className="mt-1 max-w-sm text-sm text-base-content">{discoveryWaitSentence(wait, timeZone)}</p>}
-                  <p className="mt-0.5 text-sm text-muted md:hidden">
+                  <p className="mt-0.5 text-sm text-muted @funnel:hidden">
                     {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                   </p>
                 </td>
                 {FUNNEL.map((step) => (
-                  <td key={step} className="hidden text-right md:table-cell">
+                  <td key={step} className="hidden text-right @funnel:table-cell">
                     {c.funnel[step]}
                   </td>
                 ))}

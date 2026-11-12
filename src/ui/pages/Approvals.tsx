@@ -171,7 +171,7 @@ export function Approvals() {
               key={step}
               type="button"
               aria-pressed={minScore === step}
-              className={`${minScore === step ? "btn btn-neutral" : SECONDARY_BUTTON} join-item btn-sm nums`}
+              className={`${minScore === step ? "btn btn-neutral" : SECONDARY_BUTTON} join-item btn-sm nums max-lg:min-w-11`}
               onClick={() => setMinScore(step)}
             >
               {step === 0 ? "Any" : `${step}+`}
@@ -342,7 +342,7 @@ function Row({
           href={person.profileUrl}
           target="_blank"
           rel="noreferrer"
-          className="link mt-1 inline-flex items-center gap-1 text-sm text-base-content link-hover"
+          className="link mt-1 inline-flex min-h-6 items-center gap-1 text-sm text-base-content link-hover"
         >
           LinkedIn profile
           <IconExternal />
@@ -435,7 +435,7 @@ function FollowUp({ text, person }: { readonly text: PreviewText | null; readonl
   if (!text.ok) return <Text label={FOLLOW_UP_LABEL} text={text} person={person} />;
   return (
     <details data-testid="follow-up">
-      <summary className="cursor-pointer text-caption text-muted hover:text-base-content">{FOLLOW_UP_LABEL}</summary>
+      <summary className="-my-2 cursor-pointer py-2 text-caption text-muted hover:text-base-content max-lg:-my-3.25 max-lg:py-3.25">{FOLLOW_UP_LABEL}</summary>
       <p className="mt-0.5 whitespace-pre-line">
         <Filled text={text.text} person={person} />
       </p>

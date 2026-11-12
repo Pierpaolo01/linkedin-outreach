@@ -187,7 +187,10 @@ export function Field(props: {
   );
 }
 
-/** An on/off switch with its label and what it does. */
+/**
+ * An on/off switch with its label and what it does. Below 1024px the whole row, at least 44px tall, is the
+ * switch's target: the label's box is stretched over the row.
+ */
 export function SwitchRow(props: {
   readonly id: string;
   readonly label: string;
@@ -197,7 +200,7 @@ export function SwitchRow(props: {
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="relative flex items-start gap-3 max-lg:min-h-11">
       <input
         id={props.id}
         type="checkbox"
@@ -208,7 +211,7 @@ export function SwitchRow(props: {
         onChange={(event) => props.onChange(event.target.checked)}
       />
       <div>
-        <label htmlFor={props.id} className="font-medium">
+        <label htmlFor={props.id} className="font-medium max-lg:after:absolute max-lg:after:inset-0 max-lg:after:cursor-pointer">
           {props.label}
         </label>
         {props.hint !== undefined && <div className="text-sm text-muted">{props.hint}</div>}

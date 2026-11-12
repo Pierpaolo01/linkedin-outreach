@@ -63,101 +63,103 @@ export function MessageFields({
   );
 
   return (
-    <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_19rem]">
-      <div className="flex min-w-0 flex-col gap-block">
-        <div className="rounded-box bg-base-200 px-4 py-3">
-          <p className="text-sm">
-            Add a detail that changes for each person. It goes into the <span className="font-medium">{TEXT_NAME[target]}</span>, where your cursor is.
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Variables">
-            {variables.map((v) => (
-              <button
-                key={v.name}
-                type="button"
-                className={`${SECONDARY_BUTTON} btn-xs font-normal`}
-                aria-label={`Insert ${v.label}`}
-                title={`Adds {{${v.name}}}`}
-                // Keep the cursor where it is in the text box.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => insert(v.name)}
-              >
-                {v.label}
-                <span className="text-muted">{`{{${v.name}}}`}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="flex items-baseline justify-between gap-3">
-            <label htmlFor={ids.inviteNote} className="font-medium">
-              Invite note <span className="font-normal text-muted">(optional)</span>
-            </label>
-            <span className={`nums text-sm ${noteLength > INVITE_NOTE_MAX ? "font-medium text-error" : "text-muted"}`} data-testid="note-count">
-              {noteLength} / {INVITE_NOTE_MAX}
-            </span>
-          </div>
-          <p className="text-sm text-muted">
-            Sent with the invite. Leave it empty to invite without a note. LinkedIn allows {INVITE_NOTE_MAX} characters once the variables are filled
-            in; the preview shows the real length.
-          </p>
-          <div className="mt-1.5">{textBox("inviteNote", 3, "Your invite note")}</div>
-          <FieldError message={errors["inviteNote"]} />
-        </div>
-
-        <div>
-          <label htmlFor={ids.firstMessage} className="font-medium">
-            First message
-          </label>
-          <p className="text-sm text-muted">Sent after they accept your invite.</p>
-          <div className="mt-1.5">{textBox("firstMessage", 6, "Your first message")}</div>
-          <FieldError message={errors["firstMessage"]} />
-        </div>
-
-        <div>
-          <label htmlFor={ids.followUp} className="font-medium">
-            Follow-up <span className="font-normal text-muted">(optional)</span>
-          </label>
-          <p className="text-sm text-muted">Sent once if they have not replied to the first message. Leave it empty to send no follow-up.</p>
-          <div className="mt-1.5">{textBox("followUp", 4, "Your follow-up")}</div>
-          <FieldError message={errors["followUp"]} />
-        </div>
-
-        <div className="flex flex-col gap-3 rounded-box border border-base-300 px-4 py-4">
-          <SwitchRow
-            id={ids.personalise}
-            label="Let the AI write one line for each person"
-            hint="The line goes where you put the AI-written line variable, based only on what their profile says."
-            checked={form.aiPersonalise}
-            onChange={(on) => set("aiPersonalise", on)}
-          />
-          <FieldError message={errors["aiPersonalise"]} />
-          {form.aiPersonalise && (
-            <div>
-              <label htmlFor={ids.instructions} className="text-sm font-medium">
-                Your instructions for the AI line
-              </label>
-              <textarea
-                id={ids.instructions}
-                rows={3}
-                className="textarea mt-1 w-full bg-base-100"
-                value={form.personalisationInstructions}
-                placeholder="What the line should be about, and what to avoid"
-                onChange={(event) => set("personalisationInstructions", event.target.value)}
-              />
-              <FieldError message={errors["personalisationInstructions"]} />
+    <div className="@container">
+      <div className="grid gap-section @preview:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="flex min-w-0 flex-col gap-block">
+          <div className="rounded-box bg-base-200 px-4 py-3">
+            <p className="text-sm">
+              Add a detail that changes for each person. It goes into the <span className="font-medium">{TEXT_NAME[target]}</span>, where your cursor is.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Variables">
+              {variables.map((v) => (
+                <button
+                  key={v.name}
+                  type="button"
+                  className={`${SECONDARY_BUTTON} btn-xs font-normal`}
+                  aria-label={`Insert ${v.label}`}
+                  title={`Adds {{${v.name}}}`}
+                  // Keep the cursor where it is in the text box.
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => insert(v.name)}
+                >
+                  {v.label}
+                  <span className="text-muted">{`{{${v.name}}}`}</span>
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+  
+          <div>
+            <div className="flex items-baseline justify-between gap-3">
+              <label htmlFor={ids.inviteNote} className="font-medium">
+                Invite note <span className="font-normal text-muted">(optional)</span>
+              </label>
+              <span className={`nums text-sm ${noteLength > INVITE_NOTE_MAX ? "font-medium text-error" : "text-muted"}`} data-testid="note-count">
+                {noteLength} / {INVITE_NOTE_MAX}
+              </span>
+            </div>
+            <p className="text-sm text-muted">
+              Sent with the invite. Leave it empty to invite without a note. LinkedIn allows {INVITE_NOTE_MAX} characters once the variables are filled
+              in; the preview shows the real length.
+            </p>
+            <div className="mt-1.5">{textBox("inviteNote", 3, "Your invite note")}</div>
+            <FieldError message={errors["inviteNote"]} />
+          </div>
+  
+          <div>
+            <label htmlFor={ids.firstMessage} className="font-medium">
+              First message
+            </label>
+            <p className="text-sm text-muted">Sent after they accept your invite.</p>
+            <div className="mt-1.5">{textBox("firstMessage", 6, "Your first message")}</div>
+            <FieldError message={errors["firstMessage"]} />
+          </div>
+  
+          <div>
+            <label htmlFor={ids.followUp} className="font-medium">
+              Follow-up <span className="font-normal text-muted">(optional)</span>
+            </label>
+            <p className="text-sm text-muted">Sent once if they have not replied to the first message. Leave it empty to send no follow-up.</p>
+            <div className="mt-1.5">{textBox("followUp", 4, "Your follow-up")}</div>
+            <FieldError message={errors["followUp"]} />
+          </div>
+  
+          <div className="flex flex-col gap-3 rounded-box border border-base-300 px-4 py-4">
+            <SwitchRow
+              id={ids.personalise}
+              label="Let the AI write one line for each person"
+              hint="The line goes where you put the AI-written line variable, based only on what their profile says."
+              checked={form.aiPersonalise}
+              onChange={(on) => set("aiPersonalise", on)}
+            />
+            <FieldError message={errors["aiPersonalise"]} />
+            {form.aiPersonalise && (
+              <div>
+                <label htmlFor={ids.instructions} className="text-sm font-medium">
+                  Your instructions for the AI line
+                </label>
+                <textarea
+                  id={ids.instructions}
+                  rows={3}
+                  className="textarea mt-1 w-full bg-base-100"
+                  value={form.personalisationInstructions}
+                  placeholder="What the line should be about, and what to avoid"
+                  onChange={(event) => set("personalisationInstructions", event.target.value)}
+                />
+                <FieldError message={errors["personalisationInstructions"]} />
+              </div>
+            )}
+          </div>
         </div>
+  
+        <TemplatePreview
+          campaignId={campaignId}
+          inviteNote={form.inviteNote}
+          firstMessage={form.firstMessage}
+          followUp={form.followUp}
+          aiPersonalise={form.aiPersonalise}
+        />
       </div>
-
-      <TemplatePreview
-        campaignId={campaignId}
-        inviteNote={form.inviteNote}
-        firstMessage={form.firstMessage}
-        followUp={form.followUp}
-        aiPersonalise={form.aiPersonalise}
-      />
     </div>
   );
 }
@@ -178,7 +180,7 @@ function TemplatePreview(props: {
   });
 
   return (
-    <aside aria-label="Preview" className="min-w-0 lg:sticky lg:top-6 lg:self-start" data-testid="preview">
+    <aside aria-label="Preview" className="min-w-0 @preview:sticky @preview:top-6 @preview:self-start" data-testid="preview">
       <h3 className="font-semibold">Preview</h3>
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the preview" message={loaded.error.message} onRetry={loaded.reload} className="mt-2 text-sm" />
@@ -253,14 +255,14 @@ export function TimingFields({ form, set, errors }: { readonly form: CampaignFor
 
       <fieldset>
         <legend className="font-medium">How the waits count days</legend>
-        <div className="mt-2 flex flex-col gap-2" id={ids.policy}>
+        <div className="mt-1 flex flex-col" id={ids.policy}>
           {(
             [
               ["calendar", "Every day counts, weekends too"],
               ["working_days", "Only working days count (the days set in Settings)"],
             ] as const
           ).map(([value, label]) => (
-            <label key={value} className="flex items-center gap-2.5">
+            <label key={value} className="flex cursor-pointer items-center gap-2.5 py-1 max-lg:py-2.5">
               <input
                 type="radio"
                 name={ids.policy}

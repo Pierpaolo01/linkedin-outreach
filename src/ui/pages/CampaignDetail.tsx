@@ -14,6 +14,23 @@ import { PageHeader } from "./PageHeader";
 const PAGE_SIZE = 25;
 type Stage = (typeof PROSPECT_STAGES)[number];
 
+/*
+ * The People table needs a box of 58rem (`--container-people`) for its seven columns. In a narrower box each
+ * person is one block: the cells stack, each value under or beside its column's name. The explicit roles keep
+ * the table's semantics when its parts are displayed as blocks; the visible names are for the eye only.
+ */
+const STACK_CELL = "@max-people:min-w-0 @max-people:border-0 @max-people:p-0";
+const STACK_PAIR = `${STACK_CELL} @max-people:grid @max-people:grid-cols-[6rem_minmax(0,1fr)] @max-people:items-baseline @max-people:gap-x-3`;
+const STACK_LABEL = "hidden text-caption text-muted @max-people:block";
+
+function StackLabel({ children }: { readonly children: string }) {
+  return (
+    <span className={STACK_LABEL} aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
 /** One campaign: its funnel and status, its people with stage and score, and its messages and timings. */
 export function CampaignDetail({ id }: { readonly id: string }) {
   const campaignId = Number(id);
@@ -121,7 +138,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
   return (
     <section className="mt-section" aria-labelledby="people">
       <SectionHead id="people" title="People">
-        <a href={prospectsCsvUrl(campaign.id)} className="link text-sm link-hover">
+        <a href={prospectsCsvUrl(campaign.id)} className="link inline-flex min-h-6 items-center text-sm link-hover">
           Download as CSV
         </a>
       </SectionHead>
@@ -159,22 +176,22 @@ function People({ campaign }: { readonly campaign: Campaign }) {
         </EmptyState>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-box border border-base-300">
-            <table className="table table-sm" data-testid="people-table">
-              <thead>
-                <tr className="text-muted">
-                  <th className="font-medium">Person</th>
-                  <th className="font-medium">Company</th>
-                  <th className="font-medium">Stage</th>
-                  <th className="font-medium">Score</th>
-                  <th className="min-w-[16rem] font-medium">Why the AI scored them so</th>
-                  <th className="font-medium">Next action</th>
-                  <th>
+          <div className="@container overflow-x-auto rounded-box border border-base-300">
+            <table role="table" className="table table-sm @max-people:block" data-testid="people-table">
+              <thead role="rowgroup" className="@max-people:sr-only">
+                <tr role="row" className="text-muted">
+                  <th role="columnheader" className="font-medium">Person</th>
+                  <th role="columnheader" className="font-medium">Company</th>
+                  <th role="columnheader" className="font-medium">Stage</th>
+                  <th role="columnheader" className="font-medium">Score</th>
+                  <th role="columnheader" className="min-w-[14rem] font-medium">Why the AI scored them so</th>
+                  <th role="columnheader" className="font-medium">Next action</th>
+                  <th role="columnheader">
                     <span className="sr-only">LinkedIn profile</span>
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup" className="@max-people:block">
                 {items.map((p) => (
                   <Fragment key={p.id}>
                     <ProspectRow
@@ -186,8 +203,8 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                       now={now}
                     />
                     {open === p.id && (
-                      <tr>
-                        <td colSpan={7} className="bg-base-200/60 p-4">
+                      <tr role="row" className="@max-people:block">
+                        <td role="cell" colSpan={7} className="bg-base-200/60 p-4 @max-people:block">
                           <ProspectDetail prospect={p} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
                         </td>
                       </tr>
@@ -224,38 +241,60 @@ function ProspectRow(props: {
   const next = nextStepWords(p.stage, campaign);
   const stopped = p.stopReason === "replied" ? " (they replied)" : p.stopReason === "manual_takeover" ? " (you messaged them yourself)" : "";
   return (
-    <tr data-testid="prospect-row" className={props.open ? "bg-base-200/60" : ""}>
-      <td className="min-w-[12rem]">
-        <button type="button" className="inline-flex items-center gap-1 text-left font-semibold hover:underline" aria-expanded={props.open} onClick={props.onToggle}>
+    <tr
+      role="row"
+      data-testid="prospect-row"
+      className={`@max-people:flex @max-people:flex-col @max-people:gap-2 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-content/5 ${props.open ? "bg-base-200/60" : ""}`}
+    >
+      <td role="cell" className={`min-w-[10rem] ${STACK_CELL}`}>
+        <button
+          type="button"
+          className="inline-flex min-h-6 items-center gap-1 text-left font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11"
+          aria-expanded={props.open}
+          onClick={props.onToggle}
+        >
           {p.person.fullName}
           <IconChevron className={`size-3.5 shrink-0 text-muted ${props.open ? "rotate-90" : ""}`} />
         </button>
         {p.person.headline !== null && <p className="text-base-content">{p.person.headline}</p>}
         {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/15 text-error">Do not contact</span>}
       </td>
-      <td>{p.person.company ?? <span className="text-muted">Unknown</span>}</td>
-      <td className="whitespace-nowrap" data-testid="prospect-stage">
-        <StageWords stage={p.stage} extra={stopped} />
+      <td role="cell" className={STACK_PAIR}>
+        <StackLabel>Company</StackLabel>
+        <span>{p.person.company ?? <span className="text-muted">Unknown</span>}</span>
       </td>
-      <td>
-        <ScoreChip score={p.score} size="sm" />
+      <td role="cell" className={`whitespace-nowrap ${STACK_PAIR} @max-people:whitespace-normal`}>
+        <StackLabel>Stage</StackLabel>
+        <span data-testid="prospect-stage">
+          <StageWords stage={p.stage} extra={stopped} />
+        </span>
       </td>
-      <td className="text-base-content">{p.scoreReason ?? <span className="text-muted">Not scored yet</span>}</td>
-      <td className="min-w-[9rem]">
+      <td role="cell" className={`${STACK_PAIR} @max-people:items-center`}>
+        <StackLabel>Score</StackLabel>
+        <span>
+          <ScoreChip score={p.score} size="sm" />
+        </span>
+      </td>
+      <td role="cell" className={`text-base-content ${STACK_CELL}`}>
+        <StackLabel>Why the AI scored them so</StackLabel>
+        <span>{p.scoreReason ?? <span className="text-muted">Not scored yet</span>}</span>
+      </td>
+      <td role="cell" className={`min-w-[9rem] ${STACK_PAIR}`}>
+        <StackLabel>Next action</StackLabel>
         {p.nextActionAt === null ? (
           <span className="text-muted">
             <span aria-hidden="true">–</span>
             <span className="sr-only">Nothing planned</span>
           </span>
         ) : (
-          <>
+          <div>
             {next !== undefined && <p>{next}</p>}
             <p className="text-muted">{formatNext(p.nextActionAt, timeZone, now)}</p>
-          </>
+          </div>
         )}
       </td>
-      <td>
-        <a href={p.person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 whitespace-nowrap text-base-content link-hover">
+      <td role="cell" className={STACK_CELL}>
+        <a href={p.person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-6 items-center gap-1 whitespace-nowrap text-base-content link-hover">
           Profile
           <IconExternal />
           <span className="sr-only">of {p.person.fullName} on LinkedIn (opens in your browser)</span>
@@ -343,7 +382,7 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
           {texts.map(([label, text, none]) => (
             <div key={label}>
               <dt className="text-caption text-muted">{label}</dt>
-              <dd className={`whitespace-pre-line ${text === null ? "text-muted" : "border-l-2 border-base-300 pl-3"}`}>{text ?? none}</dd>
+              <dd className={`whitespace-pre-line wrap-break-word ${text === null ? "text-muted" : "border-l-2 border-base-300 pl-3"}`}>{text ?? none}</dd>
             </div>
           ))}
         </dl>

@@ -55,7 +55,7 @@ function Shell() {
       />
       <div className="drawer-content flex min-w-0 flex-col">
         <header className="flex items-center gap-2 border-b border-base-300 px-2 py-2 lg:hidden">
-          <label htmlFor={DRAWER_ID} className="btn btn-ghost btn-square" aria-label="Open menu">
+          <label htmlFor={DRAWER_ID} className="btn btn-ghost btn-square size-11" aria-label="Open menu">
             <IconMenu />
           </label>
           <span className="font-semibold">Outreach</span>

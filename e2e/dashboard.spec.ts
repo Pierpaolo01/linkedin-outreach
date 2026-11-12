@@ -429,6 +429,32 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
     expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
   }
 
+  // A campaign's people: one block per person with each value named, nothing hidden sideways in the box,
+  // and an opened person's texts inside the screen.
+  await page.goto("/campaigns/1");
+  const person = page.getByTestId("prospect-row").first();
+  await expect(person.getByText("Company", { exact: true })).toBeVisible();
+  await expect(person.getByText("Next action", { exact: true })).toBeVisible();
+  const hidden = await page.getByTestId("people-table").evaluate((table) => (table.parentElement === null ? 0 : table.parentElement.scrollWidth - table.parentElement.clientWidth));
+  expect(hidden, "the People box scrolls sideways").toBeLessThanOrEqual(0);
+  await person.getByRole("button").first().click();
+  const detailRight = await page.getByTestId("prospect-detail").evaluate((detail) => detail.getBoundingClientRect().right - window.innerWidth);
+  expect(detailRight, "an opened person's texts run past the screen").toBeLessThanOrEqual(0);
+
+  // Stats: one block per campaign, nothing hidden sideways.
+  await page.goto("/stats");
+  await expect(page.getByTestId("stats-row").first().getByText("Median time to accept", { exact: true })).toBeVisible();
+  const statsHidden = await page.getByTestId("stats-table").evaluate((table) => (table.parentElement === null ? 0 : table.parentElement.scrollWidth - table.parentElement.clientWidth));
+  expect(statsHidden, "the Stats box scrolls sideways").toBeLessThanOrEqual(0);
+
+  // The approval queue: Approve and Reject are 44px targets on a phone.
+  await page.goto("/approvals");
+  const decide = page.getByTestId("approval-row").first();
+  for (const name of ["Approve", "Reject"]) {
+    const target = await decide.getByRole("button", { name }).boundingBox();
+    expect(target?.height ?? 0, `${name} is too small to tap`).toBeGreaterThanOrEqual(44);
+  }
+
   // Settings: the seven working-day buttons stay inside the screen, each tall enough to tap.
   await page.goto("/settings");
   const days = page.getByRole("group", { name: "Working days" });
