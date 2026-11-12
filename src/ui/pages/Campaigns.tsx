@@ -6,7 +6,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, plural } from "../format";
 import { LoadError } from "../formParts";
 import { Link } from "../router";
-import { useLoad } from "../useLoad";
+import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
 import { PageHeader } from "./PageHeader";
 
@@ -15,7 +15,7 @@ export function Campaigns() {
   const { home, refresh } = useAppData();
   // Reload whenever a campaign's status or the waiting counts change (Home is polled).
   const key = `${(home?.campaigns ?? []).map((c) => `${c.id}:${c.status}`).join(",")}|${home?.needsYou.pendingApproval ?? ""}`;
-  const loaded = useLoad(listCampaigns, key, { keepPrevious: true });
+  const loaded = useLoad(listCampaigns, key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
   const [archiving, setArchiving] = useState<Campaign | null>(null);

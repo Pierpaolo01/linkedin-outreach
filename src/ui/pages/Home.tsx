@@ -13,7 +13,7 @@ import {
 import { LoadError } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
-import { useLoad } from "../useLoad";
+import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
 
 /** Home: what needs the user, the campaigns, today's usage against each limit, and what the app did. */
@@ -152,7 +152,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
   const { refresh } = useAppData();
   // Reload the funnels whenever Home's campaigns or counts change.
   const key = `${home.campaigns.map((c) => `${c.id}:${c.status}`).join(",")}|${home.needsYou.pendingApproval}`;
-  const loaded = useLoad(listCampaigns, key, { keepPrevious: true });
+  const loaded = useLoad(listCampaigns, key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
   const stopped = home.safetyStop !== null;
@@ -325,7 +325,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
   const { timeZone } = useAppData();
   // A new line usually comes with a change in the counts or usage; reload then.
   const key = JSON.stringify([home.needsYou, BUDGET_ORDER.map((k) => home.usage[k].used), home.safetyStop?.raisedAt ?? null]);
-  const loaded = useLoad(() => listActivity({ pageSize: 6 }), key, { keepPrevious: true });
+  const loaded = useLoad(() => listActivity({ pageSize: 6 }), key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const now = new Date();
   const items = loaded.data?.items ?? [];
   return (

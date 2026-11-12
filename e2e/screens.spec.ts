@@ -178,6 +178,29 @@ test("wizard: Start refuses when the app kept other text than the review shows",
   expect(saved.campaign.status).toBe("draft");
 });
 
+test("campaigns: funnel counts follow the engine by themselves, without a click or a reload", async ({ page }) => {
+  // The engine sends an invite: nothing the page keys its reload on (status, people waiting) changes,
+  // only a funnel count. Once the test says so, the answers carry 100 more invited for one campaign.
+  let invitedMore = false;
+  await page.route(
+    (url) => url.pathname === "/api/campaigns",
+    async (route) => {
+      const response = await route.fetch();
+      if (!invitedMore) return route.fulfill({ response });
+      const json = (await response.json()) as { campaigns: { name: string; funnel: Record<string, number> }[] };
+      const campaigns = json.campaigns.map((c) => (c.name === "Architects, Turin" ? { ...c, funnel: { ...c.funnel, invited: (c.funnel["invited"] ?? 0) + 100 } } : c));
+      return route.fulfill({ response, json: { ...json, campaigns } });
+    },
+  );
+  await page.goto("/campaigns");
+  const turin = row(page, "Architects, Turin");
+  await expect(turin).toBeVisible();
+  const cells = turin.locator("td.md\\:table-cell");
+  const before = Number(await cells.nth(2).innerText());
+  invitedMore = true;
+  await expect(cells.nth(2)).toHaveText(String(before + 100), { timeout: 25_000 });
+});
+
 test("campaigns: pause and resume, a waiting discovery, and archive after a confirm", async ({ page }) => {
   await page.goto("/campaigns");
   const hotels = row(page, "Hotel owners, Rome");

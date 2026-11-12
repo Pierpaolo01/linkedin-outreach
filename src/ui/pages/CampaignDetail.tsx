@@ -8,7 +8,7 @@ import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone } fr
 import { LoadError, Pager, SwitchRow } from "../formParts";
 import { IconExternal } from "../icons";
 import { Link } from "../router";
-import { useLoad } from "../useLoad";
+import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, formatNext, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextStepWords, PAUSABLE, stageWords } from "../words";
 import { PageHeader } from "./PageHeader";
 
@@ -24,7 +24,7 @@ type Stage = (typeof PROSPECT_STAGES)[number];
 export function CampaignDetail({ id }: { readonly id: string }) {
   const campaignId = Number(id);
   const [nonce, setNonce] = useState(0);
-  const loaded = useLoad(() => getCampaign(campaignId).then((r) => r.campaign), `campaign-${id}-${nonce}`, { keepPrevious: true });
+  const loaded = useLoad(() => getCampaign(campaignId).then((r) => r.campaign), `campaign-${id}-${nonce}`, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const reload = () => setNonce((n) => n + 1);
 
   if (loaded.status === "error" && loaded.data === undefined) {
@@ -125,7 +125,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
   const loaded = useLoad(
     () => listCampaignProspects(campaign.id, { ...(stage === null ? {} : { stage }), page, pageSize: PAGE_SIZE }),
     `${campaign.id}|${stage ?? "all"}|${page}|${nonce}`,
-    { keepPrevious: true },
+    { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS },
   );
   const now = new Date();
   const items = loaded.data?.items ?? [];
