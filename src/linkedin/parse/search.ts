@@ -45,7 +45,15 @@ export interface SearchResults {
   readonly skipped: readonly string[];
 }
 
-export function parseSearchResults(html: string, options: ListParseOptions = {}): SearchResults {
+export interface SearchParseOptions extends ListParseOptions {
+  /**
+   * Fail on any result that cannot be read instead of leaving it out. For building fixtures: a
+   * result left out would keep its person's name and headline in the fixture, unscrubbed.
+   */
+  readonly everyResult?: boolean;
+}
+
+export function parseSearchResults(html: string, options: SearchParseOptions = {}): SearchResults {
   const { root, screen, wording } = loadListPage(html, PAGE, hooks.screen);
   const pageText = textOf(root);
   const capped = includesAny(pageText, wording.search.capped);
@@ -61,7 +69,7 @@ export function parseSearchResults(html: string, options: ListParseOptions = {})
     else if (card.publicId !== options.selfPublicId) cards.push(card);
   });
   // One odd result is LinkedIn's variety and is left out; half the page or more is a page that changed.
-  if (skipped.length * 2 >= rows.length && skipped[0] !== undefined) {
+  if (skipped[0] !== undefined && (options.everyResult === true || skipped.length * 2 >= rows.length)) {
     throw new ParseError(PAGE, `${skipped[0]} (${skipped.length} of ${rows.length} results could not be read)`);
   }
 

@@ -45,20 +45,20 @@ const pages: readonly ListPage[] = [
   {
     capture: "captures/search-people.html",
     fixture: "fixtures/search/people-en.html",
-    parse: (html) => parseSearchResults(html).cards,
+    parse: searchCards,
     extraTexts: (card) => [card.location, "summary" in card && typeof card.summary === "string" ? card.summary : null],
   },
   {
     capture: "captures/later-search-people.html",
     fixture: "fixtures/search/people-later-en.html",
-    parse: (html) => parseSearchResults(html).cards,
+    parse: searchCards,
     extraTexts: (card) => [card.location, "summary" in card && typeof card.summary === "string" ? card.summary : null],
     otherNames: mutualConnectionNames,
   },
   {
     capture: "captures/later-search-language-suffix.html",
     fixture: "fixtures/search/people-language-suffix-en.html",
-    parse: (html) => parseSearchResults(html).cards,
+    parse: searchCards,
     extraTexts: (card) => [card.location, "summary" in card && typeof card.summary === "string" ? card.summary : null],
     otherNames: mutualConnectionNames,
   },
@@ -81,6 +81,14 @@ const pages: readonly ListPage[] = [
     extraTexts: (card) => [card.location],
   },
 ];
+
+/**
+ * Every card of a search page. A result the parser cannot read fails the build: live discovery
+ * leaves such a result out, but here its person would stay in the fixture, never scrubbed.
+ */
+function searchCards(html: string): readonly Card[] {
+  return parseSearchResults(html, { everyResult: true }).cards;
+}
 
 const MEMBER_URN = /ACoAA[A-Za-z0-9_-]+/g;
 

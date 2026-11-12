@@ -234,6 +234,22 @@ describe("a discovery page the app cannot read", () => {
     expect(campaignProspects(c)).toHaveLength(2);
   });
 
+  it("reports LinkedIn's search limit, not a look again tomorrow, once another campaign's search hits the limit", async () => {
+    const a = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [SEARCH] });
+    kit.world.failNext("searchPeople", "unexpected");
+    await next();
+    const b = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [`${SEARCH}&b`] });
+    kit.world.failNext("searchPeople", "search_capped");
+    await next();
+    expect(runs(a)).toMatchObject([{ unreadableUntil: new Date("2026-11-16T23:00:00Z"), pausedUntil: null }]);
+    expect(runs(b)).toMatchObject([{ pausedUntil: new Date("2026-11-30T23:00:00Z") }]);
+
+    const campaign = kit.db.select().from(campaigns).where(eq(campaigns.id, a)).get();
+    if (campaign === undefined) throw new Error("missing campaign");
+    // The limit is on the account: the first campaign's search cannot be loaded tomorrow either.
+    expect(discoveryWait(kit.db, campaign, kit.clock.now())).toEqual({ kind: "search_limit", until: new Date("2026-11-30T23:00:00Z") });
+  });
+
   it("still raises the safety stop when three different pages in a row cannot be read", async () => {
     for (const tag of ["a", "b", "c"]) {
       addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [`${SEARCH}&${tag}`] });

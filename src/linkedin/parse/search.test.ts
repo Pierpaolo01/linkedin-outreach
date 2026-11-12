@@ -179,6 +179,14 @@ describe("parseSearchResults on hand-written pages", () => {
     expect(result.skipped).toEqual(["result 2: no profile link"]);
   });
 
+  it("throws ParseError on any result it cannot read when asked for every result (fixture building: a result left out would stay unscrubbed)", () => {
+    const broken = row({ id: "person-2" }).replaceAll("https://www.linkedin.com/in/person-2/?miniProfileUrn=abc", "#");
+    const html = page(row() + broken + row({ id: "person-3", name: "Person 3" }));
+
+    expect(() => parseSearchResults(html, { everyResult: true })).toThrow(/result 2: no profile link \(1 of 3 results could not be read\)/);
+    expect(parseSearchResults(page(row()), { everyResult: true }).cards).toHaveLength(1);
+  });
+
   it("throws ParseError when half the results or more cannot be read: the page itself has changed", () => {
     const nameless = row({ id: "person-2", name: "" }) + row({ id: "person-3", name: "" });
 

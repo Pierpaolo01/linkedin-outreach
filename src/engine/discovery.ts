@@ -110,15 +110,14 @@ export function discoveryWait(db: Conn, campaign: Pick<CampaignRow, "id" | "disc
   if (refs.length === 0) return null;
   const runs = refs.map((ref) => runOf(db, campaign.id, ref));
   if (runs.every((run) => run?.exhausted === true)) return { kind: "exhausted" };
+  // The search limit is on the account and outlasts a page that could not be read: it is the wait to report.
+  const limit = campaign.discoverySource === "search" ? searchPausedUntil(db, now) : null;
+  if (limit !== null) return { kind: "search_limit", until: limit };
   const open = runs.filter((run) => run?.exhausted !== true);
   const unreadable = open.map((run) => run?.unreadableUntil ?? null).filter((until) => waits(until, now));
   if (unreadable.length === open.length) return { kind: "unreadable", until: new Date(Math.min(...unreadable.map((until) => until.getTime()))) };
-  if (campaign.discoverySource === "recommendations") {
-    const pausedUntil = runOf(db, campaign.id, { source: "recommendations", url: null })?.pausedUntil ?? null;
-    return pausedUntil !== null && pausedUntil > now ? { kind: "no_new_people", until: pausedUntil } : null;
-  }
-  const until = searchPausedUntil(db, now);
-  return until === null ? null : { kind: "search_limit", until };
+  const pausedUntil = campaign.discoverySource === "recommendations" ? (runOf(db, campaign.id, { source: "recommendations", url: null })?.pausedUntil ?? null) : null;
+  return waits(pausedUntil, now) ? { kind: "no_new_people", until: pausedUntil } : null;
 }
 
 function countIn(db: Conn, campaignId: number, stages: readonly (typeof prospects.$inferSelect)["stage"][], exclude = false): number {
