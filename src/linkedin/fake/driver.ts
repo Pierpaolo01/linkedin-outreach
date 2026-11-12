@@ -8,9 +8,10 @@
  * sleep a random 2–20 s on the injected clock (or the time `suspendNext` set for this call), settle
  * the world, check the session, take a scripted
  * fault, act, call the hook with `after`. A revoked handle throws at its next step and does nothing
- * more, so a killed process never does what it had not yet done.
+ * more, so a killed process never does what it had not yet done. A write reads the clock again right
+ * before its effect and does nothing past its `SendGuard.notAfter` (result `expired`).
  */
-import type { Driver, InviteResult, MessageResult, PersonRef, ReadThreadResult, SearchQuery, WithdrawResult } from "../driver";
+import type { Driver, InviteResult, MessageResult, PersonRef, ReadThreadResult, SearchQuery, SendGuard, WithdrawResult } from "../driver";
 import { LinkedInError, SearchCapped, Unexpected } from "../errors";
 import type { ConnectionCard } from "../parse/connections";
 import type { Profile } from "../parse/profile";
@@ -85,15 +86,18 @@ export interface FakeLinkedIn {
   listRecentConnections(now: Date): ConnectionCard[];
   listSentInvitations(now: Date): SentInvitationCard[];
   readThread(person: { readonly memberId: string; readonly publicId?: string }, now: Date): ReadThreadResult;
-  sendInvite(person: PersonRef, note: string | null, now: Date): InviteResult;
+  /** Past `notAfter` at `now`, right before the invitation would go out: nothing is sent, the result is `expired`. */
+  sendInvite(person: PersonRef, note: string | null, notAfter: Date, now: Date): InviteResult;
   /** Opens the message box, clears any draft and types `text`. Nothing is sent. */
   typeMessage(person: PersonRef, text: string, now: Date): void;
   /**
-   * Sends what is in the message box, unless the conversation no longer shows `expectedCount`
-   * messages: then the box is cleared, nothing is sent and the result is `thread_changed`.
+   * Sends what is in the message box, unless `now` is past `expected.notAfter` (`expired`) or the
+   * conversation no longer shows `expected.messageCount` messages (`thread_changed`): then the box
+   * is cleared and nothing is sent.
    */
-  sendTyped(person: PersonRef, expectedCount: number, now: Date): MessageResult;
-  withdrawInvite(person: PersonRef, now: Date): WithdrawResult;
+  sendTyped(person: PersonRef, expected: SendGuard & { readonly messageCount: number }, now: Date): MessageResult;
+  /** Past `notAfter` at `now`, right before the withdrawal: nothing is done, the result is `expired`. */
+  withdrawInvite(person: PersonRef, notAfter: Date, now: Date): WithdrawResult;
 }
 
 const SAFETY_STOPS: ReadonlySet<LinkedInError["kind"]> = new Set(["logged_out", "checkpoint", "restricted", "limit_hit"]);
@@ -157,15 +161,19 @@ export function createFakeDriver(world: FakeLinkedIn, { clock, random, hook }: C
     listRecentConnections: () => run("listRecentConnections", () => world.listRecentConnections(clock.now())),
     listSentInvitations: () => run("listSentInvitations", () => world.listSentInvitations(clock.now())),
     readThread: (person) => run("readThread", () => world.readThread(person, clock.now())),
-    sendInvite: (person, note) => run("sendInvite", () => world.sendInvite(person, note, clock.now())),
+    // A write that wakes past its deadline does nothing at all, not even a page load.
+    sendInvite: (person, note, guard) =>
+      run("sendInvite", () => (clock.now() > guard.notAfter ? "expired" : world.sendInvite(person, note, guard.notAfter, clock.now()))),
     sendMessage: (person, text, expected) =>
       run("sendMessage", async () => {
+        if (clock.now() > expected.notAfter) return "expired";
         world.typeMessage(person, text, clock.now());
         await point("sendMessage", "typed");
         world.settle(clock.now());
-        return world.sendTyped(person, expected.messageCount, clock.now());
+        return world.sendTyped(person, expected, clock.now());
       }),
-    withdrawInvite: (person) => run("withdrawInvite", () => world.withdrawInvite(person, clock.now())),
+    withdrawInvite: (person, guard) =>
+      run("withdrawInvite", () => (clock.now() > guard.notAfter ? "expired" : world.withdrawInvite(person, guard.notAfter, clock.now()))),
   };
 
   return {

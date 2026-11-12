@@ -19,6 +19,7 @@ import {
   reconcileStep,
   withdrawStep,
   type ConnectionsTarget,
+  WINDOW_END_MARGIN_MS,
   type StepContext,
   type StepOutcome,
   type Target,
@@ -28,11 +29,11 @@ import { endOfWorkingWindow, isInWorkingWindow, nextWorkingInstant } from "./wor
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
 const IDLE_MS = MINUTE_MS;
-/** No work starts this close to the end of the working window. */
-const WINDOW_END_MARGIN_MS = 5 * MINUTE_MS;
 const CONNECTIONS_CHECK_EVERY_MS = 3 * 60 * MINUTE_MS;
 /** After work that did not load LinkedIn, the next tick may run almost at once. */
 const AFTER_LOCAL_WORK_MS = 1_000;
+/** A tick called while another is in flight on the same engine asks to be called again this much later. */
+const OVERLAP_RETRY_MS = 1_000;
 
 export type DueWork =
   | { readonly kind: "reconcile"; readonly target: Target; readonly row: ActionRow }
@@ -46,7 +47,20 @@ export type DueWork =
  */
 export function createEngine(deps: EngineDeps): Engine {
   const pacer = createPacer(deps.random);
-  return { tick: () => tick(deps, pacer) };
+  // A second tick while one is in flight would close the first's in-progress row as interrupted,
+  // reconcile it before the click lands and send the step twice. It does nothing instead.
+  let inFlight = false;
+  return {
+    async tick() {
+      if (inFlight) return { did: null, wakeAt: new Date(deps.clock.now().getTime() + OVERLAP_RETRY_MS) };
+      inFlight = true;
+      try {
+        return await tick(deps, pacer);
+      } finally {
+        inFlight = false;
+      }
+    },
+  };
 }
 
 async function tick(deps: EngineDeps, pacer: Pacer): Promise<TickResult> {
@@ -281,7 +295,9 @@ export function pickDueWork(db: Db, settings: Settings, now: Date): DueWork | nu
     if (target !== null) return { kind: step, target };
   }
 
-  // 5. Withdrawals of old invitations.
+  // 5. Withdrawals of old invitations. Picking one needs only a profile view: the view may find a
+  // missed acceptance (decision 33), which must not wait on the withdrawal budget. With that budget
+  // closed, a still pending invitation is put off until it opens (withdrawStep).
   const toWithdraw = candidates(
     db,
     unknown,
@@ -289,7 +305,7 @@ export function pickDueWork(db: Db, settings: Settings, now: Date): DueWork | nu
     sql<number>`${prospects.invitedAt}`,
     and(isNotNull(prospects.invitedAt), dueBy(now), sql`${prospects.invitedAt} + ${campaigns.withdrawAfterDays} * ${DAY_MS} <= ${now.getTime()}`),
   );
-  if (toWithdraw.length > 0 && open(["withdraw", "profile_view"])) {
+  if (toWithdraw.length > 0 && open(["profile_view"])) {
     const target = inTurn(db, "withdraw", toWithdraw);
     if (target !== null) return { kind: "withdraw", target };
   }

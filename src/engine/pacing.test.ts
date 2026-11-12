@@ -60,6 +60,64 @@ describe("pacing gate", () => {
     expect(high.afterAction(settings, at(0))).toEqual(at(180_000));
   });
 
+  describe("after a restart, the count of actions until the next break comes from the ledger", () => {
+    // Settings: a gap of 45–180 s, a break of 10–30 minutes after every 3 actions.
+    let key = 0;
+    /** One piece of work: a profile view, then a step 5 s later, 10 s each. */
+    function piece(startMs: number) {
+      for (const [type, offset] of [
+        ["profile_view", 0],
+        ["invite", 10_000],
+      ] as const) {
+        key += 1;
+        kit.db.insert(actions).values({ type, status: "done", idempotencyKey: `piece:${key}`, startedAt: at(startMs + offset), finishedAt: at(startMs + offset + 10_000) }).run();
+      }
+    }
+    const MIN = 60_000;
+    const newest = (startMs: number) => startMs + 20_000;
+
+    it("three pieces since the ledger began: the first gate is a break from the newest ledger time", () => {
+      [0, 2 * MIN, 4 * MIN].forEach(piece);
+      const tick = { now: at(4 * MIN + 30_000), foundInProgress: false };
+      expect(started(() => 0, tick).notBefore()).toEqual(at(newest(4 * MIN) + 10 * MINUTE));
+      expect(started(() => 0.999_999, tick).notBefore()).toEqual(at(newest(4 * MIN) + 30 * MINUTE));
+    });
+
+    it("three pieces since the last pause of 10 minutes or more, after many before it: a break", () => {
+      [0, 2 * MIN, 4 * MIN, 6 * MIN].forEach(piece);
+      [20 * MIN, 22 * MIN, 24 * MIN].forEach(piece);
+      expect(started(() => 0, { now: at(25 * MIN), foundInProgress: false }).notBefore()).toEqual(at(newest(24 * MIN) + 10 * MINUTE));
+    });
+
+    it("two pieces since the last pause: an ordinary gap first, then the break after the next action", () => {
+      [0, 2 * MIN, 4 * MIN, 6 * MIN].forEach(piece);
+      [20 * MIN, 22 * MIN].forEach(piece);
+      const pacer = started(() => 0, { now: at(23 * MIN), foundInProgress: false });
+      expect(pacer.notBefore()).toEqual(at(newest(22 * MIN) + 45_000));
+      expect(pacer.afterAction(settings, at(24 * MIN))).toEqual(at(24 * MIN + 10 * MINUTE));
+      expect(pacer.afterAction(settings, at(40 * MIN))).toEqual(at(40 * MIN + 45_000));
+    });
+
+    it("rows less than actionGapSeconds.min apart are one piece of work", () => {
+      // Three reads 20 s apart (under 45 s): one piece. With one more piece, two in all: no break yet.
+      [0, 30_000, 60_000].forEach(piece);
+      piece(4 * MIN);
+      expect(started(() => 0, { now: at(5 * MIN), foundInProgress: false }).notBefore()).toEqual(at(newest(4 * MIN) + 45_000));
+    });
+
+    it("downtime of 10 minutes or more before the restart is itself the pause", () => {
+      [0, 2 * MIN, 4 * MIN].forEach(piece);
+      const pacer = started(() => 0, { now: at(60 * MIN), foundInProgress: false });
+      expect(pacer.notBefore()).toEqual(at(newest(4 * MIN) + 45_000));
+      expect(pacer.afterAction(settings, at(61 * MIN))).toEqual(at(61 * MIN + 45_000));
+    });
+
+    it("a row left in progress: the downtime is not trusted as a pause, and the break runs from the restart", () => {
+      [0, 2 * MIN, 4 * MIN].forEach(piece);
+      expect(started(() => 0, { now: at(60 * MIN), foundInProgress: true }).notBefore()).toEqual(at(60 * MIN + 10 * MINUTE));
+    });
+  });
+
   it("takes a break of breaks.minutes instead of the gap after every N actions", () => {
     const pacer = createPacer(() => 0);
     const gaps = [1, 2, 3, 4, 5, 6].map((n) => pacer.afterAction(settings, at(n * 3_600_000)).getTime() - at(n * 3_600_000).getTime());

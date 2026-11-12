@@ -90,7 +90,10 @@ export type ClaimRefusal =
   | "no_text"
   | "too_many_attempts";
 
-/** Claims of one step allowed in all; the next is refused, so a send that keeps failing is not retried for ever. */
+/**
+ * Claims of one step allowed in all; the next is refused, so a send that keeps failing is not
+ * retried for ever. A claim LinkedIn refused before any effect is given back (`releaseClaim`).
+ */
 export const MAX_STEP_ATTEMPTS = 3;
 
 export type ClaimResult = { readonly ok: true; readonly claim: Claim } | { readonly ok: false; readonly refusal: ClaimRefusal };
@@ -226,6 +229,20 @@ export function finishAction(db: Conn, actionId: number, outcome: Outcome, now: 
       error: outcome.error ?? null,
       screenshotPath: outcome.screenshotPath ?? null,
     })
+    .where(eq(actions.id, actionId))
+    .run();
+}
+
+/**
+ * Puts a claimed step row back to planned when LinkedIn itself refused before any effect (its
+ * invitation limit, a conversation that changed, a deadline that passed). Such a claim does not
+ * count toward `MAX_STEP_ATTEMPTS`: the attempt is given back. The row keeps `errorKind`, so the
+ * ledger still shows why.
+ */
+export function releaseClaim(db: Conn, actionId: number, refusal: { readonly errorKind: string; readonly error?: string | null }, now: Date): void {
+  finishAction(db, actionId, { status: "planned", errorKind: refusal.errorKind, error: refusal.error ?? null }, now);
+  db.update(actions)
+    .set({ attempts: sql`max(${actions.attempts} - 1, 0)` })
     .where(eq(actions.id, actionId))
     .run();
 }

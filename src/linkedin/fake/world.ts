@@ -601,7 +601,7 @@ export class FakeWorld {
         };
       },
 
-      sendInvite: (person, note, now): InviteResult => {
+      sendInvite: (person, note, notAfter, now): InviteResult => {
         const member = this.#profileTarget(person.publicId, now);
         if (note !== null && note.length > NOTE_LIMIT) {
           this.#pageLoad("profile", now, member);
@@ -611,6 +611,11 @@ export class FakeWorld {
         if (refusal !== null) {
           this.#pageLoad("profile", now, member);
           return refusal;
+        }
+        // Right before the click: LinkedIn's limit message only shows after it.
+        if (now > notAfter) {
+          this.#pageLoad("profile", now, member);
+          return "expired";
         }
         const cap = this.#options.weeklyInviteCap;
         const since = now.getTime() - WEEK_MS;
@@ -634,25 +639,30 @@ export class FakeWorld {
         member.draft = text;
       },
 
-      sendTyped: (person, expectedCount, now): MessageResult => {
+      sendTyped: (person, expected, now): MessageResult => {
         const member = this.#byMemberId.get(person.memberId);
         if (member === undefined) throw new Unexpected(`fake world: no member ${person.memberId}`);
         const text = member.draft;
         if (text === null) throw new Unexpected("fake world: the message box is empty");
         member.draft = null;
+        if (now > expected.notAfter) return "expired";
         // What the open conversation shows right now, counted as `readThread` would show it.
-        if (shownMessages(member.thread).length !== expectedCount) return "thread_changed";
+        if (shownMessages(member.thread).length !== expected.messageCount) return "thread_changed";
         this.#post(member, { sender: "user", source: "app", text, at: now });
         member.firstAppMessageAt ??= new Date(now);
         this.#record({ kind: "message", ...ids(member), text, at: now });
         return "sent";
       },
 
-      withdrawInvite: (person, now): WithdrawResult => {
+      withdrawInvite: (person, notAfter, now): WithdrawResult => {
         const member = this.#profileTarget(person.publicId, now);
         if (member.invite === null) {
           this.#pageLoad("sent_invitations", now, member);
           return "not_pending";
+        }
+        if (now > notAfter) {
+          this.#pageLoad("sent_invitations", now, member);
+          return "expired";
         }
         member.invite = null;
         this.#record({ kind: "withdraw", ...ids(member), at: now });

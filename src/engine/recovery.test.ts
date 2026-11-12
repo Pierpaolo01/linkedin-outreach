@@ -436,7 +436,8 @@ describe("safety stops", () => {
     const c = seedCampaign(kit);
     const p = seedApproved(kit, c);
     await step(kit);
-    expect(actionByKey(kit, `invite:${p.prospectId}`)).toMatchObject({ status: "planned", errorKind: "limit_hit", attempts: 1 });
+    // LinkedIn's own refusal: the claim is given back, so it does not use up one of the 3 attempts.
+    expect(actionByKey(kit, `invite:${p.prospectId}`)).toMatchObject({ status: "planned", errorKind: "limit_hit", attempts: 0 });
     const stop = activeSafetyStop(kit.db);
     expect(stop?.reason).toBe("limit_hit");
     const until7 = stop?.invitesBlockedUntil?.getTime() ?? 0;

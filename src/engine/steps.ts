@@ -20,6 +20,7 @@ import {
   stepOfKey,
   updateDetail,
   MAX_STEP_ATTEMPTS,
+  releaseClaim,
   type ActionRow,
   type Claim,
   type ClaimRefusal,
@@ -27,11 +28,13 @@ import {
   type ReadRequest,
   type Step,
 } from "./ledger";
+import type { SendGuard } from "../linkedin/driver";
 import type { Clock, Driver, PersonRef, RandomSource } from "./ports";
+import { checkBudget, type BudgetKind } from "./budget";
 import { lastResumedAt, raiseSafetyStop } from "./safetyStop";
 import { renderTemplate, type RenderResult, type TemplateValues } from "./template";
 import { judgeSend, judgeThread } from "./threadCheck";
-import { addDelay, isInWorkingWindow } from "./workingWindow";
+import { addDelay, endOfWorkingWindow, isInWorkingWindow } from "./workingWindow";
 
 export type ProspectRow = typeof prospects.$inferSelect;
 export type CampaignRow = typeof campaigns.$inferSelect;
@@ -63,6 +66,8 @@ type ProspectChanges = Partial<Omit<typeof prospects.$inferInsert, "id" | "stage
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
+/** No work starts, and no step is claimed, this close to the end of the working window. */
+export const WINDOW_END_MARGIN_MS = 5 * MINUTE_MS;
 /** How long a prospect waits after a read failed for a reason other than LinkedIn's own pages. */
 const RETRY_AFTER_MS = 30 * MINUTE_MS;
 /** Failed reconcile reads before the prospect is held for review. */
@@ -217,7 +222,8 @@ const STEP_WORDS: Readonly<Record<Step, string>> = {
 /**
  * A send after a successful claim. Any throw leaves the row unknown (decision 27), except LinkedIn's
  * own invitation limit on an invite, which by contract means nothing was sent: the row goes back to
- * planned and invites stop for the cool-down.
+ * planned, the claim given back (it does not count toward the step's attempts), and invites stop
+ * for the cool-down.
  */
 async function send<T>(ctx: StepContext, target: Target, step: Step, claim: Claim, call: () => Promise<T>): Promise<SendResult<T>> {
   const { db, clock } = ctx;
@@ -228,7 +234,7 @@ async function send<T>(ctx: StepContext, target: Target, step: Step, claim: Clai
   const name = target.person.fullName;
   db.transaction((tx) => {
     if (step === "invite" && facts.kind === "limit_hit") {
-      finishAction(tx, claim.actionId, { status: "planned", errorKind: facts.kind, error: facts.message }, at);
+      releaseClaim(tx, claim.actionId, { errorKind: facts.kind, error: facts.message }, at);
       logEvent(tx, { level: "warning", campaignId: target.campaign.id, prospectId: target.prospect.id, message: `Invite to ${name} refused: LinkedIn's invitation limit` }, at);
       raiseFor(tx, ctx.settings, facts, at);
       return;
@@ -363,6 +369,21 @@ function textFor(db: Conn, target: Target, step: Step, template: string, what: s
   return rendered.ok ? { ok: true, text: rendered.text } : { ok: false, reason: renderProblem(what, rendered) };
 }
 
+/**
+ * The target with its campaign and person loaded again, for use after a read: the user may have
+ * edited a template, a campaign setting or the person while the page loaded, and the send must
+ * follow what he sees now. The prospect stays as picked, so `move` still notices a stage he changed.
+ * Null when the campaign or the person is gone.
+ */
+function reloaded(db: Conn, target: Target): Target | null {
+  const campaign = db.select().from(campaigns).where(eq(campaigns.id, target.campaign.id)).get();
+  const person = db.select().from(people).where(eq(people.id, target.person.id)).get();
+  return campaign === undefined || person === undefined ? null : { prospect: target.prospect, campaign, person };
+}
+
+const goneMeanwhile = (label: string, target: Target): StepOutcome =>
+  loaded(`${label}: ${target.person.fullName} not claimed (the campaign or the person is gone)`);
+
 function personRef(target: Target, memberId: string): PersonRef {
   return { publicId: target.person.publicId, memberId };
 }
@@ -394,25 +415,73 @@ function refused(db: Conn, target: Target, step: Step, refusal: ClaimRefusal, at
   needsReview(db, target, `the step could not be claimed (${refusal.replace(/_/g, " ")})`, at);
 }
 
+/** Whether a claim may go ahead now, and the deadline its send carries. */
+type ClaimGate =
+  | { readonly ok: true; readonly guard: SendGuard }
+  | { readonly ok: false; readonly why: "after_hours" }
+  | { readonly ok: false; readonly why: "budget"; readonly kind: BudgetKind; readonly resumesAt: Date | null };
+
 /**
- * True when it is no longer working time. Asked immediately before every claim, with the settings
- * read again: the tick checked the window when it started, but the read before the claim may have
- * returned much later (the laptop slept while the page loaded). The caller then claims nothing,
- * moves nothing and returns; the next tick inside the window starts over with a fresh read.
+ * Asked immediately before every claim, with the settings read again and the current time: the
+ * tick checked the window and the budgets when it started, but the read before the claim may have
+ * returned much later (the laptop slept while the page loaded), and the user may have lowered a
+ * limit meanwhile. Refused outside working time, in its last minutes, or with the step's budget
+ * closed; the caller then claims nothing and returns, and a later tick starts over with a fresh read.
+ *
+ * Allowed, it gives the deadline the driver checks right before the effect: the end of the current
+ * working window, so a send the laptop sleeps through does not click the next morning (decision 45).
  */
-function outsideWorkingWindow(ctx: StepContext): boolean {
-  return !isInWorkingWindow(getSettings(ctx.db), ctx.clock.now());
+function claimGate(ctx: StepContext, kind: BudgetKind): ClaimGate {
+  const settings = getSettings(ctx.db);
+  const now = ctx.clock.now();
+  if (!isInWorkingWindow(settings, now)) return { ok: false, why: "after_hours" };
+  const end = endOfWorkingWindow(settings, now);
+  // The same margin as the tick: a read that wakes at 17:59:55 is not followed by a send after 18:00.
+  if (end.getTime() - now.getTime() <= WINDOW_END_MARGIN_MS) return { ok: false, why: "after_hours" };
+  const budget = checkBudget(ctx.db, settings, kind, now);
+  if (!budget.allowed) return { ok: false, why: "budget", kind, resumesAt: budget.resumesAt };
+  return { ok: true, guard: { notAfter: end } };
 }
 
-const afterHours = (label: string, name: string): StepOutcome => loaded(`${label}: working window closed before ${name} could be claimed`);
+function notClaimed(label: string, name: string, gate: Exclude<ClaimGate, { ok: true }>): StepOutcome {
+  return gate.why === "after_hours"
+    ? loaded(`${label}: working window closed before ${name} could be claimed`)
+    : loaded(`${label}: ${name} not claimed (the ${gate.kind.replace(/_/g, " ")} budget is closed)`);
+}
+
+/**
+ * The driver found the deadline passed right before the effect: nothing happened. The row goes
+ * back to planned and the prospect stays; the next tick inside the window starts over.
+ */
+function expired(db: Conn, target: Target, step: Step, claim: Claim, at: Date): void {
+  releaseClaim(db, claim.actionId, { errorKind: "expired" }, at);
+  logEvent(
+    db,
+    {
+      campaignId: target.campaign.id,
+      prospectId: target.prospect.id,
+      message: `${STEP_WORDS[step]} to ${target.person.fullName} not sent: the working window closed before LinkedIn took it; it will be tried in the next window`,
+    },
+    at,
+  );
+}
 
 // ---------------------------------------------------------------- handlers
 
 const CONNECTABLE: ReadonlySet<Profile["connectionState"]> = new Set(["can_connect", "connect_in_more"]);
 
+/** The invite note: the one frozen by an earlier claim (null included) wins; else the campaign's, if it has one. */
+function inviteNote(db: Conn, target: Target): { ok: true; text: string | null } | { ok: false; reason: string } {
+  const frozen = frozenText(db, "invite", target.prospect.id);
+  if (frozen.frozen) return { ok: true, text: frozen.text };
+  const template = target.campaign.inviteNote ?? "";
+  if (template.trim() === "") return { ok: true, text: null };
+  return textFor(db, target, "invite", template, "The invite note", INVITE_NOTE_MAX);
+}
+
 export async function inviteStep(ctx: StepContext, target: Target): Promise<StepOutcome> {
   const { db, clock, driver } = ctx;
-  const { person, prospect, campaign } = target;
+  const { person, prospect } = target;
   const name = person.fullName;
 
   // Suppression gate: nothing is loaded for a person who must not be contacted.
@@ -424,20 +493,12 @@ export async function inviteStep(ctx: StepContext, target: Target): Promise<Step
     return idle(`invite: ${name} not invited (${why})`);
   }
 
-  // The note frozen by an earlier claim (null included) wins; else the campaign's, if it has one.
-  let noteText: string | null = null;
-  const template = campaign.inviteNote ?? "";
-  const frozen = frozenText(db, "invite", prospect.id);
-  if (frozen.frozen) {
-    noteText = frozen.text;
-  } else if (template.trim() !== "") {
-    const note = textFor(db, target, "invite", template, "The invite note", INVITE_NOTE_MAX);
-    if (!note.ok) {
-      const at = clock.now();
-      db.transaction((tx) => needsReview(tx, target, note.reason, at));
-      return idle(`invite: ${name} needs review`);
-    }
-    noteText = note.text;
+  // Checked before anything is loaded, so a note that cannot be written costs no profile view.
+  const early = inviteNote(db, target);
+  if (!early.ok) {
+    const at = clock.now();
+    db.transaction((tx) => needsReview(tx, target, early.reason, at));
+    return idle(`invite: ${name} needs review`);
   }
 
   const viewed = await read(ctx, "profile_view", target, () => driver.viewProfile(person.publicId));
@@ -462,7 +523,19 @@ export async function inviteStep(ctx: StepContext, target: Target): Promise<Step
   });
   if (!ready.ok || memberId === null) return loaded(`invite: ${name} needs review`);
 
-  if (outsideWorkingWindow(ctx)) return afterHours("invite", name);
+  // Written again from the campaign and person as they are now: the user may have edited the note meanwhile.
+  const fresh = reloaded(db, target);
+  if (fresh === null) return goneMeanwhile("invite", target);
+  const note = inviteNote(db, fresh);
+  if (!note.ok) {
+    const at = clock.now();
+    db.transaction((tx) => needsReview(tx, fresh, note.reason, at));
+    return loaded(`invite: ${name} needs review`);
+  }
+  const noteText = note.text;
+
+  const gate = claimGate(ctx, "invite");
+  if (!gate.ok) return notClaimed("invite", name, gate);
   const claimed = claimStep(db, { step: "invite", prospectId: prospect.id, text: noteText }, clock.now());
   if (!claimed.ok) {
     const at = clock.now();
@@ -477,13 +550,15 @@ export async function inviteStep(ctx: StepContext, target: Target): Promise<Step
   }
 
   const ref = personRef(target, memberId);
-  const sent = await send(ctx, target, "invite", claimed.claim, () => driver.sendInvite(ref, claimed.claim.text));
+  const sent = await send(ctx, target, "invite", claimed.claim, () => driver.sendInvite(ref, claimed.claim.text, gate.guard));
   if (!sent.ok) return loaded(`invite: ${name} not confirmed`);
   const result = sent.value;
   db.transaction((tx) => {
     if (result === "sent") {
       finishAction(tx, claimed.claim.actionId, { status: "done" }, sent.at);
       move(tx, target, "invited", { invitedAt: sent.at, nextActionAt: null }, sent.at, `Invite sent to ${name}`);
+    } else if (result === "expired") {
+      expired(tx, target, "invite", claimed.claim, sent.at);
     } else {
       finishAction(tx, claimed.claim.actionId, { status: "failed", errorKind: result }, sent.at);
       needsReview(tx, target, `LinkedIn did not take the invite: ${result.replace(/_/g, " ")}`, sent.at);
@@ -573,7 +648,7 @@ function afterFirstMessage(ctx: StepContext, target: Target, sentAt: Date, at: D
 
 async function messageStep(ctx: StepContext, target: Target, step: "message1" | "followup"): Promise<StepOutcome> {
   const { db, clock, driver } = ctx;
-  const { person, prospect, campaign } = target;
+  const { person, prospect } = target;
   const name = person.fullName;
   const label = step === "message1" ? "first message" : "follow-up";
 
@@ -589,37 +664,48 @@ async function messageStep(ctx: StepContext, target: Target, step: "message1" | 
   const check = await threadBeforeSend(ctx, target, memberId, sentSoFar.filter((t): t is string => t !== null), label);
   if ("done" in check) return check.done;
 
+  // The campaign and person as they are now, not as they were when the work was picked: the user
+  // may have cleared the follow-up or edited a template while the thread loaded.
+  const fresh = reloaded(db, target);
+  if (fresh === null) return goneMeanwhile(label, target);
+  const { campaign } = fresh;
+
   // A campaign without a follow-up still reads the thread first, so a reply before the follow-up
   // would have been due is seen (the Stats screen counts those).
   if (step === "followup" && campaign.followUp.trim() === "") {
     const at = clock.now();
-    db.transaction((tx) => move(tx, target, "completed", { closedAt: at, nextActionAt: null }, at, `Sequence completed for ${name}: the campaign has no follow-up`));
+    db.transaction((tx) => move(tx, fresh, "completed", { closedAt: at, nextActionAt: null }, at, `Sequence completed for ${name}: the campaign has no follow-up`));
     return loaded(`follow-up: none for ${name}; completed`);
   }
 
   const template = step === "message1" ? campaign.firstMessage : campaign.followUp;
-  const text = textFor(db, target, step, template, step === "message1" ? "The first message" : "The follow-up");
+  const text = textFor(db, fresh, step, template, step === "message1" ? "The first message" : "The follow-up");
   if (!text.ok) {
     const at = clock.now();
-    db.transaction((tx) => needsReview(tx, target, text.reason, at));
+    db.transaction((tx) => needsReview(tx, fresh, text.reason, at));
     return loaded(`${label}: ${name} needs review`);
   }
-  if (outsideWorkingWindow(ctx)) return afterHours(label, name);
+  const gate = claimGate(ctx, "message");
+  if (!gate.ok) return notClaimed(label, name, gate);
   const claimed = claimStep(db, { step, prospectId: prospect.id, text: text.text, detail: { userMessagesBefore: check.userMessages } }, clock.now());
   if (!claimed.ok) {
     const at = clock.now();
-    db.transaction((tx) => refused(tx, target, step, claimed.refusal, at));
+    db.transaction((tx) => refused(tx, fresh, step, claimed.refusal, at));
     return loaded(`${label}: ${name} not claimed (${claimed.refusal})`);
   }
   const body = claimed.claim.text;
   if (body === null) throw new Error(`claimed ${step} for prospect ${prospect.id} has no text`);
-  const expected = { messageCount: check.messageCount };
-  const sent = await send(ctx, target, step, claimed.claim, () => driver.sendMessage(personRef(target, memberId), body, expected));
+  const expected = { ...gate.guard, messageCount: check.messageCount };
+  const sent = await send(ctx, fresh, step, claimed.claim, () => driver.sendMessage(personRef(fresh, memberId), body, expected));
   if (!sent.ok) return loaded(`${label}: ${name} not confirmed`);
+  if (sent.value === "expired") {
+    db.transaction((tx) => expired(tx, fresh, step, claimed.claim, sent.at));
+    return loaded(`${label}: ${name} not sent (working window closed)`);
+  }
   if (sent.value === "thread_changed") {
     // Nothing was sent: the conversation changed after it was judged. The next tick reads it again.
     db.transaction((tx) => {
-      finishAction(tx, claimed.claim.actionId, { status: "planned", errorKind: "thread_changed" }, sent.at);
+      releaseClaim(tx, claimed.claim.actionId, { errorKind: "thread_changed" }, sent.at);
       logEvent(tx, { campaignId: campaign.id, prospectId: prospect.id, message: `${STEP_WORDS[step]} to ${name} not sent: the conversation changed just before sending; it will be read again` }, sent.at);
     });
     return loaded(`${label}: ${name} conversation changed`);
@@ -627,9 +713,9 @@ async function messageStep(ctx: StepContext, target: Target, step: "message1" | 
   db.transaction((tx) => {
     finishAction(tx, claimed.claim.actionId, { status: "done" }, sent.at);
     if (step === "message1") {
-      move(tx, target, "message_sent", afterFirstMessage(ctx, target, sent.at, sent.at), sent.at, `First message sent to ${name}`);
+      move(tx, fresh, "message_sent", afterFirstMessage(ctx, fresh, sent.at, sent.at), sent.at, `First message sent to ${name}`);
     } else {
-      move(tx, target, "completed", { followUpSentAt: sent.at, closedAt: sent.at, nextActionAt: null }, sent.at, `Follow-up sent to ${name}`);
+      move(tx, fresh, "completed", { followUpSentAt: sent.at, closedAt: sent.at, nextActionAt: null }, sent.at, `Follow-up sent to ${name}`);
     }
   });
   return loaded(`${label}: sent to ${name}`);
@@ -672,7 +758,19 @@ export async function withdrawStep(ctx: StepContext, target: Target): Promise<St
   });
   if (next.kind === "done") return loaded(next.did);
 
-  if (outsideWorkingWindow(ctx)) return afterHours("withdraw", name);
+  const gate = claimGate(ctx, "withdraw");
+  if (!gate.ok) {
+    // The work was picked on the profile-view budget alone. With the withdrawal budget closed the
+    // invitation waits until it opens, so its profile is not viewed again on every tick.
+    const resumesAt = gate.why === "budget" ? gate.resumesAt : null;
+    if (resumesAt !== null) {
+      db.update(prospects)
+        .set({ nextActionAt: resumesAt })
+        .where(and(eq(prospects.id, prospect.id), eq(prospects.stage, "invited")))
+        .run();
+    }
+    return notClaimed("withdraw", name, gate);
+  }
   const claimed = claimStep(db, { step: "withdraw", prospectId: prospect.id, text: null }, clock.now());
   if (!claimed.ok) {
     const at = clock.now();
@@ -680,13 +778,15 @@ export async function withdrawStep(ctx: StepContext, target: Target): Promise<St
     return loaded(`withdraw: ${name} not claimed (${claimed.refusal})`);
   }
   const ref = personRef(target, next.memberId);
-  const sent = await send(ctx, target, "withdraw", claimed.claim, () => driver.withdrawInvite(ref));
+  const sent = await send(ctx, target, "withdraw", claimed.claim, () => driver.withdrawInvite(ref, gate.guard));
   if (!sent.ok) return loaded(`withdraw: ${name} not confirmed`);
   const result = sent.value;
   db.transaction((tx) => {
     if (result === "withdrawn") {
       finishAction(tx, claimed.claim.actionId, { status: "done" }, sent.at);
       move(tx, target, "withdrawn", { closedAt: sent.at, nextActionAt: null }, sent.at, `Invitation to ${name} withdrawn`);
+    } else if (result === "expired") {
+      expired(tx, target, "withdraw", claimed.claim, sent.at);
     } else {
       finishAction(tx, claimed.claim.actionId, { status: "failed", errorKind: result }, sent.at);
       needsReview(tx, target, "LinkedIn showed no pending invitation to withdraw", sent.at);

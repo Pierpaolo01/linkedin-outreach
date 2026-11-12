@@ -284,7 +284,8 @@ describe("first message", () => {
     const p = accepted(campaign());
     await step(kit);
     expect(kit.world.messagesSentTo(p.spec.publicId)).toHaveLength(0);
-    expect(actionByKey(kit, `message1:${p.prospectId}`)).toMatchObject({ status: "planned", errorKind: "thread_changed", attempts: 1 });
+    // LinkedIn's own refusal: the claim is given back, so it does not use up one of the 3 attempts.
+    expect(actionByKey(kit, `message1:${p.prospectId}`)).toMatchObject({ status: "planned", errorKind: "thread_changed", attempts: 0 });
     expect(stage(p.prospectId)).toBe("accepted");
     await step(kit);
     expect(prospect(kit, p.prospectId)).toMatchObject({ stage: "stopped", stopReason: "replied" });
@@ -392,6 +393,97 @@ describe("the working window, checked again right before a claim", () => {
   /** The read starts at 17:54 and returns at 19:00: the laptop slept while the page loaded. */
   const SLEPT = 66 * MINUTE;
 
+  const STEPS = [
+    {
+      step: "invite",
+      done: "invited",
+      seed: () => approved(campaign()),
+      read: "viewProfile",
+    },
+    {
+      step: "message1",
+      done: "message_sent",
+      seed: () => accepted(campaign(), {}, { nextActionAt: LATE }),
+      read: "readThread",
+    },
+    {
+      step: "followup",
+      done: "completed",
+      seed: async () => {
+        const p = accepted(campaign());
+        await step(kit);
+        expect(stage(p.prospectId)).toBe("message_sent");
+        return p;
+      },
+      read: "readThread",
+    },
+    {
+      step: "withdraw",
+      done: "withdrawn",
+      seed: () => invited(campaign(), 22),
+      read: "viewProfile",
+    },
+  ] as const;
+
+  it.each([
+    { step: "invite", read: "viewProfile", lower: { limits: { invitesPerDay: 0 } }, seed: () => approved(campaign()) },
+    { step: "message1", read: "readThread", lower: { limits: { messagesPerDay: 0 } }, seed: () => accepted(campaign()) },
+  ] as const)("$step: the user lowers the day's budget to 0 during the read: no claim, the prospect untouched", async ({ step: name, read, lower, seed }) => {
+    kit.close();
+    let fired = false;
+    start({
+      hook: (point) => {
+        if (fired || point.op !== read || point.phase !== "after") return;
+        fired = true;
+        kit.settings(lower);
+      },
+    });
+    kit.settings({ warmUp: { enabled: false } });
+    const p = seed();
+    const before = prospect(kit, p.prospectId);
+    await kit.engine.tick();
+    expect(fired).toBe(true);
+    expect(actionByKey(kit, `${name}:${p.prospectId}`)).toBeUndefined();
+    expect(prospect(kit, p.prospectId)).toEqual(before);
+    expect(kit.world.log.filter((entry) => entry.kind === "invite" || entry.kind === "message")).toHaveLength(0);
+  });
+
+  it("followup: a follow-up that became due on the day the budget was spent during its read is not claimed", async () => {
+    kit.close();
+    let armed = false;
+    start({
+      hook: (point) => {
+        if (!armed || point.op !== "readThread" || point.phase !== "after") return;
+        armed = false;
+        kit.settings({ limits: { messagesPerDay: 1 } });
+      },
+    });
+    const p = accepted(campaign());
+    await step(kit);
+    expect(stage(p.prospectId)).toBe("message_sent");
+    armed = true;
+    await step(kit);
+    expect(actionByKey(kit, `followup:${p.prospectId}`)).toBeUndefined();
+    expect(stage(p.prospectId)).toBe("message_sent");
+    expect(kit.world.messagesSentTo(p.spec.publicId)).toHaveLength(1);
+  });
+
+  it.each(STEPS)("$step: a read that returns inside the last 5 minutes of the window (17:56) claims nothing; the next window sends", async ({ step: name, done, seed, read }) => {
+    const p = await seed();
+    kit.clock.set(LATE);
+    connectionsJustChecked();
+    const stageBefore = stage(p.prospectId);
+    kit.world.suspendNext(read, 2 * MINUTE);
+    await step(kit);
+    expect(actionByKey(kit, `${name}:${p.prospectId}`)).toBeUndefined();
+    expect(stage(p.prospectId)).toBe(stageBefore);
+    const writes = () => kit.world.log.filter((entry) => entry.kind === "invite" || entry.kind === "withdraw" || entry.kind === "message");
+    const writesBefore = writes().length;
+    await until(() => stage(p.prospectId) === done);
+    expect(writes()).toHaveLength(writesBefore + 1);
+    expect(writes().at(-1)?.at.getTime()).toBeGreaterThanOrEqual(NEXT_MORNING.getTime());
+  });
+
   it.each([
     {
       step: "invite",
@@ -441,6 +533,71 @@ describe("the working window, checked again right before a claim", () => {
   });
 });
 
+describe("a write the laptop sleeps through (SendGuard)", () => {
+  /** Monday 17:50 in Rome. */
+  const LATE = new Date("2026-11-16T16:50:00Z");
+  const WINDOW_END = new Date("2026-11-16T17:00:00Z");
+  const NEXT_MORNING = new Date("2026-11-17T08:00:00Z");
+  /** The send starts before 18:00 and its click would come at 07:00 the next day. */
+  const SLEPT = 14 * 60 * MINUTE;
+
+  it.each([
+    { step: "invite", op: "sendInvite", done: "invited", seed: () => approved(campaign()) },
+    { step: "message1", op: "sendMessage", done: "message_sent", seed: () => accepted(campaign(), {}, { nextActionAt: LATE }) },
+    { step: "withdraw", op: "withdrawInvite", done: "withdrawn", seed: () => invited(campaign(), 22) },
+  ] as const)("$step: the driver gets the window's end as notAfter; expired puts the row back to planned, the prospect unmoved, and the next window sends", async ({ step: name, op, done, seed }) => {
+    const p = seed();
+    kit.clock.set(LATE);
+    connectionsJustChecked();
+    const stageBefore = stage(p.prospectId);
+    kit.world.suspendNext(op, SLEPT);
+    await step(kit);
+    expect(actionByKey(kit, `${name}:${p.prospectId}`)).toMatchObject({ status: "planned", errorKind: "expired" });
+    expect(stage(p.prospectId)).toBe(stageBefore);
+    const writes = () => kit.world.log.filter((entry) => entry.kind === "invite" || entry.kind === "withdraw" || entry.kind === "message");
+    expect(writes()).toHaveLength(0);
+    expect(hasEvent("working window closed")).toBe(true);
+
+    await until(() => stage(p.prospectId) === done);
+    expect(writes()).toHaveLength(1);
+    expect(writes()[0]?.at.getTime()).toBeGreaterThanOrEqual(NEXT_MORNING.getTime());
+  });
+
+  it(`expiries do not use up the step's ${3} attempts: four evenings in a row expire, the fifth morning sends`, async () => {
+    const p = accepted(campaign(), {}, { nextActionAt: LATE });
+    for (let day = 0; day < 4; day++) {
+      kit.clock.set(new Date(LATE.getTime() + day * 24 * HOUR));
+      connectionsJustChecked();
+      kit.world.suspendNext("sendMessage", SLEPT);
+      await step(kit);
+      expect(actionByKey(kit, `message1:${p.prospectId}`)).toMatchObject({ status: "planned", errorKind: "expired", attempts: 0 });
+      expect(stage(p.prospectId)).toBe("accepted");
+    }
+    await until(() => stage(p.prospectId) !== "accepted");
+    expect(stage(p.prospectId)).toBe("message_sent");
+    expect(actionByKey(kit, `message1:${p.prospectId}`)).toMatchObject({ status: "done", attempts: 1 });
+    expect(kit.world.messagesSentTo(p.spec.publicId)).toHaveLength(1);
+  });
+
+  it("the deadline passed to the driver is the end of the current working window, from the settings read at claim time", async () => {
+    const guards: Date[] = [];
+    kit.close();
+    start({
+      wrap: (driver) => ({
+        ...driver,
+        sendMessage: (person, text, expected) => {
+          guards.push(expected.notAfter);
+          return driver.sendMessage(person, text, expected);
+        },
+      }),
+    });
+    accepted(campaign(), {}, { nextActionAt: LATE });
+    kit.clock.set(LATE);
+    await step(kit);
+    expect(guards).toEqual([WINDOW_END]);
+  });
+});
+
 describe("a change the user makes while the app works on the prospect", () => {
   /** Restarts the kit with a hook that runs `change` once, when the call reaches `op`/`phase`. */
   function changeDuring(op: DriverOp, phase: KillPhase, change: () => void) {
@@ -468,6 +625,83 @@ describe("a change the user makes while the app works on the prospect", () => {
     expect(kit.world.messagesSentTo(p.spec.publicId)).toHaveLength(0);
     expect(hasEvent(`First message to ${p.spec.fullName} not sent: the campaign is now paused`)).toBe(true);
     expect(warnings()).toEqual([]);
+  });
+
+  it("the user clears the follow-up text while its thread loads: completed, nothing sent", async () => {
+    let c = 0;
+    let armed = false;
+    kit.close();
+    start({
+      hook: (point) => {
+        if (!armed || point.op !== "readThread" || point.phase !== "after") return;
+        armed = false;
+        kit.db.update(campaigns).set({ followUp: "" }).where(eq(campaigns.id, c)).run();
+      },
+    });
+    c = campaign();
+    const p = accepted(c);
+    await step(kit);
+    expect(stage(p.prospectId)).toBe("message_sent");
+    armed = true;
+    await step(kit);
+    expect(prospect(kit, p.prospectId)).toMatchObject({ stage: "completed", followUpSent: null, followUpSentAt: null });
+    expect(actionByKey(kit, `followup:${p.prospectId}`)).toBeUndefined();
+    expect(kit.world.messagesSentTo(p.spec.publicId)).toHaveLength(1);
+  });
+
+  it("the user edits the first-message template and the first name while the thread loads: the new ones are rendered", async () => {
+    let c = 0;
+    let personId = 0;
+    changeDuring("readThread", "after", () => {
+      kit.db.update(campaigns).set({ firstMessage: "Hello {{first_name}}, a new text." }).where(eq(campaigns.id, c)).run();
+      kit.db.update(people).set({ firstName: "Newname" }).where(eq(people.id, personId)).run();
+    });
+    c = campaign();
+    const p = accepted(c);
+    personId = p.personId;
+    await kit.engine.tick();
+    expect(kit.world.messagesSentTo(p.spec.publicId).map((entry) => entry.text)).toEqual(["Hello Newname, a new text."]);
+    expect(prospect(kit, p.prospectId).firstMessageSent).toBe("Hello Newname, a new text.");
+  });
+
+  it("the user edits the invite note while the profile loads: the new note is sent", async () => {
+    let c = 0;
+    changeDuring("viewProfile", "after", () => kit.db.update(campaigns).set({ inviteNote: "A new note, {{first_name}}." }).where(eq(campaigns.id, c)).run());
+    c = campaign({ inviteNote: "The old note, {{first_name}}." });
+    const p = approved(c);
+    await kit.engine.tick();
+    expect(kit.world.invitesTo(p.spec.publicId)).toEqual([expect.objectContaining({ note: "A new note, Test." })]);
+  });
+
+  it("the user removes the invite note while the profile loads: the invite goes without one", async () => {
+    let c = 0;
+    changeDuring("viewProfile", "after", () => kit.db.update(campaigns).set({ inviteNote: null }).where(eq(campaigns.id, c)).run());
+    c = campaign({ inviteNote: "The old note, {{first_name}}." });
+    const p = approved(c);
+    await kit.engine.tick();
+    expect(kit.world.invitesTo(p.spec.publicId)).toEqual([expect.not.objectContaining({ note: expect.anything() })]);
+  });
+
+  it("a text frozen by an earlier claim still wins over a template edited during the read", async () => {
+    let c = 0;
+    let armed = false;
+    kit.close();
+    start({
+      hook: (point) => {
+        if (!armed || point.op !== "readThread" || point.phase !== "after") return;
+        armed = false;
+        kit.db.update(campaigns).set({ firstMessage: "A text that must not go: {{first_name}}" }).where(eq(campaigns.id, c)).run();
+      },
+    });
+    c = campaign();
+    const p = accepted(c);
+    kit.world.failNext("sendMessage", "timeout_before_effect");
+    await step(kit);
+    await step(kit);
+    expect(actionByKey(kit, `message1:${p.prospectId}`)?.status).toBe("planned");
+    armed = true;
+    await until(() => stage(p.prospectId) === "message_sent");
+    expect(kit.world.messagesSentTo(p.spec.publicId).map((entry) => entry.text)).toEqual(["Hi Test, thanks for connecting."]);
   });
 
   it.each([
@@ -532,12 +766,39 @@ describe("withdraw", () => {
   it("closes as withdrawn, with a log line, when there is no invitation left to withdraw", async () => {
     const c = campaign();
     const p = invited(c, 22);
-    await kit.world.connect({ clock: kit.clock, random: kit.random }).driver.withdrawInvite({ publicId: p.spec.publicId, memberId: p.spec.memberId });
+    await kit.world.connect({ clock: kit.clock, random: kit.random }).driver.withdrawInvite({ publicId: p.spec.publicId, memberId: p.spec.memberId }, { notAfter: new Date(START.getTime() + HOUR) });
     connectionsJustChecked();
     await kit.engine.tick();
     expect(stage(p.prospectId)).toBe("withdrawn");
     expect(hasEvent("nothing was left to withdraw")).toBe(true);
     expect(actionByKey(kit, `withdraw:${p.prospectId}`)).toBeUndefined();
+  });
+
+  describe("with the withdrawal budget closed (withdrawalsPerDay 0)", () => {
+    beforeEach(() => kit.settings({ limits: { withdrawalsPerDay: 0 } }));
+
+    it("still views the profile, and finds a missed acceptance: accepted, observed today", async () => {
+      const p = invited(campaign(), 30, { acceptsAfterHours: 24 });
+      connectionsJustChecked();
+      await kit.engine.tick();
+      expect(stage(p.prospectId)).toBe("accepted");
+      expect(prospect(kit, p.prospectId).acceptanceObservedAt?.getTime()).toBeGreaterThanOrEqual(START.getTime());
+      expect(kit.world.log.filter((entry) => entry.kind === "withdraw")).toHaveLength(0);
+    });
+
+    it("an invitation still pending stays invited, with no claim, until the budget opens again", async () => {
+      const p = invited(campaign(), 22);
+      connectionsJustChecked();
+      await kit.engine.tick();
+      expect(stage(p.prospectId)).toBe("invited");
+      expect(actionByKey(kit, `withdraw:${p.prospectId}`)).toBeUndefined();
+      // Tuesday 09:00 in Rome: the next working instant of the next calendar day.
+      expect(prospect(kit, p.prospectId).nextActionAt).toEqual(new Date("2026-11-17T08:00:00Z"));
+      const views = () => kit.world.log.filter((entry) => entry.kind === "profile_view").length;
+      const viewsBefore = views();
+      for (let i = 0; i < 5; i++) await step(kit);
+      expect(views()).toBe(viewsBefore);
+    });
   });
 
   it("holds for review when LinkedIn says there is nothing pending to withdraw", async () => {

@@ -191,6 +191,118 @@ describe("pacing", () => {
   );
 });
 
+describe("breaks across kills and restarts", () => {
+  const GAP_S = 60;
+  const BREAK_EVERY_MAX = 3;
+  const BREAK_MIN_MINUTES = 20;
+
+  /**
+   * What LinkedIn saw, grouped into pieces of work: log entries less than the minimum gap apart
+   * belong to one piece (a fake call takes 2–20 s; the engine waits at least 60 s between pieces).
+   * Returns the longest run of pieces with no pause of at least `breaks.minutesMin` between them.
+   */
+  function longestRunWithoutBreak(): number {
+    const times = kit.world.log.map((entry) => entry.at.getTime()).sort((a, b) => a - b);
+    let longest = 0;
+    let run = 0;
+    let last: number | null = null;
+    for (const t of times) {
+      if (last === null || t - last >= BREAK_MIN_MINUTES * MINUTE) run = 1;
+      else if (t - last >= GAP_S * 1000) run += 1;
+      longest = Math.max(longest, run);
+      last = t;
+    }
+    return longest;
+  }
+
+  it.each([1, 2, 3, 4, 5, 6, 7, 8])(
+    `never more than ${BREAK_EVERY_MAX} pieces of work without a ${BREAK_MIN_MINUTES}-minute pause, however often the process is killed and restarted (seed %i)`,
+    async (seed) => {
+      kit.close();
+      kit = createKit({ random: seededRandom(seed) });
+      kit.settings({
+        actionGapSeconds: { min: GAP_S, max: GAP_S },
+        breaks: { everyActionsMin: 2, everyActionsMax: BREAK_EVERY_MAX, minutesMin: BREAK_MIN_MINUTES, minutesMax: 25 },
+        warmUp: { enabled: false },
+        limits: { invitesPerDay: 200, invitesPerWeek: 1000, profileViewsPerDay: 1000 },
+      });
+      const c = seedCampaign(kit);
+      for (let i = 0; i < 40; i++) seedApproved(kit, c);
+      const chaos = seededRandom(1000 + seed);
+      const kills = [
+        { op: "viewProfile", phase: "after" },
+        { op: "sendInvite", phase: "before" },
+        { op: "sendInvite", phase: "after" },
+      ] as const;
+      for (let i = 0; i < 150; i++) {
+        const roll = chaos();
+        if (roll < 0.3) {
+          // Killed between ticks and restarted at once.
+          kit.restart();
+          continue;
+        }
+        if (roll < 0.45) {
+          // Killed in the middle of a driver call, then restarted at once.
+          const kill = kills[Math.floor(chaos() * kills.length)] ?? kills[0];
+          let fired = false;
+          kit.engine = kit.newEngine({
+            hook: (point) => {
+              if (fired || point.op !== kill.op || point.phase !== kill.phase) return;
+              fired = true;
+              kit.crash();
+              throw new Error("killed");
+            },
+          });
+        }
+        try {
+          await step(kit);
+        } catch {
+          kit.restart();
+        }
+      }
+      expect(kit.world.log.filter((entry) => entry.kind === "invite").length).toBeGreaterThan(10);
+      expect(longestRunWithoutBreak()).toBeLessThanOrEqual(BREAK_EVERY_MAX);
+    },
+  );
+});
+
+describe("overlapping ticks", () => {
+  it("a tick called while another is still awaiting the driver does nothing and wakes a second later", async () => {
+    kit.close();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    kit = createKit({
+      wrap: (driver) => ({
+        ...driver,
+        sendMessage: async (...args) => {
+          calls += 1;
+          await gate;
+          return driver.sendMessage(...args);
+        },
+      }),
+    });
+    const a = seedAccepted(kit, seedCampaign(kit));
+    const first = kit.engine.tick();
+    // Let the first tick reach the send (it awaits the thread read first).
+    for (let i = 0; i < 50 && calls === 0; i++) await new Promise((resolve) => setImmediate(resolve));
+    expect(calls).toBe(1);
+    const now = kit.clock.now();
+    expect(await kit.engine.tick()).toEqual({ did: null, wakeAt: new Date(now.getTime() + 1_000) });
+    expect(actionByKey(kit, `message1:${a.prospectId}`)?.status).toBe("in_progress");
+    release();
+    expect((await first).did).toContain("sent");
+    expect(kit.world.messagesSentTo(a.spec.publicId)).toHaveLength(1);
+    expect(actionByKey(kit, `message1:${a.prospectId}`)?.status).toBe("done");
+    expect(calls).toBe(1);
+    // Once the first has returned, ticks run again.
+    kit.clock.set(new Date(kit.clock.now().getTime() + HOUR));
+    expect((await kit.engine.tick()).did).not.toBeNull();
+  });
+});
+
 describe("tick result", () => {
   it("wakeAt is always later than now", async () => {
     const campaignId = addCampaign(kit);
@@ -381,7 +493,11 @@ describe("pickDueWork on a mixed set of due work", () => {
     expect(pick()).toEqual({ kind: "withdraw", prospectId: oldA2 });
     expect(oldA1).toBeLessThan(oldA2);
 
+    // An overdue invitation needs only a profile view to be picked: the view may find a missed acceptance.
     kit.settings({ limits: { withdrawalsPerDay: 0 } });
+    expect(pick()).toEqual({ kind: "withdraw", prospectId: oldA2 });
+    // The handler then puts a still pending one off until the withdrawal budget opens.
+    kit.db.update(prospects).set({ nextActionAt: new Date(START.getTime() + DAY) }).where(eq(prospects.stage, "invited")).run();
     expect(pick()).toEqual({ kind: "invite", prospectId: approvedB2 });
     expect(approvedB1).toBeLessThan(approvedB2);
 

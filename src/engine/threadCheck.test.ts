@@ -72,6 +72,12 @@ describe("judgeSend", () => {
     expect(judgeSend({ messages: [] }, FIRST, 0)).toBe("not_sent");
   });
 
+  it("is unclear, not not_sent, when the count is unchanged but the text is there: the note shown before the send and not after", () => {
+    // Before: [note] (one user message). After: [first message] (still one). The message went out.
+    expect(judgeSend({ messages: [user(FIRST)] }, FIRST, 1)).toBe("unclear");
+    expect(judgeSend({ messages: [user(FIRST.replace("\n\n", "\n"))] }, FIRST, 1)).toBe("unclear");
+  });
+
   it("is sent when there is exactly one more user message and it is the text", () => {
     expect(judgeSend({ messages: [user(NOTE), user(FIRST)] }, FIRST, 1)).toBe("sent");
     expect(judgeSend({ messages: [user(FIRST.replace("\n\n", "\n"))] }, FIRST, 0)).toBe("sent");
