@@ -299,12 +299,12 @@ export function TimingFields({ form, set, errors }: { readonly form: CampaignFor
       </div>
 
       <Notice tone="note" className="text-sm">
-        The app picks a random moment inside each range, and only acts inside your working hours. How many invites and messages go out each day is
+        The app picks a random moment inside each range, and only acts inside your working window. How many invites and messages go out each day is
         set in{" "}
         <Link to="/settings" className="link">
           Settings
         </Link>
-        ; those limits are shared by all campaigns.
+        ; those budgets are shared by all campaigns.
       </Notice>
     </div>
   );

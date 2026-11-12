@@ -187,7 +187,7 @@ This file records the dashboard as it is built today (branch `feat/ui-refine`, b
 
 The theme's own comment in `src/ui/index.css` states the idea: a quiet green-grey desk, amber for what waits on the user, red only for a safety stop. The dashboard is a light, flat, single-theme workspace. A sage sidebar sits on the left, the page is warm off-white paper, and almost everything on it is dark ink text, hairline borders and numbers. Colour is spent on meaning: green for the main action and for work that is running, amber for what waits, red for a safety stop.
 
-The density is that of a working tool. Tables and lists carry real sentences ("prospects are waiting for your approval.", "Limit reached, resumes tomorrow 09:00") in place of labels and icons. There are five icons in the whole product, no illustrations, no imagery and no logo. There is one typeface in three weights. The user reads, decides and leaves.
+The density is that of a working tool. Tables and lists carry real sentences ("Prospects waiting for your approval", "Budget spent, resumes tomorrow 09:00") in place of labels and icons. There are five icons in the whole product, no illustrations, no imagery and no logo. There is one typeface in three weights. The user reads, decides and leaves.
 
 There is no dark theme (`prefersdark: false`, `color-scheme: light`) and no authored motion.
 
@@ -233,7 +233,7 @@ A green-grey neutral family with one deep green for action, one amber for waitin
 | Campaign draft, paused, completed, archived; session not checked | Dark Moss | dot + words |
 | Campaign stopped by a safety stop; session checkpoint or restricted | Stop Red | dot + words |
 | Budget with room | Desk Green | meter fill |
-| Budget spent ("Limit reached, resumes …") | Waiting Amber | full meter + sentence |
+| Budget spent ("Budget spent, resumes …") | Waiting Amber | full meter + sentence |
 | Score 7 to 10 / 5 to under 7 / under 5 or not scored | Score Mint / Score Sand / Sidebar Sage | square chip with the number |
 | Safety stop | Stop Red | full-width banner + red session card |
 
@@ -365,7 +365,7 @@ The one alarm. A full-width Stop Red bar above the page on every screen, with `r
 The quiet counterpart is the unreachable banner: an amber bar with one sentence and no button, when the app does not answer.
 
 ### Budget meter
-One per budget in "Today's usage": the name at the left, "7 of 11" at the right (the used count at 600, the limit at 65%), and a 6px progress bar under them. The fill is Desk Green while there is room and amber when the budget is spent, with a sentence under it ("Limit reached, resumes tomorrow 09:00"; during warm-up, "Warm-up: today's allowance, rising to 15 a day").
+One per budget in "Today's usage": the name at the left, "7 of 11" at the right (the used count at 600, the limit at 65%), and a 6px progress bar under them. The fill is Desk Green while there is room and amber when the budget is spent, with a sentence under it ("Budget spent, resumes tomorrow 09:00"; during warm-up, "Warm-up: today's allowance, rising to 15 a day").
 
 ### Wizard step bar
 Seven numbered steps. From 1024px a left column; below it a horizontal strip that scrolls. Each step is a 1.5rem circle with its number and the step's name at body-small. The current step is Dark Moss with a light circle; other steps are plain with a Hairline Sage circle and a Sidebar Sage hover; steps that cannot be opened yet are at half opacity; a step with a problem has a Stop Red circle. Below the form, a top hairline separates Back and "Save and continue"; the last step's Start button is the medium size.

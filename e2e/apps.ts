@@ -4,7 +4,7 @@ export const APPS = {
   demo: { port: 4748, states: "ok", delayMs: 0, seed: "demo" },
   /** Seeded with the demo data and an active safety stop. */
   stop: { port: 4749, states: "ok", delayMs: 0, seed: "safety-stop" },
-  /** Empty; the session starts logged out and the first Re-check finds it connected. The delay is how long Re-check stays busy. */
+  /** Empty; the session starts logged out and the first Re-check finds it logged in. The delay is how long Re-check stays busy. */
   recheck: { port: 4750, states: "logged_out,ok", delayMs: 2500, seed: "none" },
   /** Empty; the session check finds a checkpoint. */
   checkpoint: { port: 4751, states: "checkpoint", delayMs: 0, seed: "none" },

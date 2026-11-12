@@ -99,7 +99,29 @@ export function nextStepWords(stage: ProspectStage, campaign: Pick<Campaign, "fo
   }
 }
 
-/** A message from the engine, without underscores, as the activity log and Home show it. */
+/** A session state as the end of "Checked LinkedIn: …". */
+const SESSION_WORDS: Readonly<Record<string, string>> = {
+  ok: "logged in",
+  logged_out: "logged out",
+  checkpoint: "it asks for a security check",
+  restricted: "it shows a restriction or warning",
+  search_capped: "logged in, search limit reached",
+  unknown: "could not tell whether it is logged in",
+};
+const sessionWords = (status: string) => SESSION_WORDS[status] ?? status.replace(/_/g, " ");
+
+/**
+ * A message from the engine as the activity log and Home show it: without underscores, and with the two
+ * server lines that read as log keys put in the app's words ("LinkedIn session: ok" is "Checked LinkedIn:
+ * logged in."). The server's own strings stay as they are (backlog D-10).
+ */
 export function plainMessage(text: string): string {
+  const session = /^LinkedIn session: (\w+)$/.exec(text);
+  if (session?.[1] !== undefined) return `Checked LinkedIn: ${sessionWords(session[1])}.`;
+  const outside = /^Outside working hours: (.*)$/.exec(text);
+  if (outside?.[1] !== undefined) {
+    const rest = outside[1].replace(/last known: (\w+)/, (_, status: string) => `last known: ${sessionWords(status)}`);
+    return `Outside the working window: ${rest.replace(/_/g, " ")}`;
+  }
   return text.replace(/_/g, " ");
 }

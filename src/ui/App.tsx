@@ -167,13 +167,13 @@ function SkipLink({ to, className, children }: { readonly to: string; readonly c
   );
 }
 
-/** Says when the LinkedIn window's state changes (after Re-check, or by itself), to a screen reader. Not on the first load. */
+/** Says when the dedicated window's state changes (after Re-check, or by itself), to a screen reader. Not on the first load. */
 function SessionNews({ label }: { readonly label: string | undefined }) {
   const [said, setSaid] = useState<string | undefined>(undefined);
   const [last, setLast] = useState(label);
   if (label !== last) {
     setLast(label);
-    if (last !== undefined && label !== undefined) setSaid(`LinkedIn window: ${label}.`);
+    if (last !== undefined && label !== undefined) setSaid(`Dedicated window: ${label}.`);
   }
   return <Announce message={said} />;
 }

@@ -40,14 +40,14 @@ test("Home reads what needs you as sentences and shows today's usage", async ({ 
   await page.goto("/");
 
   const needs = page.getByTestId("needs-you");
-  await expect(needs.getByText("8 prospects are waiting for your approval.")).toBeVisible();
+  await expect(needs.getByText("8 Prospects waiting for your approval", { exact: true })).toBeVisible();
   await expect(needs).toContainText("5 in Hotel owners, Rome and 3 in Local trades, Milan.");
-  await expect(needs.getByText("2 people are held for review.")).toBeVisible();
+  await expect(needs.getByText("2 People held for review", { exact: true })).toBeVisible();
   await expect(needs).toContainText("Test Person 6 and Test Person 24.");
 
   await expect(page.getByTestId("usage-message")).toContainText("4 of 10");
   await expect(page.getByTestId("usage-discovery_page")).toContainText("10 of 10");
-  await expect(page.getByTestId("usage-discovery_page")).toContainText(/Limit reached, resumes (tomorrow|today|Monday|\w+day) \d\d:\d\d/);
+  await expect(page.getByTestId("usage-discovery_page")).toContainText(/Budget spent, resumes (tomorrow|today|Monday|\w+day) \d\d:\d\d/);
 
   const campaigns = page.getByRole("region", { name: "Campaigns" }).getByRole("table");
   await expect(campaigns).toContainText("Hotel owners, Rome");
@@ -594,6 +594,10 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
   await expect(banner).toContainText("LinkedIn is asking for a security check.");
   await expect(banner).toContainText("What to do: Complete LinkedIn's check in the app's window, then press Resume.");
   await expect(page.getByRole("region", { name: "Campaigns" })).toContainText("Stopped by safety stop");
+  // The red session card leads with the stop; the window's state is one plain secondary line, never an all-clear light.
+  const card = sidebar(page).getByTestId("session-status").locator("xpath=..");
+  await expect(card).toHaveText(/^Window logged in\. (Last checked \d\d:\d\d|Never checked)\.$/);
+  await expect(sidebar(page).locator(".status-success")).toHaveCount(0);
 
   await banner.getByRole("button", { name: "Resume" }).click();
   const dialog = page.getByRole("dialog", { name: "Resume LinkedIn activity?" });
@@ -625,7 +629,7 @@ test("Re-check updates the session, and an empty app shows its empty states", as
   await expect(recheck).toBeDisabled();
   await expect(recheck.locator(".loading")).toBeVisible();
 
-  await expect(page.getByTestId("session-status")).toHaveText("Connected");
+  await expect(page.getByTestId("session-status")).toHaveText("Logged in");
   await expect(recheck).toBeEnabled();
   await expect(page.getByRole("alert")).toHaveCount(0);
 

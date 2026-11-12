@@ -231,7 +231,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         <Group title="How the app works on LinkedIn">
           <LinkedInWindow />
 
-          <Section title="Working hours" lead="The app acts on LinkedIn only on these days and between these times.">
+          <Section title="Working window" lead="The app acts on LinkedIn only on these days and between these times.">
             <div className="flex flex-col gap-block">
               <div>
                 <label htmlFor={ids.zone} className="block font-medium">
@@ -308,10 +308,10 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
             </div>
           </Section>
 
-          <Section title="Daily limits" lead="Shared by all campaigns. When a limit is reached, that kind of work waits for the next day by itself.">
+          <Section title="Budgets" lead="Shared by all campaigns. When a budget is spent, that kind of work waits and resumes by itself.">
             <Notice tone="note" className="mb-block text-sm">
               What you do by hand on LinkedIn also counts. LinkedIn sees one account, so the invites and messages you send yourself add to the
-              app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these limits.
+              app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these budgets.
             </Notice>
             <div className="flex flex-col divide-y divide-base-300">
               <LimitRow path="limits.invitesPerDay" control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
@@ -362,7 +362,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                   label="Warm-up"
                   checked={form.warmUpEnabled}
                   onChange={(on) => change({ warmUpEnabled: on }, "warmUp")}
-                  hint="Starts with few invites a day and adds more each day until it reaches the daily limit."
+                  hint="Starts with few invites a day and adds more each day until it reaches the daily invite budget."
                 />
                 {form.warmUpEnabled && (
                   <div className="mt-3 flex flex-wrap items-center gap-2 text-sm sm:pl-14">
@@ -391,7 +391,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               </div>
               <div>
                 <p className="font-medium">Breaks</p>
-                <p className="text-sm text-muted">A longer pause now and then, as a person would take.</p>
+                <p className="text-sm text-muted">A longer rest now and then, as a person would take.</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
                     A break of {num("breaks.minutesMin", "Shortest break in minutes")}
@@ -419,7 +419,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               label="Keep the Mac awake while a campaign is working"
               checked={form.keepAwake}
               onChange={(on) => change({ keepAwake: on }, "keepAwake")}
-              hint="Only inside your working hours, while a campaign is finding people or running. The screen can still turn off."
+              hint="Only inside your working window, while a campaign is finding people or running. The screen can still turn off."
             />
             <p className="mt-2 text-sm text-base-content" data-testid="keep-awake-now">
               {ops.data === undefined ? "" : ops.data.keepAwake.active ? "Keeping the Mac awake right now." : "Not keeping the Mac awake right now."}
@@ -546,7 +546,7 @@ function LimitRow({ path, control, label, hint, error }: { readonly path: string
   );
 }
 
-// ------------------------------------------------------------ the LinkedIn window
+// ------------------------------------------------------------ the dedicated window
 
 /** The session of the app's own Chrome window: its state, when it was last checked, Re-check, and how to log in again. */
 function LinkedInWindow() {
@@ -555,7 +555,7 @@ function LinkedInWindow() {
   const session = home?.session;
   const view = session === undefined ? undefined : sessionView(session);
   return (
-    <Section title="LinkedIn window" lead="The app works on LinkedIn only in its own Chrome window, logged in to your account.">
+    <Section title="Dedicated window" lead="The app works on LinkedIn only in its own Chrome window, logged in to your account.">
       {session === undefined || view === undefined ? (
         <div className="skeleton h-12 w-full" />
       ) : (
@@ -612,7 +612,7 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={running || blocked} aria-busy={running} onClick={run}>
           {running && <span className="loading loading-spinner loading-xs" />}
-          Test
+          Test the AI
         </button>
         {running && (
           <p role="status" className="nums text-sm text-base-content">

@@ -144,7 +144,7 @@ function CampaignTable(props: {
               </th>
             ))}
             <th scope="col">
-              <span className="sr-only">Actions</span>
+              <span className="sr-only">Change the campaign</span>
             </th>
           </tr>
         </thead>

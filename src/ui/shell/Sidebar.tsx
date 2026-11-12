@@ -7,7 +7,7 @@ import type { Recheck } from "./useRecheck";
 
 export const SIDEBAR_ID = "sidebar";
 
-/** The left column on a wide screen, the menu on a phone: session, the eight destinations, working hours. */
+/** The left column on a wide screen, the menu on a phone: session, the eight destinations, the working window. */
 export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; readonly recheck: Recheck; readonly onNavigate: () => void }) {
   const { home } = useAppData();
   const campaigns = home?.campaigns ?? [];
@@ -97,12 +97,19 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
         </p>
       )}
       <div className="flex items-center justify-between gap-2">
-        <p className="flex min-w-0 items-center gap-2 font-medium">
-          <span className={`status ${stop === null ? view.light : "status-neutral bg-error-content"}`} aria-hidden="true" />
-          <span data-testid="session-status" className="truncate">
-            {view.label}
-          </span>
-        </p>
+        {stop === null ? (
+          <p className="flex min-w-0 items-center gap-2 font-medium">
+            <span className={`status ${view.light}`} aria-hidden="true" />
+            <span data-testid="session-status" className="truncate">
+              {view.label}
+            </span>
+          </p>
+        ) : (
+          // During a stop the window's state is secondary: one plain line, no light, so nothing on the card reads as all clear.
+          <p className="min-w-0 text-error-content/90">
+            <span data-testid="session-status">{view.window}</span>. <span data-testid="last-checked">{checked}</span>.
+          </p>
+        )}
         <button
           type="button"
           className={`${stop === null ? SECONDARY_BUTTON : ON_RED_BUTTON} btn-xs shrink-0`}
@@ -114,9 +121,11 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
           Re-check
         </button>
       </div>
-      <p data-testid="last-checked" className={stop === null ? "text-muted" : "text-error-content/85"}>
-        {checked}
-      </p>
+      {stop === null && (
+        <p data-testid="last-checked" className="text-muted">
+          {checked}
+        </p>
+      )}
       {recheck.error !== undefined && (
         <p role="alert" className={`mt-1.5 ${stop === null ? "text-error" : ""}`}>
           {recheck.error}
@@ -135,7 +144,7 @@ function WorkingLine() {
       ? "Nothing runs on LinkedIn until you resume."
       : now.open
         ? `Working now, until ${now.until}.`
-        : `Outside working hours. Starts again ${now.next}.`;
+        : `Outside the working window. Starts again ${now.next}.`;
   return (
     <p className="mt-auto px-6 pt-6 pb-6 text-sm text-muted">
       Working {formatDays(settings.workingDays)},{" "}

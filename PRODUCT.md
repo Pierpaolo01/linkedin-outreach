@@ -61,7 +61,7 @@ Screens (spec section 10, all built): Home, Campaigns, Campaign detail, the camp
 
 Constraints:
 
-- A spent budget is not a problem state. That kind of work waits and resumes by itself ("Limit reached, resumes tomorrow 09:00"). A safety stop is the only state that needs the user to act before work continues. The two must never look alike.
+- A spent budget is not a problem state. That kind of work waits and resumes by itself ("Budget spent, resumes tomorrow 09:00"). A safety stop is the only state that needs the user to act before work continues. The two must never look alike.
 - A pause is the user's choice on one campaign. A safety stop halts everything. They are different words and different things.
 - The interface is in English (spec sections 2 and 10). The user's LinkedIn interface may be in Italian; that affects the driver, not the dashboard.
 - People's names, companies and message texts in the dashboard are real people's data. Screenshots for docs and reviews use the test data only.

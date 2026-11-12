@@ -291,7 +291,7 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
   }
 
   return (
-    <div className="mt-group">
+    <figure className="mt-group">
       <button
         type="button"
         className="block overflow-hidden rounded-field border border-base-300 hover:border-base-content/40"
@@ -306,6 +306,10 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
           onError={() => setMissing(true)}
         />
       </button>
+      {/* The button's name already says this to a screen reader; the caption is for the eye. */}
+      <figcaption className="mt-1 text-caption text-muted" aria-hidden="true">
+        What the app saw. Open at full size.
+      </figcaption>
       <dialog ref={ref} className="modal" aria-labelledby={titleId} onClose={() => setOpen(false)}>
         <div className="modal-box max-h-[92vh] w-11/12 max-w-6xl">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -322,6 +326,6 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
           <button type="submit">Close</button>
         </form>
       </dialog>
-    </div>
+    </figure>
   );
 }

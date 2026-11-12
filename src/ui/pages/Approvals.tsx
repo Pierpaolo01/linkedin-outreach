@@ -290,7 +290,7 @@ export function Approvals() {
           {minScore > 0 ? ` with a score of ${minScore} or more` : ""}
           {campaignName === undefined ? "" : ` in ${campaignName}`} will be invited.
         </p>
-        <p className="text-base-content">The app sends the invites itself, within your working hours and daily limits.</p>
+        <p className="text-base-content">The app sends the invites itself, within your working window and budgets.</p>
         {arrived > 0 && (
           <p role="status" className="text-sm" data-testid="new-arrivals">
             {arrived === 1 ? "1 new person is" : `${arrived} new people are`} waiting —{" "}

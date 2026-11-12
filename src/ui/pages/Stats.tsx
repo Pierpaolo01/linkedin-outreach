@@ -7,6 +7,8 @@ import { useLoad } from "../useLoad";
 import { formatHours } from "../words";
 import { PageHeader } from "./PageHeader";
 
+const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 /** Below this many, a percentage says more about chance than about the campaign. */
 const ENOUGH = 5;
 
@@ -27,13 +29,13 @@ function StackLabel({ children }: { readonly children: string }) {
   );
 }
 
-/** "60%", or "not enough data yet" when the count behind it is too small to mean much. */
+/** "60%", or "Not enough data yet" when the count behind it is too small to mean much. */
 function Rate({ value, part, whole, of }: { readonly value: number | null; readonly part: number; readonly whole: number; readonly of: string }) {
   if (value === null || whole < ENOUGH) {
     return (
       <>
         <p className="text-muted" data-testid="not-enough">
-          not enough data yet
+          Not enough data yet
         </p>
         <p className="nums text-sm text-muted">
           {part} of {whole} {of}
@@ -55,7 +57,8 @@ function Rate({ value, part, whole, of }: { readonly value: number | null; reado
 export function Stats() {
   const loaded = useLoad(getStats, "stats");
   const rows = loaded.data?.campaigns ?? [];
-  const replyLabel = rows[0]?.replyRate.label ?? "replies seen before the follow-up";
+  // The server names this measure in lower case ("replies seen before the follow-up"); as a column head it starts with a capital.
+  const replyLabel = capitalised(rows[0]?.replyRate.label ?? "replies seen before the follow-up");
 
   return (
     <>

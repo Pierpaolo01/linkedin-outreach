@@ -10,7 +10,7 @@ import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
 import { PageHeader } from "./PageHeader";
 
-/** Home: what needs the user, the campaigns, today's usage against each limit, and what the app did. */
+/** Home: what needs the user, the campaigns, today's usage against each budget, and what the app did. */
 export function Home() {
   const { home, homeError, refresh, timeZone } = useAppData();
   const now = new Date();
@@ -101,7 +101,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
             {pendingApproval > 0 && (
               <NeedRow
                 count={pendingApproval}
-                sentence={`${pendingApproval === 1 ? "prospect is" : "prospects are"} waiting for your approval.`}
+                sentence={pendingApproval === 1 ? "Prospect waiting for your approval" : "Prospects waiting for your approval"}
                 detail={approvalDetail}
                 action="Open queue"
                 to="/approvals"
@@ -111,7 +111,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
             {needsReview > 0 && (
               <NeedRow
                 count={needsReview}
-                sentence={`${needsReview === 1 ? "person is" : "people are"} held for review.`}
+                sentence={needsReview === 1 ? "Person held for review" : "People held for review"}
                 detail={reviewDetail}
                 action="Open review"
                 to="/review"
@@ -141,7 +141,7 @@ function NeedRow(props: {
         {props.count}
       </span>
       <div className="min-w-0 flex-1 basis-48">
-        <p className="font-medium">
+        <p className="font-semibold">
           <span className="sr-only">{props.count} </span>
           {props.sentence}
         </p>
@@ -276,8 +276,8 @@ const BUDGET_ORDER = ["invite", "message", "profile_view", "discovery_page", "wi
 
 function usageNote(kind: BudgetKind, budget: Budget, settings: Settings | undefined, timeZone: string, now: Date): string | undefined {
   // A spent budget is never "paused": pausing is the user's choice on one campaign. It may be spent
-  // below today's number when the week's invite limit or LinkedIn's own limit blocks invites.
-  if (!budget.open) return `Limit reached${budget.resumesAt === null ? "" : `, resumes ${formatResume(budget.resumesAt, timeZone, now)}`}`;
+  // below today's number when the week's invite budget or LinkedIn's own limit blocks invites.
+  if (!budget.open) return `Budget spent${budget.resumesAt === null ? "" : `, resumes ${formatResume(budget.resumesAt, timeZone, now)}`}`;
   if (kind === "invite" && settings !== undefined && settings.warmUp.enabled && budget.limit < settings.limits.invitesPerDay) {
     return `Warm-up: today's allowance, rising to ${settings.limits.invitesPerDay} a day`;
   }

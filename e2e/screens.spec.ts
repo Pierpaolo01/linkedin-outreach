@@ -66,7 +66,7 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await page.getByRole("button", { name: "Save and continue" }).click();
 
   // 6. Timings, then the review.
-  await expect(page.getByText(/those limits are shared by all campaigns/)).toBeVisible();
+  await expect(page.getByText(/those budgets are shared by all campaigns/)).toBeVisible();
   await page.getByRole("button", { name: "Save and review" }).click();
   await page.getByRole("button", { name: "Start the campaign" }).click();
   await expect(page.getByTestId("start-error")).toContainText("The campaign cannot start yet");
@@ -325,10 +325,10 @@ test("activity log: warnings and errors only, and one campaign", async ({ page }
   await expect(lines.filter({ hasText: "Found 30 people in your recommendations" })).toHaveCount(1);
 });
 
-test("stats: the labels, rates and not enough data yet", async ({ page }) => {
+test("stats: the labels, rates and Not enough data yet", async ({ page }) => {
   await page.goto("/stats");
   const table = page.getByTestId("stats-table");
-  await expect(table.getByRole("columnheader", { name: "replies seen before the follow-up", exact: true })).toBeVisible();
+  await expect(table.getByRole("columnheader", { name: "Replies seen before the follow-up", exact: true })).toBeVisible();
   await expect(table.getByRole("columnheader", { name: "Median time to accept" })).toBeVisible();
   await expect(table.getByRole("columnheader", { name: "Invites withdrawn" })).toBeVisible();
 
@@ -345,22 +345,22 @@ test("stats: the labels, rates and not enough data yet", async ({ page }) => {
   await expect(hotels).toContainText(`${row.accepted} of ${row.invitesSent} invited`);
   await expect(hotels).toContainText("30 hours");
   // One reply out of four first messages: too few for a percentage.
-  await expect(hotels.getByTestId("not-enough")).toHaveText("not enough data yet");
+  await expect(hotels.getByTestId("not-enough")).toHaveText("Not enough data yet");
   await expect(hotels).toContainText("1 of 4 messaged");
   await expect(page.getByTestId("stats-row").filter({ hasText: "Architects, Turin" }).getByTestId("not-enough")).toHaveCount(2);
 });
 
-test("settings: the LinkedIn window section says the session state, when it was checked, and how to log in again", async ({ page }) => {
+test("settings: the dedicated window section says the session state, when it was checked, and how to log in again", async ({ page }) => {
   await page.goto("/settings");
-  const section = page.getByRole("region", { name: "LinkedIn window" });
-  await expect(section.getByTestId("linkedin-window-state")).toHaveText("Connected");
+  const section = page.getByRole("region", { name: "Dedicated window" });
+  await expect(section.getByTestId("linkedin-window-state")).toHaveText("Logged in");
   await expect(section.getByTestId("linkedin-window-checked")).toHaveText(/^(Last checked (today|yesterday|on .+) at \d\d:\d\d|Never checked)\.$/);
   await expect(section).toContainText("log in again in the app\u2019s own Chrome window, not in your usual browser, then press Re-check.");
 
   const recheck = section.getByRole("button", { name: "Re-check" });
   await recheck.click();
   await expect(recheck).toBeEnabled();
-  await expect(section.getByTestId("linkedin-window-state")).toHaveText("Connected");
+  await expect(section.getByTestId("linkedin-window-state")).toHaveText("Logged in");
   await expect(section.getByTestId("linkedin-window-checked")).toHaveText(/^Last checked today at \d\d:\d\d\.$/);
 });
 
@@ -426,7 +426,7 @@ test("settings: a refused save shows the problem in place, a good one saves; AI 
   await expect(sidebar(page)).toContainText("09:00 to 17:30");
 
   // The AI test shows its progress, then the answer.
-  await page.getByRole("button", { name: "Test", exact: true }).click();
+  await page.getByRole("button", { name: "Test the AI", exact: true }).click();
   await expect(page.getByText(/Asking the AI a small question/)).toBeVisible();
   await expect(page.getByTestId("ai-test-result")).toContainText("The AI answered in 1.5 s: test answer.");
 
