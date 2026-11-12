@@ -31,10 +31,20 @@ describe("plainMessage", () => {
     expect(plainMessage('Campaign "Dentists" edited: replyCheckEveryHours')).toBe('Campaign "Dentists" edited: reply check every hours.');
   });
 
-  it("says a reached daily or weekly limit as a spent budget", () => {
+  // "the daily budget", never "today's": the line may be from an earlier day.
+  it("says a reached daily or weekly limit as a spent budget, without naming the day", () => {
     expect(plainMessage("Discovery paused: the daily limit of 10 discovery pages is reached. It resumes on the next working day.")).toBe(
-      "Discovery waits: today's budget of 10 discovery pages is spent. It resumes on the next working day.",
+      "Discovery waits: the daily budget of 10 discovery pages is spent. It resumes on the next working day.",
     );
-    expect(plainMessage("Invites wait: the weekly limit of 80 invites is reached.")).toBe("Invites wait: this week's budget of 80 invites is spent.");
+    expect(plainMessage("Invites wait: the weekly limit of 80 invites is reached.")).toBe("Invites wait: the weekly budget of 80 invites is spent.");
+  });
+
+  it("says a campaign that starts running on an approval as a sentence, not a status key", () => {
+    expect(plainMessage('Campaign "Local trades, Milan" running: a prospect was approved')).toBe(
+      'A prospect was approved in "Local trades, Milan", so the campaign is running.',
+    );
+    // The other campaign lines already read as sentences and stay as they are.
+    expect(plainMessage('Campaign "Dentists" paused (was awaiting approval)')).toBe('Campaign "Dentists" paused (was awaiting approval)');
+    expect(plainMessage('Campaign "Dentists" created as a draft')).toBe('Campaign "Dentists" created as a draft');
   });
 });

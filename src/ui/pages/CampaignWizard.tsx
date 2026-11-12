@@ -772,20 +772,22 @@ function Review({
         return { path, text: `${label}${index === undefined ? "" : ` ${Number(index) + 1}`}: ${message}` };
       });
   const text = (value: string, empty: string) => (value.trim() === "" ? <span className="text-muted">{empty}</span> : <span className="whitespace-pre-line">{value}</span>);
+  /** What Start still needs: in Ink at 500, so the step that lacks it is not the quietest row. Not red before Start is pressed. */
+  const needed = (value: string, empty: string) => (value.trim() === "" ? <span className="font-medium">{empty}</span> : text(value, empty));
 
   const sections: readonly { readonly step: number; readonly rows: readonly (readonly [string, ReactNode])[] }[] = [
-    { step: 0, rows: [["Name", text(form.name, "No name yet")]] },
+    { step: 0, rows: [["Name", needed(form.name, "No name yet")]] },
     {
       step: 1,
       rows: [
         ["Source", form.discoverySource === "search" ? "People searches" : "LinkedIn's recommendations"],
         ...(form.discoverySource === "search"
-          ? [["Searches", urls.length === 0 ? <span className="text-muted">None yet</span> : <ul className="break-all">{urls.map((u) => <li key={u}>{u}</li>)}</ul>] as const]
+          ? [["Searches", urls.length === 0 ? <span className="font-medium">None yet</span> : <ul className="break-all">{urls.map((u) => <li key={u}>{u}</li>)}</ul>] as const]
           : []),
         ["People to find", form.targetProspectCount.trim() === "" ? "No limit" : form.targetProspectCount],
       ],
     },
-    { step: 2, rows: [["Who fits", text(form.scoringBrief, "Not written yet")]] },
+    { step: 2, rows: [["Who fits", needed(form.scoringBrief, "Not written yet")]] },
     {
       step: 3,
       rows: [
@@ -799,7 +801,7 @@ function Review({
       step: 4,
       rows: [
         ["Invite note", text(form.inviteNote, "No note")],
-        ["First message", text(form.firstMessage, "Not written yet")],
+        ["First message", needed(form.firstMessage, "Not written yet")],
         ["Follow-up", text(form.followUp, "No follow-up")],
         ["AI-written line", form.aiPersonalise ? "On" : "Off"],
       ],
@@ -832,11 +834,13 @@ function Review({
                   {list.length > 0 ? (
                     <span className="status status-error" aria-hidden="true" />
                   ) : unfinished.has(step) ? (
-                    <span className="size-4" aria-hidden="true" />
+                    // A hollow ring in the control edge (3:1): not done yet. Neither amber nor red, since nothing is wrong yet.
+                    <span className="size-4 shrink-0 rounded-full border-2 border-control" aria-hidden="true" />
                   ) : (
                     <IconCheck className="size-4 text-primary" />
                   )}
                   {STEPS[step]?.title}
+                  {list.length === 0 && unfinished.has(step) && <span className="sr-only">(not finished)</span>}
                 </h3>
                 <button type="button" className="link inline-flex min-h-6 shrink-0 items-center text-sm link-hover max-lg:min-h-11" onClick={() => onChange(step)}>
                   Change<span className="sr-only"> {STEPS[step]?.title}</span>

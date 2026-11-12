@@ -17,9 +17,12 @@ type Stage = (typeof PROSPECT_STAGES)[number];
 
 /*
  * The People table needs a box of 58rem (`--container-people`) for its seven columns. In a narrower box each
- * person is one block of four lines: name (with score and Profile at the right); headline and company; stage,
- * and the next action when there is one; the reason. The column names are not shown there: the explicit roles
- * keep the table's semantics when its parts are laid out as a grid, so every cell keeps its column's name.
+ * person is one block of four lines: name (with score and Profile at the right); headline and company, the full
+ * width of the block; stage, and the next action when there is one; the reason, muted so the stage line leads.
+ * The column names are not shown there: the explicit roles keep the table's semantics when its parts are laid out
+ * as a grid, so every cell keeps its column's name. Until the box is 66rem (`--container-people-wide`) the table
+ * hides its Company column from the eye, header and cells together (screen readers keep it), and prints the
+ * company after the headline as the block does, so Person and the reason are not squeezed to three or four lines.
  */
 const STACK_CELL = "@max-people:min-w-0 @max-people:border-0 @max-people:p-0";
 
@@ -180,7 +183,9 @@ function People({ campaign }: { readonly campaign: Campaign }) {
               <thead role="rowgroup" className="@max-people:sr-only">
                 <tr role="row" className="text-muted">
                   <th role="columnheader" scope="col" className="font-medium">Person</th>
-                  <th role="columnheader" scope="col" className="font-medium">Company</th>
+                  <th role="columnheader" scope="col" className="font-medium @max-people-wide:sr-only">
+                    Company
+                  </th>
                   <th role="columnheader" scope="col" className="font-medium">Stage</th>
                   <th role="columnheader" scope="col" className="font-medium">Score</th>
                   <th role="columnheader" scope="col" className="min-w-56 font-medium">Why the AI scored them so</th>
@@ -248,23 +253,26 @@ function ProspectRow(props: {
       data-testid="prospect-row"
       className={`@max-people:grid @max-people:grid-cols-[auto_minmax(0,1fr)_auto_auto] @max-people:items-start @max-people:gap-x-3 @max-people:gap-y-1.5 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-300 ${props.open ? "bg-base-200/60" : ""}`}
     >
-      <th role="rowheader" scope="row" className={`min-w-52 text-left font-normal ${STACK_CELL} @max-people:col-span-2 @max-people:col-start-1 @max-people:row-start-1`}>
-        <button
-          type="button"
-          className="inline-flex min-h-6 items-center gap-1 text-left font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11"
-          aria-expanded={props.open}
-          onClick={props.onToggle}
-        >
-          {p.person.fullName}
-          <IconChevron
-            className={`size-3.5 shrink-0 text-muted transition-transform duration-(--duration-appear) ease-settle ${props.open ? "rotate-90" : ""}`}
-          />
-        </button>
+      <th role="rowheader" scope="row" className={`min-w-52 text-left font-normal ${STACK_CELL} @max-people:col-span-4 @max-people:col-start-1 @max-people:row-start-1`}>
+        {/* In the block the score and Profile sit at the right of this line only (28px chip, 12px gaps, Profile), so the headline under it runs the full width. */}
+        <div className="@max-people:min-h-7 @max-people:pr-29">
+          <button
+            type="button"
+            className="inline-flex min-h-6 items-center gap-1 text-left font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11"
+            aria-expanded={props.open}
+            onClick={props.onToggle}
+          >
+            {p.person.fullName}
+            <IconChevron
+              className={`size-3.5 shrink-0 text-muted transition-transform duration-(--duration-appear) ease-settle ${props.open ? "rotate-90" : ""}`}
+            />
+          </button>
+        </div>
         {headline !== null && (
           <p className="text-base-content">
             {headline}
             {companyAfter && (
-              <span className="hidden text-muted @max-people:inline" aria-hidden="true">
+              <span className="hidden text-muted @max-people-wide:inline" aria-hidden="true">
                 {" "}
                 · {company}
               </span>
@@ -272,14 +280,14 @@ function ProspectRow(props: {
           </p>
         )}
         {headline === null && company !== null && (
-          <p className="hidden @max-people:block" aria-hidden="true">
+          <p className="hidden @max-people-wide:block" aria-hidden="true">
             {company}
           </p>
         )}
         {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/10 text-caption text-error">Do not contact</span>}
       </th>
-      {/* In the block the company follows the headline (once, when the headline does not already name it). */}
-      <td role="cell" className={`${STACK_CELL} @max-people:sr-only`}>
+      {/* In the block, and in a table narrower than 66rem, the company follows the headline (once, when the headline does not already name it). */}
+      <td role="cell" className={`${STACK_CELL} @max-people-wide:sr-only`}>
         {company ?? <span className="text-muted">Unknown</span>}
       </td>
       <td role="cell" className={`whitespace-nowrap ${STACK_CELL} @max-people:col-start-1 @max-people:row-start-2`}>
@@ -290,7 +298,7 @@ function ProspectRow(props: {
       <td role="cell" className={`${STACK_CELL} @max-people:col-start-3 @max-people:row-start-1 @max-people:self-start`}>
         <ScoreChip score={p.score} size="sm" />
       </td>
-      <td role="cell" className={`text-base-content ${STACK_CELL} @max-people:col-span-4 @max-people:col-start-1 @max-people:row-start-3`}>
+      <td role="cell" className={`text-base-content @max-people:text-muted ${STACK_CELL} @max-people:col-span-4 @max-people:col-start-1 @max-people:row-start-3`}>
         {p.scoreReason ?? <span className="text-muted">Not scored yet</span>}
       </td>
       <td

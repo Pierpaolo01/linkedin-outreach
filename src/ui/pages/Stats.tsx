@@ -18,8 +18,10 @@ type Row = StatsData["campaigns"][number];
  * The table needs a box of 50rem (`--container-stats`) for its five columns. In a narrower box each campaign is
  * one block: its name and status, then the four measures two to a line, each under its column's name. The
  * explicit roles keep the table's semantics when its parts are displayed as blocks; the visible names are for the eye.
+ * Each measure spans three rows of the block's grid (name, value, the count behind it) as a subgrid, so the two
+ * measures on a line keep their values level when one name takes two lines.
  */
-const STACK_MEASURE = "@max-stats:border-0 @max-stats:p-0 @max-stats:text-left";
+const STACK_MEASURE = "@max-stats:mt-3 @max-stats:grid @max-stats:row-span-3 @max-stats:grid-rows-subgrid @max-stats:border-0 @max-stats:p-0 @max-stats:text-left";
 
 function StackLabel({ children }: { readonly children: string }) {
   return (
@@ -99,7 +101,7 @@ export function Stats() {
 function StatsRow({ row, replyLabel }: { readonly row: Row; readonly replyLabel: string }) {
   const { home } = useAppData();
   return (
-    <tr role="row" data-testid="stats-row" className="align-top @max-stats:grid @max-stats:grid-cols-2 @max-stats:gap-x-4 @max-stats:gap-y-3 @max-stats:px-4 @max-stats:py-3 @max-stats:not-last:border-b @max-stats:not-last:border-base-300">
+    <tr role="row" data-testid="stats-row" className="align-top @max-stats:grid @max-stats:grid-cols-2 @max-stats:gap-x-4 @max-stats:px-4 @max-stats:py-3 @max-stats:not-last:border-b @max-stats:not-last:border-base-300">
       <th role="rowheader" scope="row" className="text-left font-normal @max-stats:col-span-2 @max-stats:border-0 @max-stats:p-0">
         <Link to={`/campaigns/${row.campaignId}`} className="inline-flex min-h-6 items-center font-semibold hover:underline">
           {row.name}

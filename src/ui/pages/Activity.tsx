@@ -84,18 +84,21 @@ export function Activity() {
             </button>
           ))}
         </div>
-        <label htmlFor={campaignFilter} className="text-sm">
-          Campaign
-        </label>
-        <CampaignSelect
-          id={campaignFilter}
-          campaigns={campaigns.data?.campaigns ?? []}
-          value={campaignId}
-          onChange={(id) => {
-            setCampaignId(id);
-            setPage(1);
-          }}
-        />
+        {/* The label and its select wrap to the next line together. */}
+        <div className="inline-flex flex-wrap items-center gap-x-4 gap-y-3">
+          <label htmlFor={campaignFilter} className="text-sm">
+            Campaign
+          </label>
+          <CampaignSelect
+            id={campaignFilter}
+            campaigns={campaigns.data?.campaigns ?? []}
+            value={campaignId}
+            onChange={(id) => {
+              setCampaignId(id);
+              setPage(1);
+            }}
+          />
+        </div>
       </div>
 
       {loaded.status === "error" && loaded.data === undefined ? (

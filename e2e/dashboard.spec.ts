@@ -462,6 +462,18 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
   expect(block?.height ?? Infinity, "a person's block is a stack of labelled rows again").toBeLessThanOrEqual(200);
   const hidden = await page.getByTestId("people-table").evaluate((table) => (table.parentElement === null ? 0 : table.parentElement.scrollWidth - table.parentElement.clientWidth));
   expect(hidden, "the People box scrolls sideways").toBeLessThanOrEqual(0);
+  // The name line keeps its right side for the score and Profile; the headline under it runs the block's full width.
+  const long = page.getByTestId("prospect-row").filter({ hasText: "Revenue manager at Gruppo Ospitalità Test" });
+  const longBlock = await long.boundingBox();
+  const longHeader = await long.getByRole("rowheader").boundingBox();
+  expect(longBlock?.height ?? Infinity, "a long headline wraps beside the score and Profile").toBeLessThanOrEqual(150);
+  expect(longHeader?.width ?? 0, "the name and headline do not span the block").toBeGreaterThanOrEqual((longBlock?.width ?? Infinity) - 2 * 16 - 1);
+  const nameButton = await long.getByRole("button").first().boundingBox();
+  const chip = await long.getByLabel(/^Score /).boundingBox();
+  const longProfile = await long.getByRole("link", { name: /^Profile/ }).boundingBox();
+  expect((nameButton?.x ?? Infinity) + (nameButton?.width ?? 0), "the name runs under the score").toBeLessThanOrEqual(chip?.x ?? 0);
+  expect((chip?.x ?? Infinity) + (chip?.width ?? 0), "the score runs under Profile").toBeLessThanOrEqual(longProfile?.x ?? 0);
+  for (const [what, box] of [["the name", nameButton], ["Profile", longProfile]] as const) expect(box?.height ?? 0, `${what} is too small to tap`).toBeGreaterThanOrEqual(44);
   await person.getByRole("button").first().click();
   const detailRight = await page.getByTestId("prospect-detail").evaluate((detail) => detail.getBoundingClientRect().right - window.innerWidth);
   expect(detailRight, "an opened person's texts run past the screen").toBeLessThanOrEqual(0);
@@ -471,6 +483,20 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
   await expect(page.getByTestId("stats-row").first().getByText("Median time to accept", { exact: true })).toBeVisible();
   const statsHidden = await page.getByTestId("stats-table").evaluate((table) => (table.parentElement === null ? 0 : table.parentElement.scrollWidth - table.parentElement.clientWidth));
   expect(statsHidden, "the Stats box scrolls sideways").toBeLessThanOrEqual(0);
+  // The two measures on a line put their values level, even when one name ("Replies seen before the follow-up") takes two lines.
+  const valueTops = await page
+    .getByTestId("stats-row")
+    .first()
+    .getByRole("cell")
+    .evaluateAll((cells) => cells.slice(0, 2).map((cell) => cell.children[1]?.getBoundingClientRect().top ?? Number.NaN));
+  expect(Math.abs((valueTops[0] ?? 0) - (valueTops[1] ?? Infinity)), "the values of a pair of measures sit at different heights").toBeLessThanOrEqual(1);
+
+  // Activity: the Campaign filter's label and its select wrap to a line together.
+  await page.goto("/activity");
+  const campaignLabel = await page.locator("label").filter({ hasText: /^Campaign$/ }).boundingBox();
+  const campaignSelect = await page.getByLabel("Campaign").boundingBox();
+  const middle = (box: { y: number; height: number } | null) => (box === null ? Number.NaN : box.y + box.height / 2);
+  expect(Math.abs(middle(campaignLabel) - middle(campaignSelect)), "the Campaign label and its select are on different lines").toBeLessThanOrEqual(2);
 
   // The approval queue: Approve and Reject are 44px targets on a phone.
   await page.goto("/approvals");

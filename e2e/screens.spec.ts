@@ -35,6 +35,14 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await page.getByLabel("Search address 1").fill("https://linkedin.com/search/results/people/?keywords=test");
   await page.getByRole("button", { name: "Save and continue" }).click();
 
+  // The review while Who fits is empty: a ring and "(not finished)", the missing text in Ink at 500, and no red before Start.
+  await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: "Review and start" }).click();
+  const whoFits = page.getByTestId("review-step-3");
+  await expect(whoFits.getByRole("heading", { name: "Who fits (not finished)" })).toBeVisible();
+  await expect(whoFits.getByText("Not written yet")).toHaveCSS("font-weight", "500");
+  await expect(whoFits.locator(".status-error, .text-error")).toHaveCount(0);
+  await page.getByRole("button", { name: "Change Who fits" }).click();
+
   // 3. Who fits: an empty box with guidance, no example text.
   const brief = page.getByLabel("Who fits this campaign, and who does not");
   await expect(brief).toHaveValue("");
@@ -302,6 +310,27 @@ test("campaign detail: the people table pages, filters by stage, and opens a per
   expect(flagged.items.find((p) => p.person.fullName === name)?.person.doNotContact).toBe(true);
   await page.getByTestId("prospect-detail").getByRole("switch", { name: "Do not contact" }).uncheck();
   await expect(person).not.toContainText("Do not contact");
+});
+
+test("campaign detail: a narrow People table drops the Company column for the eye, so rows stay two or three lines", async ({ page }) => {
+  const rows = page.getByTestId("prospect-row");
+  const companyWidth = () => page.getByTestId("people-table").getByRole("columnheader", { name: "Company" }).evaluate((th) => th.getBoundingClientRect().width);
+  const tallest = () => rows.evaluateAll((els) => Math.max(...els.map((el) => el.getBoundingClientRect().height)));
+
+  // 1280: the table form in a box just past its width. Company stays for screen readers, header and cells together.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/campaigns/1");
+  await expect(rows).toHaveCount(20);
+  await expect(page.getByTestId("people-table").getByRole("columnheader", { name: "Stage" })).toBeVisible();
+  expect(await companyWidth(), "the Company column shows in a narrow table").toBeLessThanOrEqual(1);
+  const cellWidths = await rows.evaluateAll((els) => els.map((el) => el.querySelectorAll('[role="cell"]')[0]?.getBoundingClientRect().width ?? 0));
+  expect(Math.max(...cellWidths), "a company cell shows without its header").toBeLessThanOrEqual(1);
+  expect(await tallest(), "a People row runs past three lines at 1280").toBeLessThanOrEqual(89);
+
+  // 1440: every column, and no row taller than before (two lines, or three when a headline wraps).
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(companyWidth).toBeGreaterThan(40);
+  expect(await tallest(), "a People row runs past three lines at 1440").toBeLessThanOrEqual(89);
 });
 
 test("activity log: warnings and errors only, and one campaign", async ({ page }) => {

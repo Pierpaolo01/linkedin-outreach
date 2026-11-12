@@ -759,7 +759,7 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
         <LoadError what="whether it is set up" message={ops.error.message} onRetry={ops.reload} />
       ) : service !== undefined && !service.installed ? (
         // Plain information, not amber: starting at login is optional, and nothing waits on the user without it.
-        <Notice tone="note">
+        <Notice tone="note" className="text-sm">
           <span data-testid="service-state">{state}</span>
         </Notice>
       ) : (

@@ -127,18 +127,21 @@ function editedWords(keys: string): string {
 /**
  * A message from the engine as the activity log and Home show it: without underscores, and with the server
  * lines that read as log keys put in the app's words ("LinkedIn session: ok" is "Checked LinkedIn: logged in.";
- * a campaign edit names the wizard's steps, not field keys; a reached daily limit is a spent budget, as Home
- * says it). The server's own strings stay as they are (backlog D-10).
+ * a campaign edit names the wizard's steps, not field keys; a reached daily limit is "the daily budget … is
+ * spent", as Home says it, without "today's", since the line may be from an earlier day; a campaign that starts
+ * running on an approval says so as a sentence). The server's own strings stay as they are (backlog D-10).
  */
 export function plainMessage(text: string): string {
   const session = /^LinkedIn session: (\w+)$/.exec(text);
   if (session?.[1] !== undefined) return `Checked LinkedIn: ${sessionWords(session[1])}.`;
   const edited = /^(Campaign ".*" edited): ([\w, ]+)$/.exec(text);
   if (edited?.[1] !== undefined && edited[2] !== undefined) return `${edited[1]}: ${editedWords(edited[2])}.`;
+  const running = /^Campaign (".*") running: a prospect was approved$/.exec(text);
+  if (running?.[1] !== undefined) return `A prospect was approved in ${running[1]}, so the campaign is running.`;
   const limit = /the (daily|weekly) limit of (\d+) (.+?) is reached/.exec(text);
   if (limit !== null) {
     const [phrase, period, count, what] = limit;
-    const spent = `${period === "daily" ? "today's" : "this week's"} budget of ${count} ${what} is spent`;
+    const spent = `the ${period} budget of ${count} ${what} is spent`;
     return text.replace(phrase, spent).replace(/^Discovery paused:/, "Discovery waits:").replace(/_/g, " ");
   }
   const outside = /^Outside working hours: (.*)$/.exec(text);

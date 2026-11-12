@@ -59,6 +59,8 @@
    */
   --container-funnel: 45rem;
   --container-people: 58rem;
+  /* From this box the People table also shows Company as a column; between 58rem and here the company follows the headline. */
+  --container-people-wide: 66rem;
   --container-stats: 50rem;
   /* The approval queue's five columns (score, person, reason, texts, buttons); below it the phone's stacked row. */
   --container-queue: 56rem;

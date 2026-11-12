@@ -162,7 +162,7 @@ function CampaignTable(props: {
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
                   <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-muted" testId="campaign-status" />
-                  {wait !== null && <p className="mt-1 max-w-sm text-sm text-base-content">{discoveryWaitSentence(wait, timeZone)}</p>}
+                  {wait !== null && <p className="mt-1 text-sm text-base-content @funnel:max-w-sm">{discoveryWaitSentence(wait, timeZone)}</p>}
                   <p className="mt-0.5 text-sm text-muted @funnel:hidden">
                     {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                   </p>
