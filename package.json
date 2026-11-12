@@ -19,7 +19,8 @@
     "verify": "npm run typecheck && npm run lint && npm run test && npm run build:ui && npm run test:e2e",
     "linkedin:open": "tsx scripts/linkedin-open.ts",
     "live:capture": "tsx scripts/live-capture.ts",
-    "live:check": "tsx scripts/live-check.ts"
+    "live:check": "tsx scripts/live-check.ts",
+    "simulate": "tsx scripts/simulate.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",

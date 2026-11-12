@@ -188,10 +188,15 @@ describe("inviteAllowance, warm-up", () => {
     expect(inviteAllowance(opened.db, settings, now)).toBe(9);
   });
 
-  it("ignores earlier invites that were never claimed", () => {
+  it("advances only for an earlier day on which an invite went out", () => {
     const settings = settingsWith({ warmUp, limits: { invitesPerDay: 15 } });
-    addRows("invite", "2026-11-10T10:00:00Z", { status: "failed" });
+    // A day of attempts that LinkedIn never received is not a day of inviting.
+    addRows("invite", "2026-11-05T10:00:00Z", { status: "failed" });
+    addRows("invite", "2026-11-06T10:00:00Z", { status: "unknown" });
+    addRows("invite", "2026-11-09T10:00:00Z", { status: "planned" }); // claimed, found not sent, to be tried again
     addRows("invite", null, { count: 3, status: "planned" });
+    expect(inviteAllowance(opened.db, settings, now)).toBe(5);
+    addRows("invite", "2026-11-10T10:00:00Z", { status: "done" });
     expect(inviteAllowance(opened.db, settings, now)).toBe(7);
   });
 
