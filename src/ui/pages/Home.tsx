@@ -3,7 +3,7 @@ import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, 
 import type { Budget, BudgetKind, Campaign, Home as HomeData, Settings } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatResume, formatShort, formatToday, joinWords } from "../format";
-import { ActionError, ActivityMessage, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, StatusLine } from "../formParts";
+import { ActionError, ActivityMessage, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
@@ -20,16 +20,16 @@ export function Home() {
       {home === undefined && homeError !== undefined ? (
         <LoadError what="Home" message={homeError.message} onRetry={refresh} />
       ) : home === undefined ? (
-        <div className="mt-10 flex justify-center">
+        <div className="flex justify-center py-4">
           <span className="loading loading-dots loading-md" aria-label="Loading" />
         </div>
       ) : (
-        <div className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1fr)_21rem]">
-          <div className="flex min-w-0 flex-col gap-8">
+        <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_21rem]">
+          <div className="flex min-w-0 flex-col gap-section">
             <NeedsYou home={home} />
             <Campaigns home={home} />
           </div>
-          <div className="flex min-w-0 flex-col gap-8">
+          <div className="flex min-w-0 flex-col gap-section">
             <Usage home={home} />
             <RecentActivity home={home} />
           </div>
@@ -57,9 +57,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
 
   return (
     <section aria-labelledby="needs-you">
-      <h2 id="needs-you" className="mb-3 text-lg font-semibold">
-        Needs you
-      </h2>
+      <SectionHead id="needs-you" title="Needs you" />
       <div className="divide-y divide-base-300 rounded-box border border-base-300 bg-base-100" data-testid="needs-you">
         {pendingApproval === 0 && needsReview === 0 ? (
           <div className="flex items-center gap-4 px-4 py-4">
@@ -156,30 +154,30 @@ function Campaigns({ home }: { readonly home: HomeData }) {
 
   return (
     <section aria-labelledby="home-campaigns">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 id="home-campaigns" className="text-lg font-semibold">
-          Campaigns
-        </h2>
+      <SectionHead id="home-campaigns" title="Campaigns">
         <Link to="/campaigns" className="link text-sm link-hover">
           All campaigns
         </Link>
-      </div>
-      <ActionError message={error} className="mb-3" />
+      </SectionHead>
+      <ActionError message={error} className="mb-group" />
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} className="" />
+        <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <div className="skeleton h-40 w-full" />
       ) : campaigns.length === 0 ? (
-        <div className="rounded-box border border-base-300 px-4 py-5">
-          <p className="font-medium">No campaigns yet.</p>
-          <p className="text-sm text-muted">A campaign finds people, scores them and, once you approve them, invites and messages them.</p>
-          <Link to="/campaigns/new" className="btn btn-sm btn-primary mt-3">
-            Create a campaign
-          </Link>
-        </div>
+        <EmptyState
+          title="No campaigns yet."
+          action={
+            <Link to="/campaigns/new" className="btn btn-sm btn-primary">
+              Create a campaign
+            </Link>
+          }
+        >
+          A campaign finds people, scores them and, once you approve them, invites and messages them.
+        </EmptyState>
       ) : (
         <div className="overflow-x-auto rounded-box border border-base-300">
-          <table className="table table-sm text-sm">
+          <table className="table table-sm">
             <thead>
               <tr className="text-muted">
                 <th className="font-medium">Campaign</th>
@@ -198,7 +196,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                 const halted = haltedBy(c.status, stopped);
                 return (
                   <tr key={c.id}>
-                    <td className="py-3 md:min-w-[10.5rem]">
+                    <td className="md:min-w-[10.5rem]">
                       <Link to={`/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
                         {c.name}
                       </Link>
@@ -208,7 +206,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                       </p>
                     </td>
                     {FUNNEL.map((step) => (
-                      <td key={step} className="hidden text-right text-sm md:table-cell">
+                      <td key={step} className="hidden text-right md:table-cell">
                         {c.funnel[step]}
                       </td>
                     ))}
@@ -263,9 +261,7 @@ function Usage({ home }: { readonly home: HomeData }) {
   const now = new Date();
   return (
     <section aria-labelledby="home-usage">
-      <h2 id="home-usage" className="mb-3 text-lg font-semibold">
-        Today&rsquo;s usage
-      </h2>
+      <SectionHead id="home-usage" title="Today’s usage" />
       <ul className="flex flex-col gap-4 rounded-box bg-base-200 p-4" data-testid="usage">
         {BUDGET_ORDER.map((kind) => {
           const budget = home.usage[kind];
@@ -306,16 +302,13 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
   const items = loaded.data?.items ?? [];
   return (
     <section aria-labelledby="home-activity">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 id="home-activity" className="text-lg font-semibold">
-          What the app did
-        </h2>
+      <SectionHead id="home-activity" title="What the app did">
         <Link to="/activity" className="link text-sm link-hover">
           Activity log
         </Link>
-      </div>
+      </SectionHead>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} className="" />
+        <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <div className="skeleton h-28 w-full" />
       ) : items.length === 0 ? (

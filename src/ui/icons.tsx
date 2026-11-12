@@ -54,3 +54,12 @@ export function IconExternal({ className = "size-3.5" }: IconProps) {
     </svg>
   );
 }
+
+/** Points right when a row is closed; turned a quarter down when it is open. */
+export function IconChevron({ className = "size-3.5" }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M9.5 6l6 6-6 6" />
+    </svg>
+  );
+}

@@ -4,8 +4,8 @@ import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { ActionError, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, StatusLine, SwitchRow } from "../formParts";
-import { IconExternal } from "../icons";
+import { ActionError, EmptyState, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
+import { IconChevron, IconExternal } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, formatNext, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords } from "../words";
@@ -33,8 +33,8 @@ export function CampaignDetail({ id }: { readonly id: string }) {
     return (
       <>
         <PageHeader title="Campaign" />
-        <div className="skeleton mt-6 h-24 w-full" />
-        <div className="skeleton mt-6 h-72 w-full" />
+        <div className="skeleton h-24 w-full" />
+        <div className="skeleton mt-section h-72 w-full" />
       </>
     );
   }
@@ -63,9 +63,9 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
 
   return (
     <>
-      <PageHeader title={campaign.name} aside={<a href={prospectsCsvUrl(campaign.id)} className="link text-sm link-hover">Download its people as CSV</a>} />
+      <PageHeader title={campaign.name} />
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <StatusLine status={campaign.status} safetyStop={stopped} className="gap-2 font-medium" testId="campaign-status" />
         {(PAUSABLE.has(campaign.status) || campaign.status === "paused") && (
           <button type="button" className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-sm`} disabled={busy} onClick={toggle}>
@@ -84,9 +84,9 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
         </p>
       </div>
       {wait !== null && <p className="mt-2 text-sm text-base-content">{discoveryWaitSentence(wait, timeZone)}</p>}
-      <ActionError message={error} className="mt-3" />
+      <ActionError message={error} className="mt-group" />
 
-      <ol className="mt-6 grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
+      <ol className="mt-group grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
         {FUNNEL.map((step) => (
           <li key={step} className="bg-base-100 px-4 py-3">
             <p className="nums text-2xl font-semibold">{campaign.funnel[step]}</p>
@@ -119,11 +119,13 @@ function People({ campaign }: { readonly campaign: Campaign }) {
   const items = loaded.data?.items ?? [];
 
   return (
-    <section className="mt-8" aria-labelledby="people">
-      <h2 id="people" className="text-lg font-semibold">
-        People
-      </h2>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 px-3 py-3">
+    <section className="mt-section" aria-labelledby="people">
+      <SectionHead id="people" title="People">
+        <a href={prospectsCsvUrl(campaign.id)} className="link text-sm link-hover">
+          Download as CSV
+        </a>
+      </SectionHead>
+      <div className={`${TOOLBAR} mb-group`}>
         <label htmlFor={filterId} className="text-sm">
           Stage
         </label>
@@ -150,18 +152,15 @@ function People({ campaign }: { readonly campaign: Campaign }) {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the people" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton mt-4 h-64 w-full" />
+        <div className="skeleton h-64 w-full" />
       ) : items.length === 0 ? (
-        <div className="mt-4 rounded-box border border-base-300 px-5 py-6" data-testid="people-empty">
-          <p className="font-medium">{stage === null ? "Nobody found yet." : `Nobody at the stage ${stageWords(stage).toLowerCase()}.`}</p>
-          <p className="mt-1 text-muted">
-            {stage === null ? "People appear here as the campaign finds them." : "Choose another stage, or every stage."}
-          </p>
-        </div>
+        <EmptyState title={stage === null ? "Nobody found yet." : `Nobody at the stage ${stageWords(stage).toLowerCase()}.`} testId="people-empty">
+          {stage === null ? "People appear here as the campaign finds them." : "Choose another stage, or every stage."}
+        </EmptyState>
       ) : (
         <>
-          <div className="mt-4 overflow-x-auto rounded-box border border-base-300">
-            <table className="table table-sm text-sm" data-testid="people-table">
+          <div className="overflow-x-auto rounded-box border border-base-300">
+            <table className="table table-sm" data-testid="people-table">
               <thead>
                 <tr className="text-muted">
                   <th className="font-medium">Person</th>
@@ -188,7 +187,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                     />
                     {open === p.id && (
                       <tr>
-                        <td colSpan={7} className="bg-base-200/60 px-4 py-4 text-sm">
+                        <td colSpan={7} className="bg-base-200/60 p-4">
                           <ProspectDetail prospect={p} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
                         </td>
                       </tr>
@@ -225,18 +224,18 @@ function ProspectRow(props: {
   const next = nextStepWords(p.stage, campaign);
   const stopped = p.stopReason === "replied" ? " (they replied)" : p.stopReason === "manual_takeover" ? " (you messaged them yourself)" : "";
   return (
-    <tr data-testid="prospect-row" className={`text-caption ${props.open ? "bg-base-200/60" : ""}`}>
-      <td className="min-w-[12rem] py-3">
-        <button type="button" className="text-left font-semibold hover:underline" aria-expanded={props.open} onClick={props.onToggle}>
+    <tr data-testid="prospect-row" className={props.open ? "bg-base-200/60" : ""}>
+      <td className="min-w-[12rem]">
+        <button type="button" className="inline-flex items-center gap-1 text-left font-semibold hover:underline" aria-expanded={props.open} onClick={props.onToggle}>
           {p.person.fullName}
+          <IconChevron className={`size-3.5 shrink-0 text-muted ${props.open ? "rotate-90" : ""}`} />
         </button>
         {p.person.headline !== null && <p className="text-base-content">{p.person.headline}</p>}
         {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/15 text-error">Do not contact</span>}
       </td>
       <td>{p.person.company ?? <span className="text-muted">Unknown</span>}</td>
       <td className="whitespace-nowrap" data-testid="prospect-stage">
-        {stageWords(p.stage)}
-        {stopped}
+        <StageWords stage={p.stage} extra={stopped} />
       </td>
       <td>
         <ScoreChip score={p.score} size="sm" />
@@ -244,7 +243,10 @@ function ProspectRow(props: {
       <td className="text-base-content">{p.scoreReason ?? <span className="text-muted">Not scored yet</span>}</td>
       <td className="min-w-[9rem]">
         {p.nextActionAt === null ? (
-          <span className="text-muted">Nothing planned</span>
+          <span className="text-muted">
+            <span aria-hidden="true">–</span>
+            <span className="sr-only">Nothing planned</span>
+          </span>
         ) : (
           <>
             {next !== undefined && <p>{next}</p>}
@@ -260,6 +262,28 @@ function ProspectRow(props: {
         </a>
       </td>
     </tr>
+  );
+}
+
+/** Stages that wait on the user lead the column; stages where the sequence is over step back. */
+const WAITING_STAGES: ReadonlySet<Stage> = new Set<Stage>(["pending_approval", "needs_review"]);
+const CLOSED_STAGES: ReadonlySet<Stage> = new Set<Stage>(["rejected", "withdrawn", "stopped", "completed"]);
+
+function StageWords({ stage, extra }: { readonly stage: Stage; readonly extra: string }) {
+  if (WAITING_STAGES.has(stage)) {
+    return (
+      <span className="inline-flex items-center gap-1.5 font-medium">
+        <span className="status status-warning" aria-hidden="true" />
+        {stageWords(stage)}
+        {extra}
+      </span>
+    );
+  }
+  return (
+    <span className={CLOSED_STAGES.has(stage) ? "text-muted" : ""}>
+      {stageWords(stage)}
+      {extra}
+    </span>
   );
 }
 
@@ -312,7 +336,7 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
   ] as const;
 
   return (
-    <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_17rem]" data-testid="prospect-detail">
+    <div className="grid gap-x-section gap-y-block lg:grid-cols-[minmax(0,1fr)_17rem]" data-testid="prospect-detail">
       <div className="min-w-0">
         <h3 className="font-semibold">Texts as sent</h3>
         <dl className="mt-2 flex flex-col gap-3">
@@ -324,12 +348,12 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
           ))}
         </dl>
         {p.reviewReason !== null && (
-          <Notice tone="waits" className="mt-3">
+          <Notice tone="waits" className="mt-group">
             Held for review: {p.reviewReason.replace(/_/g, " ")}
           </Notice>
         )}
       </div>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-block">
         <div>
           <h3 className="font-semibold">History</h3>
           <ol className="mt-2 flex flex-col gap-1.5">
@@ -365,11 +389,8 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
   const live = LIVE.has(campaign.status);
 
   return (
-    <section className="mt-10" aria-labelledby="messages-timings">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="messages-timings" className="text-lg font-semibold">
-          Messages and timings
-        </h2>
+    <section className="mt-section" aria-labelledby="messages-timings">
+      <SectionHead id="messages-timings" title="Messages and timings">
         {live && !editing && (
           <button
             type="button"
@@ -382,9 +403,9 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
             Edit messages and timings
           </button>
         )}
-      </div>
+      </SectionHead>
       {notice !== undefined && (
-        <p role="status" className="mt-3 text-sm text-primary">
+        <p role="status" className="mb-group text-sm text-primary">
           {notice}
         </p>
       )}
@@ -399,9 +420,9 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
           }}
         />
       ) : (
-        <div className="mt-3 rounded-box border border-base-300 px-4 py-4">
+        <div className="rounded-box border border-base-300 p-card">
           {!live && (
-            <p className="mb-3 text-sm text-muted">
+            <p className="mb-group text-sm text-muted">
               {campaign.status === "draft" ? "A draft is changed in its setup steps." : `A${campaign.status === "archived" ? "n archived" : " finished"} campaign cannot be changed.`}
             </p>
           )}
@@ -460,15 +481,15 @@ function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign
   };
 
   return (
-    <div className="mt-3 rounded-box border border-base-300 px-4 py-5" data-testid="live-edit">
-      <Notice tone="note" className="mb-5">
+    <div className="rounded-box border border-base-300 p-card" data-testid="live-edit">
+      <Notice tone="note" className="mb-block">
         Edits apply only to steps not yet sent. Texts already sent stay as they were.
       </Notice>
       <MessageFields campaignId={campaign.id} form={form} set={set} errors={errors} />
-      <h3 className="mt-8 mb-4 font-semibold">Timings</h3>
+      <h3 className="mt-section mb-group font-semibold">Timings</h3>
       <TimingFields form={form} set={set} errors={errors} />
-      <ActionError message={error} className="mt-5" />
-      <div className="mt-6 flex gap-3">
+      <ActionError message={error} className="mt-block" />
+      <div className="mt-block flex gap-3">
         <button type="button" className="btn btn-sm btn-primary" disabled={saving} onClick={save}>
           {saving && <span className="loading loading-spinner loading-xs" />}
           Save changes

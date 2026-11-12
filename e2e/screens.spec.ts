@@ -433,6 +433,8 @@ test("settings: a refused save shows the problem in place, a good one saves; AI 
   await page.getByRole("button", { name: "Back up now" }).click();
   await expect(page.getByTestId("backup-result")).toHaveText(/Backed up to app-\d{4}-\d\d-\d\d\.db\.|is already there\./);
   await expect(page.getByTestId("backups")).toContainText(/app-\d{4}-\d\d-\d\d\.db/);
+  // The restore command is folded away for the user's AI coding tool.
+  await page.getByTestId("restore-help").getByText("For your AI coding tool").click();
   await expect(page.getByText("npm run restore --")).toBeVisible();
   await expect(page.getByTestId("service-state")).not.toBeEmpty();
   await expect(page.getByRole("link", { name: "Download all prospects (CSV)" })).toHaveAttribute("href", "/api/export/prospects.csv");

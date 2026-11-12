@@ -53,6 +53,18 @@
   --container-page: 1180px; /* the page column */
 
   /*
+   * The page rhythm, named once: each relationship has one step.
+   * section: between the sections of a page, and between the columns of a split layout (32px).
+   * block: after the title block, and between the fields of a form (24px).
+   * group: from a heading, a lead, a toolbar or a status line to the content it introduces (12px).
+   * card: inside a card, a Settings section or an empty state (20px).
+   */
+  --spacing-section: 2rem;
+  --spacing-block: 1.5rem;
+  --spacing-group: 0.75rem;
+  --spacing-card: 1.25rem;
+
+  /*
    * Text has two tones: Ink (base-content) and Muted. Muted is solid, not an opacity, so it measures the same
    * everywhere: 5.88:1 on base-100, 5.41 on base-200, 5.60 on an open row's tint, 4.69 on base-300.
    */
@@ -107,6 +119,20 @@ body {
 .status-warning {
   background-color: var(--color-warning-strong);
   color: var(--color-warning-strong);
+}
+
+/*
+ * One table density: 14px rows with 12px above and below each body cell. daisyUI sits in a sublayer of
+ * `utilities`, so these rules beat it; their zero specificity lets a cell's own utility (the opened row) still win.
+ */
+@layer utilities {
+  :where(.table-sm tbody tr) {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+  :where(.table-sm tbody) :where(th, td) {
+    padding-block: 0.75rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { approveAll, approveProspect, listApprovals, rejectProspect, toApiError } from "../api";
-import type { ApprovalItem, Evidence, PreviewText } from "../apiSchemas";
+import type { ApprovalItem, Evidence, Person, PreviewText } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatScore, plural } from "../format";
-import { ActionError, CampaignSelect, LoadError, Notice, ScoreChip, SECONDARY_BUTTON } from "../formParts";
+import { ActionError, CampaignSelect, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, TOOLBAR } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -160,7 +160,8 @@ export function Approvals() {
     <>
       <PageHeader title="Approval queue" aside={waiting === undefined ? undefined : `${waiting} waiting, ${decided} decided`} />
 
-      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 px-3 py-3">
+      <div className="flex flex-col gap-group">
+      <div className={TOOLBAR}>
         <span className="text-sm" id="min-score-label">
           Minimum score
         </span>
@@ -199,36 +200,34 @@ export function Approvals() {
         </button>
       </div>
 
-      <p className="mt-3 hidden text-sm text-muted lg:block">
+      <p className="hidden text-sm text-muted lg:block">
         Click a row, then press <kbd className="kbd kbd-xs">A</kbd> to approve or <kbd className="kbd kbd-xs">R</kbd> to reject. The next row
         is selected for you; <kbd className="kbd kbd-xs">↑</kbd> <kbd className="kbd kbd-xs">↓</kbd> move between rows.
       </p>
 
       {notice !== undefined && (
-        <p role="status" className="mt-3 text-sm text-primary">
+        <p role="status" className="text-sm text-primary">
           {notice}
         </p>
       )}
 
       {loaded.status === "error" ? (
-        <LoadError what="the approval queue" message={loaded.error.message} onRetry={loaded.reload} className="mt-4" />
+        <LoadError what="the approval queue" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.status === "loading" ? (
-        <div className="mt-4 flex flex-col gap-3" aria-label="Loading">
+        <div className="flex flex-col gap-3" aria-label="Loading">
           {[0, 1, 2].map((n) => (
             <div key={n} className="skeleton h-24 w-full" />
           ))}
         </div>
       ) : items.length === 0 ? (
-        <div className="mt-4 rounded-box border border-base-300 px-5 py-6" data-testid="queue-empty">
-          {filtered ? (
-            <>
-              <p className="font-medium">
-                No prospects waiting{minScore > 0 ? ` with a score of ${minScore} or more` : ""}
-                {campaignName === undefined ? "" : ` in ${campaignName}`}.
-              </p>
+        filtered ? (
+          <EmptyState
+            testId="queue-empty"
+            title={`No prospects waiting${minScore > 0 ? ` with a score of ${minScore} or more` : ""}${campaignName === undefined ? "" : ` in ${campaignName}`}.`}
+            action={
               <button
                 type="button"
-                className={`${SECONDARY_BUTTON} btn-sm mt-3`}
+                className={`${SECONDARY_BUTTON} btn-sm`}
                 onClick={() => {
                   setMinScore(0);
                   setCampaignId(null);
@@ -236,18 +235,15 @@ export function Approvals() {
               >
                 Show everyone waiting
               </button>
-            </>
-          ) : (
-            <>
-              <p className="font-medium">The approval queue is empty.</p>
-              <p className="mt-1 text-muted">
-                When a campaign finds and scores new people, they wait here for you. Nobody is invited before you approve them.
-              </p>
-            </>
-          )}
-        </div>
+            }
+          />
+        ) : (
+          <EmptyState testId="queue-empty" title="The approval queue is empty.">
+            When a campaign finds and scores new people, they wait here for you. Nobody is invited before you approve them.
+          </EmptyState>
+        )
       ) : (
-        <div className="mt-4 rounded-box border border-base-300" role="table" aria-label="Prospects waiting for approval">
+        <div className="rounded-box border border-base-300" role="table" aria-label="Prospects waiting for approval">
           <div role="rowgroup" className="hidden lg:block">
             <div role="row" className={`grid gap-4 border-b border-base-300 px-4 py-2 text-sm text-muted ${COLUMNS}`}>
               <span role="columnheader">Score</span>
@@ -277,6 +273,7 @@ export function Approvals() {
           </div>
         </div>
       )}
+      </div>
 
       <ConfirmDialog
         open={confirmIds !== null}
@@ -333,7 +330,7 @@ function Row({
       aria-label={`${person.fullName}${item.score === null ? "" : `, score ${formatScore(item.score)}`}`}
       onKeyDown={onKeyDown}
       data-testid="approval-row"
-      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-4 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-within:ring-2 focus-within:ring-neutral focus-within:ring-inset lg:gap-x-4 ${COLUMNS}`}
+      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-3 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-within:ring-2 focus-within:ring-neutral focus-within:ring-inset lg:gap-x-4 ${COLUMNS}`}
     >
       <ScoreChip score={item.score} size="lg" role="cell" />
       <div role="cell" className="min-w-0">
@@ -357,9 +354,9 @@ function Row({
         <EvidenceLines industry={person.industryEvidence} size={person.sizeEvidence} aiLine={item.aiLineEvidence ?? null} />
       </div>
       <div role="cell" className="col-span-2 flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm text-base-content lg:col-span-1">
-        {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} />}
-        <Text label="First message, after they accept" text={item.preview.firstMessage} />
-        <FollowUp text={item.followUpPreview} />
+        {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} person={person} />}
+        <Text label="First message, after they accept" text={item.preview.firstMessage} person={person} />
+        <FollowUp text={item.followUpPreview} person={person} />
       </div>
       <div role="cell" className="col-span-2 flex items-start gap-2 lg:col-span-1 lg:flex-col lg:items-stretch">
         <button type="button" className="btn btn-sm btn-outline flex-1 border-primary/50 text-primary lg:flex-none" onClick={() => onDecide("approve")}>
@@ -382,12 +379,38 @@ function Row({
   );
 }
 
-function Text({ label, text }: { readonly label: string; readonly text: PreviewText }) {
+/** The person's own values that a text's variables are filled from (the AI line is not sent with the queue). */
+function filledValues(person: Person): readonly string[] {
+  const values = [person.firstName, person.company, person.title, person.location, person.industryEvidence?.value ?? null];
+  return [...new Set(values.flatMap((v) => (v === null || v.trim().length < 2 ? [] : [v.trim()])))].sort((a, b) => b.length - a.length);
+}
+
+/** A text as it will be sent, with the values filled in for this person at 500, so the fixed words and the personal ones read apart. */
+function Filled({ text, person }: { readonly text: string; readonly person: Person }) {
+  const values = filledValues(person);
+  if (values.length === 0) return <>{text}</>;
+  const escaped = values.map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`(${escaped.join("|")})`, "g");
+  const parts: ReactNode[] = text.split(pattern).map((part, i) =>
+    i % 2 === 1 ? (
+      <span key={i} className="font-medium">
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+  return <>{parts}</>;
+}
+
+function Text({ label, text, person }: { readonly label: string; readonly text: PreviewText; readonly person: Person }) {
   return (
     <div>
       <p className="text-caption text-muted">{label}</p>
       {text.ok ? (
-        <p className="whitespace-pre-line">{text.text}</p>
+        <p className="whitespace-pre-line">
+          <Filled text={text.text} person={person} />
+        </p>
       ) : (
         <Notice tone="waits" className="text-base-content">
           Cannot be written for this person yet: {text.message}
@@ -400,7 +423,7 @@ function Text({ label, text }: { readonly label: string; readonly text: PreviewT
 const FOLLOW_UP_LABEL = "Follow-up, if they do not reply";
 
 /** The follow-up, folded away to keep the row short; open at once when it cannot be written. */
-function FollowUp({ text }: { readonly text: PreviewText | null }) {
+function FollowUp({ text, person }: { readonly text: PreviewText | null; readonly person: Person }) {
   if (text === null) {
     return (
       <div>
@@ -409,11 +432,13 @@ function FollowUp({ text }: { readonly text: PreviewText | null }) {
       </div>
     );
   }
-  if (!text.ok) return <Text label={FOLLOW_UP_LABEL} text={text} />;
+  if (!text.ok) return <Text label={FOLLOW_UP_LABEL} text={text} person={person} />;
   return (
     <details data-testid="follow-up">
       <summary className="cursor-pointer text-caption text-muted hover:text-base-content">{FOLLOW_UP_LABEL}</summary>
-      <p className="mt-0.5 whitespace-pre-line">{text.text}</p>
+      <p className="mt-0.5 whitespace-pre-line">
+        <Filled text={text.text} person={person} />
+      </p>
     </details>
   );
 }

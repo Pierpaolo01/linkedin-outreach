@@ -20,7 +20,7 @@ import {
 import { MessageFields, TimingFields } from "../CampaignFields";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatClock } from "../format";
-import { ActionError, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
+import { ActionError, EmptyState, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link, navigate } from "../router";
 import { useLoad } from "../useLoad";
@@ -225,7 +225,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     return (
       <>
         <PageHeader title="New campaign" />
-        <div className="skeleton mt-6 h-72 w-full" />
+        <div className="skeleton h-72 w-full" />
       </>
     );
   }
@@ -234,13 +234,17 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     return (
       <>
         <PageHeader title={form.name} />
-        <div className="mt-6 max-w-xl rounded-box border border-base-300 px-5 py-5">
-          <p className="font-medium">This campaign has already started.</p>
-          <p className="mt-1 text-muted">Its messages and timings can still change on its page; the rest stays as it started.</p>
-          <Link to={`/campaigns/${campaignId}`} className={`${SECONDARY_BUTTON} btn-sm mt-4`}>
-            Open the campaign
-          </Link>
-        </div>
+        <EmptyState
+          className="max-w-xl"
+          title="This campaign has already started."
+          action={
+            <Link to={`/campaigns/${campaignId}`} className={`${SECONDARY_BUTTON} btn-sm`}>
+              Open the campaign
+            </Link>
+          }
+        >
+          Its messages and timings can still change on its page; the rest stays as it started.
+        </EmptyState>
       </>
     );
   }
@@ -313,7 +317,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         title="New campaign"
         aside={saving ? "Saving…" : savedAt !== null ? `Draft saved at ${formatClock(savedAt.toISOString(), timeZone)}` : created ? "Draft" : undefined}
       />
-      <div className="mt-6 grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
+      <div className="grid gap-section lg:grid-cols-[13rem_minmax(0,1fr)]">
         <nav aria-label="Wizard steps" className="min-w-0">
           <ol className="flex gap-1 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
             {[...STEPS.map((s) => s.title), "Review and start"].map((title, index) => {
@@ -356,7 +360,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         </nav>
 
         <div className="min-w-0">
-          <ActionError message={saveError} className="mb-4" />
+          <ActionError message={saveError} className="mb-group" />
           {step === 0 && <NameStep form={form} set={set} errors={errors} onEnter={() => void goTo(1)} />}
           {step === 1 && <SourceStep form={form} set={set} errors={errors} />}
           {step === 2 && <WhoFitsStep form={form} set={set} errors={errors} />}
@@ -373,7 +377,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
           )}
           {step === REVIEW && <Review form={form} errors={errors} startError={startError} onChange={(s) => void goTo(s)} />}
 
-          <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-base-300 pt-5">
+          <div className="mt-section flex flex-wrap items-center gap-3 border-t border-base-300 pt-block">
             {step > 0 && (
               <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving || starting} onClick={() => void goTo(step - 1)}>
                 Back
@@ -436,7 +440,7 @@ function StepFrame({ title, lead, children }: { readonly title: string; readonly
         {title}
       </h2>
       <p className="mt-1 max-w-2xl text-base-content">{lead}</p>
-      <div className="mt-6">{children}</div>
+      <div className="mt-block">{children}</div>
     </section>
   );
 }
@@ -500,7 +504,7 @@ function SourceStep({ form, set, errors }: StepProps) {
       <FieldError message={errors["discoverySource"]} />
 
       {form.discoverySource === "search" && (
-        <div className="mt-6 max-w-2xl">
+        <div className="mt-block max-w-2xl">
           <p className="font-medium">Search addresses</p>
           <p className="text-sm text-muted">
             Run the search on LinkedIn, then copy the address from your browser&rsquo;s address bar and paste it here. It must start with{" "}
@@ -550,7 +554,7 @@ function SourceStep({ form, set, errors }: StepProps) {
       )}
 
       <Field
-        className="mt-6 max-w-md"
+        className="mt-block max-w-md"
         label="How many people to find"
         htmlFor={countId}
         hint="Leave it empty to keep finding until you pause the campaign. People rejected do not count."
@@ -604,7 +608,7 @@ function ApprovalStep({ form, set, errors }: StepProps) {
   );
   return (
     <StepFrame title="Approval" lead="How the people the app finds reach you, and which ones it rejects by itself.">
-      <div className="flex max-w-2xl flex-col gap-6">
+      <div className="flex max-w-2xl flex-col gap-block">
         <Field
           label="Batch size"
           htmlFor={ids.batch}
@@ -722,8 +726,8 @@ function Review({
         Review and start
       </h2>
       <p className="mt-1 max-w-2xl text-base-content">Check everything once more. The app checks it too when you press Start.</p>
-      <ActionError message={startError} className="mt-4" testId="start-error" />
-      <div className="mt-5 divide-y divide-base-300 rounded-box border border-base-300">
+      <ActionError message={startError} className="mt-block" testId="start-error" />
+      <div className="mt-block divide-y divide-base-300 rounded-box border border-base-300">
         {sections.map(({ step, rows }) => {
           const list = problems(step);
           return (

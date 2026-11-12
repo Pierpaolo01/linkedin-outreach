@@ -139,7 +139,7 @@ export function Settings() {
       <>
         <PageHeader title="Settings" />
         {settingsError === undefined ? (
-          <div className="skeleton mt-6 h-96 w-full" />
+          <div className="skeleton h-96 w-full" />
         ) : (
           <LoadError what="the settings" message={settingsError.message} onRetry={refreshSettings} />
         )}
@@ -210,234 +210,237 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
 
   return (
     <>
-      <PageHeader title="Settings" />
-      <p className="mt-2 max-w-2xl text-base-content">These apply to the whole app and to every campaign.</p>
+      <PageHeader title="Settings" lead="These apply to the whole app and to every campaign." />
 
-      <div className="mt-6 flex max-w-3xl flex-col gap-6 pb-4">
-        <LinkedInWindow />
+      <div className="flex max-w-3xl flex-col gap-section pb-4">
+        <Group title="How the app works on LinkedIn">
+          <LinkedInWindow />
 
-        <Section title="Working hours" lead="The app acts on LinkedIn only on these days and between these times.">
-          <div className="flex flex-col gap-5">
-            <div>
-              <label htmlFor={ids.zone} className="block font-medium">
-                Time zone
-              </label>
-              <input
-                id={ids.zone}
-                list={`${ids.zone}-list`}
-                className={`input mt-1.5 w-full max-w-sm bg-base-100 ${errors["timeZone"] === undefined ? "" : "input-error"}`}
-                value={form.timeZone}
-                onChange={(event) => change({ timeZone: event.target.value }, "timeZone")}
-              />
-              <datalist id={`${ids.zone}-list`}>
-                {timeZones.map((zone) => (
-                  <option key={zone} value={zone} />
-                ))}
-              </datalist>
-              <FieldError message={errors["timeZone"]} />
-            </div>
-            <fieldset className="min-w-0">
-              <legend className="font-medium">Working days</legend>
-              <div className="mt-1.5 grid max-w-md grid-cols-7 gap-1">
-                {DAYS.map((day, i) => {
-                  const iso = i + 1;
-                  const on = form.workingDays.includes(iso);
-                  return (
-                    <button
-                      key={day}
-                      type="button"
-                      aria-pressed={on}
-                      className={`${on ? "btn btn-neutral" : SECONDARY_BUTTON} min-w-0 px-0`}
-                      onClick={() => change({ workingDays: on ? form.workingDays.filter((d) => d !== iso) : [...form.workingDays, iso] }, "workingDays")}
-                    >
-                      {day}
-                    </button>
-                  );
-                })}
-              </div>
-              <FieldError message={errorOf("workingDays")} />
-            </fieldset>
-            <fieldset>
-              <legend className="font-medium">Hours</legend>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <span>From</span>
+          <Section title="Working hours" lead="The app acts on LinkedIn only on these days and between these times.">
+            <div className="flex flex-col gap-block">
+              <div>
+                <label htmlFor={ids.zone} className="block font-medium">
+                  Time zone
+                </label>
                 <input
-                  id={ids.start}
-                  type="time"
-                  aria-label="Start of the working day"
-                  className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.start"] === undefined ? "" : "input-error"}`}
-                  value={form.start}
-                  onChange={(event) => change({ start: event.target.value }, "workingHours")}
+                  id={ids.zone}
+                  list={`${ids.zone}-list`}
+                  className={`input mt-1.5 w-full max-w-sm bg-base-100 ${errors["timeZone"] === undefined ? "" : "input-error"}`}
+                  value={form.timeZone}
+                  onChange={(event) => change({ timeZone: event.target.value }, "timeZone")}
                 />
-                <span>to</span>
-                <input
-                  id={ids.end}
-                  type="time"
-                  aria-label="End of the working day"
-                  className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.end"] === undefined && errors["workingHours"] === undefined ? "" : "input-error"}`}
-                  value={form.end}
-                  onChange={(event) => change({ end: event.target.value }, "workingHours")}
-                />
+                <datalist id={`${ids.zone}-list`}>
+                  {timeZones.map((zone) => (
+                    <option key={zone} value={zone} />
+                  ))}
+                </datalist>
+                <FieldError message={errors["timeZone"]} />
               </div>
-              <FieldError message={errorOf("workingHours", "workingHours.start", "workingHours.end")} />
-            </fieldset>
-          </div>
-        </Section>
-
-        <Section title="Daily limits" lead="Shared by all campaigns. When a limit is reached, that kind of work waits for the next day by itself.">
-          <Notice tone="note" className="mb-5 text-sm">
-            What you do by hand on LinkedIn also counts. LinkedIn sees one account, so the invites and messages you send yourself add to the
-            app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these limits.
-          </Notice>
-          <div className="flex flex-col divide-y divide-base-300">
-            <LimitRow control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
-            <LimitRow
-              control={num("limits.invitesPerWeek", "Invites per week")}
-              label="Invites per week"
-              hint="A ceiling for the calendar week, so several full days do not add up to too many."
-              error={errorOf("limits.invitesPerWeek")}
-            />
-            <LimitRow control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow-ups together." error={errorOf("limits.messagesPerDay")} />
-            <LimitRow
-              control={num("limits.profileViewsPerDay", "Profile views per day")}
-              label="Profile views per day"
-              hint="Profiles the app opens to score people."
-              error={errorOf("limits.profileViewsPerDay")}
-            />
-            <LimitRow
-              control={num("limits.discoveryPagesPerDay", "Discovery pages per day")}
-              label="Discovery pages per day"
-              hint="Search and recommendation pages loaded to find people."
-              error={errorOf("limits.discoveryPagesPerDay")}
-            />
-            <LimitRow
-              control={num("limits.withdrawalsPerDay", "Withdrawals per day")}
-              label="Withdrawals per day"
-              hint="Old invites nobody accepted, withdrawn in a day."
-              error={errorOf("limits.withdrawalsPerDay")}
-            />
-            <LimitRow
-              control={num(COOLDOWN, "Days invites stay off")}
-              label="Days invites stay off"
-              hint="After LinkedIn says you have sent too many invites, the app sends none for this many days, even after you resume."
-              error={errorOf(COOLDOWN)}
-            />
-          </div>
-        </Section>
-
-        <Section title="Warm-up and pace" lead="How quickly the app builds up, and how it spaces its actions so they look like a person at work.">
-          <div className="flex flex-col gap-5">
-            <div>
-              <SwitchRow
-                id={ids.warm}
-                label="Warm-up"
-                checked={form.warmUpEnabled}
-                onChange={(on) => change({ warmUpEnabled: on }, "warmUp")}
-                hint="Starts with few invites a day and adds more each day until it reaches the daily limit."
-              />
-              {form.warmUpEnabled && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 pl-14 text-sm">
-                  <span>Start at</span>
-                  {num("warmUp.invitesStartPerDay", "Warm-up: invites on the first day")}
-                  <span>invites a day and add</span>
-                  {num("warmUp.invitesIncreasePerDay", "Warm-up: invites added each day")}
-                  <span>each day.</span>
+              <fieldset className="min-w-0">
+                <legend className="font-medium">Working days</legend>
+                <div className="mt-1.5 grid max-w-md grid-cols-7 gap-1">
+                  {DAYS.map((day, i) => {
+                    const iso = i + 1;
+                    const on = form.workingDays.includes(iso);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        aria-pressed={on}
+                        className={`${on ? "btn btn-neutral" : SECONDARY_BUTTON} min-w-0 px-0`}
+                        onClick={() => change({ workingDays: on ? form.workingDays.filter((d) => d !== iso) : [...form.workingDays, iso] }, "workingDays")}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-              <FieldError message={errorOf("warmUp", "warmUp.invitesStartPerDay", "warmUp.invitesIncreasePerDay")} />
+                <FieldError message={errorOf("workingDays")} />
+              </fieldset>
+              <fieldset>
+                <legend className="font-medium">Hours</legend>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <span>From</span>
+                  <input
+                    id={ids.start}
+                    type="time"
+                    aria-label="Start of the working day"
+                    className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.start"] === undefined ? "" : "input-error"}`}
+                    value={form.start}
+                    onChange={(event) => change({ start: event.target.value }, "workingHours")}
+                  />
+                  <span>to</span>
+                  <input
+                    id={ids.end}
+                    type="time"
+                    aria-label="End of the working day"
+                    className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.end"] === undefined && errors["workingHours"] === undefined ? "" : "input-error"}`}
+                    value={form.end}
+                    onChange={(event) => change({ end: event.target.value }, "workingHours")}
+                  />
+                </div>
+                <FieldError message={errorOf("workingHours", "workingHours.start", "workingHours.end")} />
+              </fieldset>
             </div>
-            <div>
-              <p className="font-medium">Gap between actions</p>
-              <p className="text-sm text-muted">A random wait between two actions on LinkedIn.</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
-                <span>Between</span>
-                {num("actionGapSeconds.min", "Shortest gap in seconds")}
-                <span>and</span>
-                {num("actionGapSeconds.max", "Longest gap in seconds")}
-                <span>seconds.</span>
-              </div>
-              <FieldError message={errorOf("actionGapSeconds", "actionGapSeconds.min", "actionGapSeconds.max")} />
-            </div>
-            <div>
-              <p className="font-medium">Breaks</p>
-              <p className="text-sm text-muted">A longer pause now and then, as a person would take.</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
-                <span>A break of</span>
-                {num("breaks.minutesMin", "Shortest break in minutes")}
-                <span>to</span>
-                {num("breaks.minutesMax", "Longest break in minutes")}
-                <span>minutes every</span>
-                {num("breaks.everyActionsMin", "Fewest actions between breaks")}
-                <span>to</span>
-                {num("breaks.everyActionsMax", "Most actions between breaks")}
-                <span>actions.</span>
-              </div>
-              <FieldError message={errorOf("breaks", "breaks.minutesMin", "breaks.minutesMax", "breaks.everyActionsMin", "breaks.everyActionsMax")} />
-            </div>
-          </div>
-        </Section>
+          </Section>
 
-        <Section title="Keep the Mac awake" lead="A Mac that sleeps stops the app. This keeps it awake only when there is work to do.">
-          <SwitchRow
-            id={ids.awake}
-            label="Keep the Mac awake while a campaign is working"
-            checked={form.keepAwake}
-            onChange={(on) => change({ keepAwake: on }, "keepAwake")}
-            hint="Only inside your working hours, while a campaign is finding people or running. The screen can still turn off."
-          />
-          <p className="mt-2 text-sm text-base-content" data-testid="keep-awake-now">
-            {ops.data === undefined ? "" : ops.data.keepAwake.active ? "Keeping the Mac awake right now." : "Not keeping the Mac awake right now."}
-          </p>
-        </Section>
-
-        <Section title="AI" lead="The AI scores the people each campaign finds and, if you turn it on, writes the personal line.">
-          <div className="flex flex-col gap-4">
-            <div>
-              <label htmlFor={ids.provider} className="block font-medium">
-                Which AI
-              </label>
-              <select
-                id={ids.provider}
-                className="select mt-1.5 w-full max-w-sm bg-base-100"
-                value={form.provider}
-                onChange={(event) => {
-                  const provider = AI_PROVIDERS.find((p) => p === event.target.value);
-                  if (provider !== undefined) change({ provider }, "ai");
-                }}
-              >
-                {AI_PROVIDERS.map((p) => (
-                  <option key={p} value={p}>
-                    {PROVIDER_LABEL[p]}
-                  </option>
-                ))}
-              </select>
-              <FieldError message={errorOf("ai", "ai.provider")} />
-            </div>
-            <div>
-              <label htmlFor={ids.model} className="block font-medium">
-                Model
-              </label>
-              <p className="text-sm text-muted">Leave it empty to use the provider&rsquo;s default.</p>
-              <input
-                id={ids.model}
-                className="input mt-1.5 w-full max-w-sm bg-base-100"
-                value={form.model}
-                onChange={(event) => change({ model: event.target.value }, "ai")}
+          <Section title="Daily limits" lead="Shared by all campaigns. When a limit is reached, that kind of work waits for the next day by itself.">
+            <Notice tone="note" className="mb-block text-sm">
+              What you do by hand on LinkedIn also counts. LinkedIn sees one account, so the invites and messages you send yourself add to the
+              app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these limits.
+            </Notice>
+            <div className="flex flex-col divide-y divide-base-300">
+              <LimitRow control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
+              <LimitRow
+                control={num("limits.invitesPerWeek", "Invites per week")}
+                label="Invites per week"
+                hint="A ceiling for the calendar week, so several full days do not add up to too many."
+                error={errorOf("limits.invitesPerWeek")}
               />
-              <FieldError message={errorOf("ai.model")} />
+              <LimitRow control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow-ups together." error={errorOf("limits.messagesPerDay")} />
+              <LimitRow
+                control={num("limits.profileViewsPerDay", "Profile views per day")}
+                label="Profile views per day"
+                hint="Profiles the app opens to score people."
+                error={errorOf("limits.profileViewsPerDay")}
+              />
+              <LimitRow
+                control={num("limits.discoveryPagesPerDay", "Discovery pages per day")}
+                label="Discovery pages per day"
+                hint="Search and recommendation pages loaded to find people."
+                error={errorOf("limits.discoveryPagesPerDay")}
+              />
+              <LimitRow
+                control={num("limits.withdrawalsPerDay", "Withdrawals per day")}
+                label="Withdrawals per day"
+                hint="Old invites nobody accepted, withdrawn in a day."
+                error={errorOf("limits.withdrawalsPerDay")}
+              />
+              <LimitRow
+                control={num(COOLDOWN, "Days invites stay off")}
+                label="Days invites stay off"
+                hint="After LinkedIn says you have sent too many invites, the app sends none for this many days, even after you resume."
+                error={errorOf(COOLDOWN)}
+              />
             </div>
-            <AiTestButton blocked={aiDirty} />
-          </div>
-        </Section>
+          </Section>
 
-        <Backups ops={ops} />
-        <AutoStart ops={ops} />
+          <Section title="Warm-up and pace" lead="How quickly the app builds up, and how it spaces its actions so they look like a person at work.">
+            <div className="flex flex-col gap-block">
+              <div>
+                <SwitchRow
+                  id={ids.warm}
+                  label="Warm-up"
+                  checked={form.warmUpEnabled}
+                  onChange={(on) => change({ warmUpEnabled: on }, "warmUp")}
+                  hint="Starts with few invites a day and adds more each day until it reaches the daily limit."
+                />
+                {form.warmUpEnabled && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 pl-14 text-sm">
+                    <span>Start at</span>
+                    {num("warmUp.invitesStartPerDay", "Warm-up: invites on the first day")}
+                    <span>invites a day and add</span>
+                    {num("warmUp.invitesIncreasePerDay", "Warm-up: invites added each day")}
+                    <span>each day.</span>
+                  </div>
+                )}
+                <FieldError message={errorOf("warmUp", "warmUp.invitesStartPerDay", "warmUp.invitesIncreasePerDay")} />
+              </div>
+              <div>
+                <p className="font-medium">Gap between actions</p>
+                <p className="text-sm text-muted">A random wait between two actions on LinkedIn.</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+                  <span>Between</span>
+                  {num("actionGapSeconds.min", "Shortest gap in seconds")}
+                  <span>and</span>
+                  {num("actionGapSeconds.max", "Longest gap in seconds")}
+                  <span>seconds.</span>
+                </div>
+                <FieldError message={errorOf("actionGapSeconds", "actionGapSeconds.min", "actionGapSeconds.max")} />
+              </div>
+              <div>
+                <p className="font-medium">Breaks</p>
+                <p className="text-sm text-muted">A longer pause now and then, as a person would take.</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+                  <span>A break of</span>
+                  {num("breaks.minutesMin", "Shortest break in minutes")}
+                  <span>to</span>
+                  {num("breaks.minutesMax", "Longest break in minutes")}
+                  <span>minutes every</span>
+                  {num("breaks.everyActionsMin", "Fewest actions between breaks")}
+                  <span>to</span>
+                  {num("breaks.everyActionsMax", "Most actions between breaks")}
+                  <span>actions.</span>
+                </div>
+                <FieldError message={errorOf("breaks", "breaks.minutesMin", "breaks.minutesMax", "breaks.everyActionsMin", "breaks.everyActionsMax")} />
+              </div>
+            </div>
+          </Section>
+        </Group>
 
-        <Section title="Export" lead="Every prospect of every campaign, with stage, score, dates and the texts sent, for a spreadsheet.">
-          <a href={prospectsCsvUrl()} className={`${SECONDARY_BUTTON} btn-sm`} download>
-            Download all prospects (CSV)
-          </a>
-        </Section>
+        <Group title="This Mac">
+          <Section title="Keep the Mac awake" lead="A Mac that sleeps stops the app. This keeps it awake only when there is work to do.">
+            <SwitchRow
+              id={ids.awake}
+              label="Keep the Mac awake while a campaign is working"
+              checked={form.keepAwake}
+              onChange={(on) => change({ keepAwake: on }, "keepAwake")}
+              hint="Only inside your working hours, while a campaign is finding people or running. The screen can still turn off."
+            />
+            <p className="mt-2 text-sm text-base-content" data-testid="keep-awake-now">
+              {ops.data === undefined ? "" : ops.data.keepAwake.active ? "Keeping the Mac awake right now." : "Not keeping the Mac awake right now."}
+            </p>
+          </Section>
+
+          <Section title="AI" lead="The AI scores the people each campaign finds and, if you turn it on, writes the personal line.">
+            <div className="flex flex-col gap-block">
+              <div>
+                <label htmlFor={ids.provider} className="block font-medium">
+                  Which AI
+                </label>
+                <select
+                  id={ids.provider}
+                  className="select mt-1.5 w-full max-w-sm bg-base-100"
+                  value={form.provider}
+                  onChange={(event) => {
+                    const provider = AI_PROVIDERS.find((p) => p === event.target.value);
+                    if (provider !== undefined) change({ provider }, "ai");
+                  }}
+                >
+                  {AI_PROVIDERS.map((p) => (
+                    <option key={p} value={p}>
+                      {PROVIDER_LABEL[p]}
+                    </option>
+                  ))}
+                </select>
+                <FieldError message={errorOf("ai", "ai.provider")} />
+              </div>
+              <div>
+                <label htmlFor={ids.model} className="block font-medium">
+                  Model
+                </label>
+                <p className="text-sm text-muted">Leave it empty to use the provider&rsquo;s default.</p>
+                <input
+                  id={ids.model}
+                  className="input mt-1.5 w-full max-w-sm bg-base-100"
+                  value={form.model}
+                  onChange={(event) => change({ model: event.target.value }, "ai")}
+                />
+                <FieldError message={errorOf("ai.model")} />
+              </div>
+              <AiTestButton blocked={aiDirty} />
+            </div>
+          </Section>
+
+          <Backups ops={ops} />
+          <AutoStart ops={ops} />
+
+          <Section title="Export" lead="Every prospect of every campaign, with stage, score, dates and the texts sent, for a spreadsheet.">
+            <a href={prospectsCsvUrl()} className={`${SECONDARY_BUTTON} btn-sm`} download>
+              Download all prospects (CSV)
+            </a>
+          </Section>
+        </Group>
       </div>
 
       <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-t border-base-300 bg-base-100 px-4 py-3 lg:-mx-10 lg:px-10">
@@ -456,21 +459,34 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
           </button>
         )}
         <p role="status" className={`text-sm ${result === undefined ? "text-muted" : result.ok ? "text-primary" : "text-error"}`} data-testid="settings-result">
-          {result?.text ?? (dirty ? "You have changes that are not saved." : "")}
+          {result?.text ?? (dirty ? "You have changes that are not saved." : "No changes to save.")}
         </p>
       </div>
     </>
   );
 }
 
+/** One of the two plain groups the settings fall into, over its cards. */
+function Group({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id}>
+      <h2 id={id} className="mb-group text-xl font-semibold">
+        {title}
+      </h2>
+      <div className="flex flex-col gap-4">{children}</div>
+    </section>
+  );
+}
+
 function Section({ title, lead, children }: { readonly title: string; readonly lead: string; readonly children: ReactNode }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="rounded-box border border-base-300 px-5 py-5">
-      <h2 id={id} className="text-lg font-semibold">
+    <section aria-labelledby={id} className="rounded-box border border-base-300 p-card">
+      <h3 id={id} className="text-lg font-semibold">
         {title}
-      </h2>
-      <p className="mb-4 text-sm text-muted">{lead}</p>
+      </h3>
+      <p className="mb-group text-sm text-muted">{lead}</p>
       {children}
     </section>
   );
@@ -524,7 +540,7 @@ function LinkedInWindow() {
         </div>
       )}
       <ActionError message={recheck.error} className="mt-2" />
-      <p className="mt-4 text-sm text-base-content">
+      <p className="mt-group text-sm text-base-content">
         If LinkedIn logs the app out, log in again in the app&rsquo;s own Chrome window, not in your usual browser, then press Re-check.
       </p>
     </Section>
@@ -636,7 +652,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Backups" lead="The app copies its database once a day and keeps the last seven copies.">
       {ops.status === "error" && ops.data === undefined ? (
-        <LoadError what="the backups" message={ops.error.message} onRetry={ops.reload} className="" />
+        <LoadError what="the backups" message={ops.error.message} onRetry={ops.reload} />
       ) : ops.data === undefined ? (
         <div className="skeleton h-20 w-full" />
       ) : backups.length === 0 ? (
@@ -653,7 +669,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
           ))}
         </ul>
       )}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-group flex flex-wrap items-center gap-3">
         <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={busy} onClick={backUp}>
           {busy && <span className="loading loading-spinner loading-xs" />}
           Back up now
@@ -664,20 +680,27 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
           </p>
         )}
       </div>
-      <div className="mt-5 text-sm">
+      <ForYourAiTool testId="restore-help">
         <p className="font-medium">To go back to a backup</p>
-        <p className="mt-1 text-base-content">
+        <p className="mt-1">
           Stop the app first. Then, in Terminal, in the app&rsquo;s folder, run this with the name of the backup you want
           {backups[0] === undefined ? "" : " (here, the newest)"}:
         </p>
         <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono">
           <code>npm run restore -- {backups[0]?.file.split("/").at(-1) ?? "<backup file name>"}</code>
         </pre>
-        <p className="mt-1 text-base-content">
+        <p className="mt-1">
           The current database is kept aside first, so nothing is lost.
-          {ops.data === undefined ? "" : ` The backups are in ${ops.data.dataDir}/backups.`}
+          {ops.data === undefined ? (
+            ""
+          ) : (
+            <>
+              {" "}
+              The backups are in <span className="break-all">{ops.data.dataDir}/backups</span>.
+            </>
+          )}
         </p>
-      </div>
+      </ForYourAiTool>
     </Section>
   );
 }
@@ -694,19 +717,33 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Start at login" lead="Whether the app starts by itself when you log in to the Mac.">
       {ops.status === "error" && ops.data === undefined ? (
-        <LoadError what="whether it is set up" message={ops.error.message} onRetry={ops.reload} className="" />
+        <LoadError what="whether it is set up" message={ops.error.message} onRetry={ops.reload} />
+      ) : service !== undefined && !service.installed ? (
+        <Notice tone="waits">
+          <span data-testid="service-state">{state}</span>
+        </Notice>
       ) : (
         <p data-testid="service-state">{state}</p>
       )}
       {service?.note != null && service.note !== "" && <p className="mt-1 text-sm text-base-content">{asSentence(service.note.replace(/`/g, ""))}</p>}
       {service !== undefined && !(service.installed && service.loaded) && (service.note == null || service.note === "") && (
-        <>
-          <p className="mt-3 text-sm text-base-content">To set it up, run this in Terminal, in the app&rsquo;s folder:</p>
-          <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono text-sm">
+        <ForYourAiTool>
+          <p>To set it up, run this in Terminal, in the app&rsquo;s folder:</p>
+          <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono">
             <code>npm run service:install</code>
           </pre>
-        </>
+        </ForYourAiTool>
       )}
     </Section>
+  );
+}
+
+/** Terminal commands and paths, folded away: they are for the user's AI coding tool, not for reading. */
+function ForYourAiTool({ children, testId }: { readonly children: ReactNode; readonly testId?: string }) {
+  return (
+    <details className="mt-block text-sm" data-testid={testId}>
+      <summary className="cursor-pointer text-muted hover:text-base-content">For your AI coding tool</summary>
+      <div className="mt-2">{children}</div>
+    </details>
   );
 }

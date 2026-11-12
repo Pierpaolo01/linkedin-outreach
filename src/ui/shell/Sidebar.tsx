@@ -1,5 +1,5 @@
 import { useAppData } from "../appData";
-import { formatClock, formatWorkingHours, workingNow } from "../format";
+import { formatClock, formatDays, workingNow } from "../format";
 import { ON_RED_BUTTON, SECONDARY_BUTTON, StatusDot } from "../formParts";
 import { Link } from "../router";
 import { sessionView, STOP_REASON } from "./sessionView";
@@ -12,8 +12,9 @@ export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; 
   const stopped = home?.safetyStop != null;
   return (
     <aside className="flex min-h-full w-64 flex-col border-r border-base-300 bg-base-200" aria-label="Sidebar">
-      <div className="px-5 pt-6 pb-4">
-        <p className="text-lg font-semibold">Outreach</p>
+      {/* Boxes (the session card, the menu's items) start 12px in; text starts 24px in, the menu's own text inset. */}
+      <div className="px-3 pt-6 pb-4">
+        <p className="px-3 text-lg font-semibold">Outreach</p>
         <SessionCard recheck={recheck} />
       </div>
       <nav aria-label="Main">
@@ -133,7 +134,10 @@ function WorkingLine() {
         : `Outside working hours. Starts again ${now.next}.`;
   return (
     <p className="mt-auto px-6 pt-6 pb-6 text-sm text-muted">
-      {formatWorkingHours(settings)}.
+      Working {formatDays(settings.workingDays)},{" "}
+      <span className="whitespace-nowrap">
+        {settings.workingHours.start} to {settings.workingHours.end}.
+      </span>
       <br />
       {next}
     </p>

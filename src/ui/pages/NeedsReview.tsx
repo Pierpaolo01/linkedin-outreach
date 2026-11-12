@@ -1,12 +1,28 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { listActivity, listReview, resolveReview, toApiError } from "../api";
-import { RESOLVE_STAGES, type ResolveStage, type ReviewItem } from "../apiSchemas";
+import type { ResolveStage, ReviewItem } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatScore, formatWhen, plural } from "../format";
-import { ActionError, LoadError, Notice, SECONDARY_BUTTON } from "../formParts";
+import { ActionError, EmptyState, LoadError, Notice, SECONDARY_BUTTON } from "../formParts";
 import { IconExternal } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
+
+/** The choices in two groups: carry on from a step of the sequence (in its order), or take them out. */
+const CHOICE_GROUPS: readonly { readonly caption: string; readonly stages: readonly ResolveStage[] }[] = [
+  { caption: "Carry on from where they are", stages: ["approved", "invited", "accepted", "message_sent"] },
+  { caption: "Take them out", stages: ["stopped", "rejected"] },
+];
+
+/** The choice that matches the "So far" line: the step the person has reached. Null when none of them does. */
+function reachedStage(item: ReviewItem): ResolveStage | null {
+  if (item.followUpSentAt !== null) return null;
+  if (item.firstMessageSentAt !== null) return "message_sent";
+  if (item.acceptanceObservedAt !== null) return "accepted";
+  if (item.invitedAt !== null) return "invited";
+  if (item.approvedAt !== null) return "approved";
+  return null;
+}
 
 /** Every choice, in plain words. Nothing is chosen until the user picks one: the app never decides for them. */
 const CHOICE_LABEL: Readonly<Record<ResolveStage, string>> = {
@@ -88,29 +104,29 @@ export function NeedsReview() {
 
   return (
     <>
-      <PageHeader title="Needs review" aside={loaded.data === undefined ? undefined : `${plural(items.length, "person", "people")} held`} />
-      <p className="mt-2 max-w-2xl text-base-content">
-        The app stopped short with these people rather than guess. Nothing more happens to them until you choose.
-      </p>
+      <PageHeader
+        title="Needs review"
+        aside={loaded.data === undefined ? undefined : `${plural(items.length, "person", "people")} held`}
+        lead="The app stopped short with these people rather than guess. Nothing more happens to them until you choose."
+      />
       {notice !== undefined && (
-        <p role="status" className="mt-3 text-sm text-primary">
+        <p role="status" className="mb-group text-sm text-primary">
           {notice}
         </p>
       )}
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the people held for review" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="mt-5 flex flex-col gap-3" aria-label="Loading">
+        <div className="flex flex-col gap-3" aria-label="Loading">
           <div className="skeleton h-40 w-full" />
           <div className="skeleton h-40 w-full" />
         </div>
       ) : items.length === 0 ? (
-        <div className="mt-5 rounded-box border border-base-300 px-5 py-6" data-testid="review-empty">
-          <p className="font-medium">Nobody is held for review.</p>
-          <p className="mt-1 text-muted">When the app is unsure what happened with a person, it holds them here instead of guessing.</p>
-        </div>
+        <EmptyState title="Nobody is held for review." testId="review-empty">
+          When the app is unsure what happened with a person, it holds them here instead of guessing.
+        </EmptyState>
       ) : (
-        <ul className="mt-5 divide-y divide-base-300 rounded-box border border-base-300">
+        <ul className="divide-y divide-base-300 rounded-box border border-base-300">
           {items.map((item) => (
             <ReviewCard
               key={item.id}
@@ -141,6 +157,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
   const choiceName = useId();
   const now = new Date();
   const { person } = item;
+  const reached = reachedStage(item);
 
   const resolve = (to: ResolveStage) => {
     setBusy(true);
@@ -155,7 +172,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
   };
 
   return (
-    <li className="grid gap-x-8 gap-y-4 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_22rem]" data-testid="review-item" aria-label={person.fullName}>
+    <li className="grid gap-x-section gap-y-block p-card lg:grid-cols-[minmax(0,1fr)_22rem]" data-testid="review-item" aria-label={person.fullName}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{person.fullName}</h2>
@@ -170,11 +187,11 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
           In {item.campaignName}
           {heldAt === undefined ? "" : `, held ${formatWhen(heldAt, timeZone, now)}`}.
         </p>
-        <Notice tone="waits" className="mt-3">
+        <Notice tone="waits" className="mt-group">
           <span className="font-medium">Why: </span>
           {item.reviewReason === null ? "The app did not record a reason." : asSentence(item.reviewReason)}
         </Notice>
-        <p className="mt-2 text-sm" data-testid="review-score">
+        <p className="mt-group text-sm" data-testid="review-score">
           {item.score === null ? (
             <span className="text-base-content">Not scored</span>
           ) : (
@@ -188,23 +205,35 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
         {item.screenshotUrl !== null && <Screenshot url={item.screenshotUrl} name={person.fullName} />}
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <fieldset className="text-sm">
-          <legend className="mb-1.5 font-medium">What should happen next</legend>
-          <div className="flex flex-col gap-1.5">
-            {RESOLVE_STAGES.map((stage) => (
-              <label key={stage} className="flex cursor-pointer items-start gap-2">
-                <input
-                  type="radio"
-                  className="radio radio-sm mt-0.5"
-                  name={choiceName}
-                  value={stage}
-                  checked={choice === stage}
-                  disabled={busy}
-                  onChange={() => setChoice(stage)}
-                />
-                <span>{CHOICE_LABEL[stage]}</span>
-              </label>
+          <legend className="mb-2 font-medium">What should happen next</legend>
+          <div className="flex flex-col gap-3">
+            {CHOICE_GROUPS.map((group) => (
+              <div key={group.caption} role="group" aria-label={group.caption}>
+                <p className="mb-1 text-caption text-muted" aria-hidden="true">
+                  {group.caption}
+                </p>
+                <div className="flex flex-col gap-1.5">
+                  {group.stages.map((stage) => (
+                    <label key={stage} className="flex cursor-pointer items-start gap-2">
+                      <input
+                        type="radio"
+                        className="radio radio-sm radio-primary mt-0.5"
+                        name={choiceName}
+                        value={stage}
+                        checked={choice === stage}
+                        disabled={busy}
+                        onChange={() => setChoice(stage)}
+                      />
+                      <span>
+                        {CHOICE_LABEL[stage]}
+                        {stage === reached && <span className="ml-1.5 text-muted">(where they are now)</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </fieldset>
@@ -258,14 +287,14 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
 
   if (missing) {
     return (
-      <p className="mt-3 text-sm text-muted" data-testid="screenshot-missing">
+      <p className="mt-group text-sm text-muted" data-testid="screenshot-missing">
         A screenshot was saved, but the app could not show it.
       </p>
     );
   }
 
   return (
-    <div className="mt-3">
+    <div className="mt-group">
       <button
         type="button"
         className="block overflow-hidden rounded-field border border-base-300 hover:border-base-content/40"

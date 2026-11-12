@@ -45,7 +45,7 @@ export function ActionError({ message, className, testId }: { readonly message: 
 /** The box a page or section shows when its data could not load, with a way to try again. */
 export function LoadError(props: { readonly what: string; readonly message: string; readonly onRetry: () => void; readonly className?: string }) {
   return (
-    <div role="alert" className={`flex flex-wrap items-center gap-3 rounded-box border border-error/40 bg-error/5 px-4 py-4 ${props.className ?? "mt-5"}`}>
+    <div role="alert" className={`flex flex-wrap items-center gap-3 rounded-box border border-error/40 bg-error/5 p-4 ${props.className ?? ""}`}>
       <p className="text-error">
         Could not load {props.what}: {props.message}
       </p>
@@ -83,6 +83,34 @@ export function ActivityMessage({ level, message }: { readonly level: EventLevel
       {level === "error" && <span className="mr-1.5 font-semibold">Error:</span>}
       {plainMessage(message)}
     </span>
+  );
+}
+
+// ------------------------------------------------------------ page structure
+
+/** The grey bar that holds a list's filters. Put it `group` (12px) above the list it filters. */
+export const TOOLBAR = "flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 p-3";
+
+/** A section's heading row: the heading, and at its right a link or button about the whole section. 12px above the content. */
+export function SectionHead(props: { readonly id: string; readonly title: string; readonly children?: ReactNode }) {
+  return (
+    <div className="mb-group flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+      <h2 id={props.id} className="text-lg font-semibold">
+        {props.title}
+      </h2>
+      {props.children}
+    </div>
+  );
+}
+
+/** What a list says when it has nothing to show: one sentence at 500, a line on what will appear, maybe one action. */
+export function EmptyState(props: { readonly title: ReactNode; readonly children?: ReactNode; readonly action?: ReactNode; readonly className?: string; readonly testId?: string }) {
+  return (
+    <div className={`rounded-box border border-base-300 p-card ${props.className ?? ""}`} data-testid={props.testId}>
+      <p className="font-medium">{props.title}</p>
+      {props.children !== undefined && <p className="mt-1 text-muted">{props.children}</p>}
+      {props.action !== undefined && <div className="mt-4">{props.action}</div>}
+    </div>
   );
 }
 

@@ -1,7 +1,7 @@
 import { getStats } from "../api";
 import type { Stats as StatsData } from "../apiSchemas";
 import { useAppData } from "../appData";
-import { LoadError, StatusLine } from "../formParts";
+import { EmptyState, LoadError, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { useLoad } from "../useLoad";
 import { formatHours } from "../words";
@@ -44,22 +44,19 @@ export function Stats() {
 
   return (
     <>
-      <PageHeader title="Stats" />
-      <p className="mt-2 max-w-2xl text-base-content">
-        How each campaign is doing. A rate shows once at least {ENOUGH} people are behind it. Replies are counted only until the follow-up is sent.
-      </p>
+      <PageHeader
+        title="Stats"
+        lead={`How each campaign is doing. A rate shows once at least ${ENOUGH} people are behind it. Replies are counted only until the follow-up is sent.`}
+      />
       {loaded.status === "error" ? (
         <LoadError what="the stats" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton mt-5 h-56 w-full" />
+        <div className="skeleton h-56 w-full" />
       ) : rows.length === 0 ? (
-        <div className="mt-5 rounded-box border border-base-300 px-5 py-6">
-          <p className="font-medium">No campaigns yet.</p>
-          <p className="mt-1 text-muted">Stats appear once a campaign has sent invites.</p>
-        </div>
+        <EmptyState title="No campaigns yet.">Stats appear once a campaign has sent invites.</EmptyState>
       ) : (
-        <div className="mt-5 overflow-x-auto rounded-box border border-base-300">
-          <table className="table text-sm" data-testid="stats-table">
+        <div className="overflow-x-auto rounded-box border border-base-300">
+          <table className="table table-sm" data-testid="stats-table">
             <thead>
               <tr className="align-bottom text-muted">
                 <th className="font-medium">Campaign</th>
@@ -85,26 +82,26 @@ function StatsRow({ row }: { readonly row: Row }) {
   const { home } = useAppData();
   return (
     <tr data-testid="stats-row" className="align-top">
-      <td className="py-4">
+      <td>
         <Link to={`/campaigns/${row.campaignId}`} className="font-semibold hover:underline">
           {row.name}
         </Link>
         <StatusLine status={row.status} safetyStop={home?.safetyStop != null} className="text-muted" />
       </td>
-      <td className="py-4">
+      <td>
         <Rate value={row.acceptanceRate} part={row.accepted} whole={row.invitesSent} of="invited" />
       </td>
-      <td className="py-4">
+      <td>
         <Rate value={row.replyRate.value} part={row.replies} whole={row.firstMessagesSent} of="messaged" />
       </td>
-      <td className="py-4">
+      <td>
         {row.medianHoursToAccept === null ? (
           <p className="text-muted">No acceptances yet</p>
         ) : (
           <p className="nums text-lg font-semibold">{formatHours(row.medianHoursToAccept)}</p>
         )}
       </td>
-      <td className="nums py-4 text-right text-lg font-semibold">{row.invitesWithdrawn}</td>
+      <td className="nums text-right text-lg font-semibold">{row.invitesWithdrawn}</td>
     </tr>
   );
 }

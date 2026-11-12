@@ -3,7 +3,7 @@ import { listActivity, listCampaigns } from "../api";
 import type { ActivityItem, Page } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatToday } from "../format";
-import { ActivityMessage, CampaignSelect, LoadError, Pager, SECONDARY_BUTTON } from "../formParts";
+import { ActivityMessage, CampaignSelect, EmptyState, LoadError, Pager, SECONDARY_BUTTON, TOOLBAR } from "../formParts";
 import { useLoad } from "../useLoad";
 import { formatStamp } from "../words";
 import { PageHeader } from "./PageHeader";
@@ -56,10 +56,13 @@ export function Activity() {
 
   return (
     <>
-      <PageHeader title="Activity log" aside={formatToday(timeZone, new Date())} />
-      <p className="mt-2 max-w-2xl text-base-content">Everything the app did and noticed, newest first. Times are in {timeZone.replace(/_/g, " ")}.</p>
+      <PageHeader
+        title="Activity log"
+        aside={formatToday(timeZone, new Date())}
+        lead={`Everything the app did and noticed, newest first. Times are in ${timeZone.replace(/_/g, " ")}.`}
+      />
 
-      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 px-3 py-3">
+      <div className={`${TOOLBAR} mb-group`}>
         <div className="join" role="group" aria-label="Show">
           {(
             [
@@ -98,17 +101,14 @@ export function Activity() {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton mt-4 h-72 w-full" />
+        <div className="skeleton h-72 w-full" />
       ) : items.length === 0 ? (
-        <div className="mt-4 rounded-box border border-base-300 px-5 py-6" data-testid="activity-empty">
-          <p className="font-medium">{level === "problems" ? "No warnings or errors." : "Nothing in the log yet."}</p>
-          <p className="mt-1 text-muted">
-            {level === "problems" ? "When something goes wrong or needs a look, it is listed here." : "Each invite, message and check is listed here."}
-          </p>
-        </div>
+        <EmptyState title={level === "problems" ? "No warnings or errors." : "Nothing in the log yet."} testId="activity-empty">
+          {level === "problems" ? "When something goes wrong or needs a look, it is listed here." : "Each invite, message and check is listed here."}
+        </EmptyState>
       ) : (
         <>
-          <ol className="mt-4 divide-y divide-base-300 rounded-box border border-base-300" data-testid="activity-list">
+          <ol className="divide-y divide-base-300 rounded-box border border-base-300" data-testid="activity-list">
             {items.map((item) => {
               const campaign = item.campaignId === null ? undefined : names.get(item.campaignId);
               return (

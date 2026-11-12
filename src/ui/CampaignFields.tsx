@@ -63,8 +63,8 @@ export function MessageFields({
   );
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_19rem]">
-      <div className="flex min-w-0 flex-col gap-6">
+    <div className="grid gap-section lg:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="flex min-w-0 flex-col gap-block">
         <div className="rounded-box bg-base-200 px-4 py-3">
           <p className="text-sm">
             Add a detail that changes for each person. It goes into the <span className="font-medium">{TEXT_NAME[target]}</span>, where your cursor is.
@@ -232,7 +232,7 @@ function PreviewLine({ label, text, none }: { readonly label: string; readonly t
 export function TimingFields({ form, set, errors }: { readonly form: CampaignForm; readonly set: SetField; readonly errors: FieldErrors }) {
   const ids = { withdraw: useId(), policy: useId() };
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
+    <div className="flex max-w-2xl flex-col gap-block">
       <HourRange
         legend="Before the first message"
         lead="After someone accepts your invite, wait between"

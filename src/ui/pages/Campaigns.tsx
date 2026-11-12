@@ -4,7 +4,7 @@ import type { Campaign, DiscoveryWait } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { plural } from "../format";
-import { ActionError, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, StatusLine } from "../formParts";
+import { ActionError, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
@@ -62,27 +62,22 @@ export function Campaigns() {
       <PageHeader
         title="Campaigns"
         aside={loaded.data === undefined ? undefined : `${plural(current.length, "campaign", "campaigns")}, ${running} running`}
+        lead="Each campaign finds people, scores them against who you said fits, and invites and messages the ones you approve."
+        action={
+          <Link to="/campaigns/new" className="btn btn-sm btn-primary">
+            New campaign
+          </Link>
+        }
       />
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-base-content">
-          Each campaign finds people, scores them against who you said fits, and invites and messages the ones you approve.
-        </p>
-        <Link to="/campaigns/new" className="btn btn-sm btn-primary">
-          New campaign
-        </Link>
-      </div>
 
-      <ActionError message={error} className="mt-4" />
+      <ActionError message={error} className="mb-group" />
 
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton mt-5 h-48 w-full" />
+        <div className="skeleton h-48 w-full" />
       ) : current.length === 0 ? (
-        <div className="mt-5 rounded-box border border-base-300 px-5 py-6">
-          <p className="font-medium">No campaigns yet.</p>
-          <p className="mt-1 text-muted">Start one with New campaign. Nothing is sent until you approve the people it finds.</p>
-        </div>
+        <EmptyState title="No campaigns yet.">Start one with New campaign. Nothing is sent until you approve the people it finds.</EmptyState>
       ) : (
         <CampaignTable
           campaigns={current}
@@ -98,15 +93,12 @@ export function Campaigns() {
       )}
 
       {archived.length > 0 && (
-        <section className="mt-8" aria-labelledby="archived-campaigns">
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <h2 id="archived-campaigns" className="text-lg font-semibold">
-              Archived
-            </h2>
-            <button type="button" className="link text-sm link-hover" aria-expanded={showArchived} onClick={() => setShowArchived((open) => !open)}>
+        <section className="mt-section" aria-labelledby="archived-campaigns">
+          <SectionHead id="archived-campaigns" title="Archived">
+            <button type="button" className="link mr-auto text-sm link-hover" aria-expanded={showArchived} onClick={() => setShowArchived((open) => !open)}>
               {showArchived ? "Hide" : `Show ${archived.length}`}
             </button>
-          </div>
+          </SectionHead>
           {showArchived && <CampaignTable campaigns={archived} waits={new Map()} stopped={false} busyId={null} onToggle={() => undefined} />}
         </section>
       )}
@@ -138,8 +130,8 @@ function CampaignTable(props: {
 }) {
   const { timeZone } = useAppData();
   return (
-    <div className="mt-5 overflow-x-auto rounded-box border border-base-300">
-      <table className="table table-sm text-sm" data-testid="campaigns-table">
+    <div className="overflow-x-auto rounded-box border border-base-300">
+      <table className="table table-sm" data-testid="campaigns-table">
         <thead>
           <tr className="text-muted">
             <th className="font-medium">Campaign</th>
@@ -160,7 +152,7 @@ function CampaignTable(props: {
             const busy = props.busyId === c.id;
             return (
               <tr key={c.id} data-testid="campaign-row">
-                <td className="py-3 md:min-w-[14rem]">
+                <td className="md:min-w-[14rem]">
                   <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
@@ -171,7 +163,7 @@ function CampaignTable(props: {
                   </p>
                 </td>
                 {FUNNEL.map((step) => (
-                  <td key={step} className="hidden text-right text-sm md:table-cell">
+                  <td key={step} className="hidden text-right md:table-cell">
                     {c.funnel[step]}
                   </td>
                 ))}

@@ -127,7 +127,7 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const WEEKDAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
 
 /** "Mon to Fri" for a run of days, else "Mon, Wed and Fri". */
-function formatDays(days: readonly number[]): string {
+export function formatDays(days: readonly number[]): string {
   const sorted = [...days].sort((a, b) => a - b);
   const first = sorted[0];
   const last = sorted.at(-1);
@@ -137,10 +137,6 @@ function formatDays(days: readonly number[]): string {
   return joinWords(sorted.map((d) => WEEKDAYS[d - 1] ?? ""));
 }
 
-/** "Working Mon to Fri, 09:00 to 18:00". */
-export function formatWorkingHours(settings: Settings): string {
-  return `Working ${formatDays(settings.workingDays)}, ${settings.workingHours.start} to ${settings.workingHours.end}`;
-}
 
 /** Whether the working window is open now, and if not, when it next opens ("tomorrow at 09:00"). */
 export function workingNow(settings: Settings, now: Date): { readonly open: true; readonly until: string } | { readonly open: false; readonly next: string } {
