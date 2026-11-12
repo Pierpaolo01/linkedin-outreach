@@ -1,4 +1,4 @@
-import { and, count, gt, gte, inArray, isNotNull, lt, max } from "drizzle-orm";
+import { and, count, eq, gt, gte, inArray, isNotNull, lt, max } from "drizzle-orm";
 import type { Settings } from "../config/settings";
 import type { Db } from "../db/index";
 import { actions, safetyStops, type ActionType } from "../db/schema";
@@ -53,8 +53,8 @@ type Refusal = { readonly reason: Exclude<BudgetAnswer["reason"], "ok">; readonl
 
 /**
  * Today's invite allowance under warm-up: invitesStartPerDay plus invitesIncreasePerDay for every
- * earlier local calendar day with at least one claimed invite, capped at limits.invitesPerDay.
- * Days without invites (downtime) do not advance it.
+ * earlier local calendar day on which at least one invite went out, capped at limits.invitesPerDay.
+ * Days without a sent invite (downtime, or attempts LinkedIn never received) do not advance it.
  */
 export function inviteAllowance(db: Db, settings: Settings, now: Date): number {
   const cap = settings.limits.invitesPerDay;
@@ -66,6 +66,8 @@ export function inviteAllowance(db: Db, settings: Settings, now: Date): number {
     .where(
       and(
         inArray(actions.type, LEDGER_TYPES.invite),
+        // Only an invite that went out makes its day a day of inviting; attempts LinkedIn never received do not.
+        eq(actions.status, "done"),
         isNotNull(actions.startedAt),
         lt(actions.startedAt, startOfDay(settings.timeZone, now)),
       ),

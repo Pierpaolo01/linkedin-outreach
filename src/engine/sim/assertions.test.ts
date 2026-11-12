@@ -464,4 +464,14 @@ describe("8. the ledger agrees with LinkedIn", () => {
     const { result } = await simulate(inviter({ phantomLedger: true }), smallScenario({ members: 3, days: 1 }));
     expect(messages(result(8))).toContain("ledger row invite:1 is done but LinkedIn shows 0 invite");
   });
+
+  it("reports two done rows that rest on one invitation", async () => {
+    const { result } = await simulate(inviter({ doubleLedger: true }), smallScenario({ members: 3, days: 1 }));
+    expect(messages(result(8))).toContain("the ledger holds 2 done invite rows for sim-member-001 but LinkedIn received 1");
+  });
+
+  it("is quiet for an inviter that records each invitation once", async () => {
+    const { result } = await simulate(inviter(), smallScenario({ members: 3, days: 1 }));
+    expect(messages(result(8))).toEqual([]);
+  });
 });

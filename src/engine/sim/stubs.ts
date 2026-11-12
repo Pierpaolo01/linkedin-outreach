@@ -28,6 +28,8 @@ export interface InviterFlaws {
   readonly noLedger?: boolean;
   /** Marks invites done in the ledger without sending them. */
   readonly phantomLedger?: boolean;
+  /** Sends one invite and records two done invite rows for it. */
+  readonly doubleLedger?: boolean;
   /** Owes five invites per working day since the start and pays the debt as fast as it can. */
   readonly catchUpAfterDowntime?: boolean;
   /** Catches every error, kills included, and carries on. */
@@ -234,7 +236,7 @@ export function inviter(flaws: InviterFlaws = {}): EngineModule {
       if (flaws.noClaim && due.memberId !== null) {
         // It saved the member id before the kill, trusts it, and clicks Connect again without looking.
         await driver.sendInvite({ publicId: due.publicId, memberId: due.memberId }, null, windowGuard(db, clock.now()));
-        markInvited(db, due, clock.now(), "done");
+        markDone(db, due, clock.now(), flaws);
         return { did: `invited ${due.publicId} again`, wakeAt: new Date(clock.now().getTime() + GAP_MS) };
       }
       if (!flaws.noLedger) recordView(db, due.prospectId, now);
@@ -259,7 +261,7 @@ export function inviter(flaws: InviterFlaws = {}): EngineModule {
       const guard = flaws.ignoreGuard === true ? NO_DEADLINE : windowGuard(db, clock.now());
       if (flaws.noClaim) {
         await driver.sendInvite(person, note?.text ?? null, guard);
-        if (!flaws.noLedger) markInvited(db, due, clock.now(), "done");
+        if (!flaws.noLedger) markDone(db, due, clock.now(), flaws);
       } else {
         if (!flaws.noLedger) markInvited(db, due, clock.now(), "in_progress");
         const result = await driver.sendInvite(person, note?.text ?? null, guard);
@@ -268,7 +270,7 @@ export function inviter(flaws: InviterFlaws = {}): EngineModule {
           unclaimInvite(db, due, flaws.noLedger === true);
           return { did: `invite to ${due.publicId} expired`, wakeAt: new Date(clock.now().getTime() + GAP_MS) };
         }
-        if (!flaws.noLedger) db.update(actions).set({ status: "done", finishedAt: clock.now() }).where(eq(actions.idempotencyKey, `invite:${due.prospectId}`)).run();
+        if (!flaws.noLedger) markDone(db, due, clock.now(), flaws);
         else db.update(prospects).set({ stage: "invited", invitedAt: clock.now() }).where(eq(prospects.id, due.prospectId)).run();
       }
       const wait = flaws.catchUpAfterDowntime ? 1_000 : GAP_MS;
@@ -307,6 +309,15 @@ function unclaimInvite(db: Db, due: Due, noLedger: boolean): void {
     tx.update(prospects).set({ stage: "approved", invitedAt: null }).where(eq(prospects.id, due.prospectId)).run();
     tx.update(people).set({ contactedAt: null, contactedProspectId: null }).where(eq(people.id, due.personId)).run();
   });
+}
+
+function markDone(db: Db, due: Due, now: Date, flaws: InviterFlaws): void {
+  markInvited(db, due, now, "done");
+  if (flaws.doubleLedger) {
+    db.insert(actions)
+      .values({ type: "invite", prospectId: due.prospectId, status: "done", idempotencyKey: `invite:${due.prospectId}:again`, attempts: 1, startedAt: now, finishedAt: now })
+      .run();
+  }
 }
 
 function markInvited(db: Db, due: Due, now: Date, status: "in_progress" | "done"): void {

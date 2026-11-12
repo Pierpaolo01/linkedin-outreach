@@ -1098,6 +1098,31 @@ export function judge(run: SimRun): Verdict {
         violations.push({ message: `ledger row ${row.idempotencyKey} is done but LinkedIn shows ${matches.length} ${wanted === "followup" ? "app messages (a follow-up needs two)" : wanted}`, detail: { person: person?.publicId ?? null } });
       }
     }
+    // Each done step row needs its own effect on LinkedIn: one invitation cannot stand for two rows.
+    const kindOf = (wanted: string): string => (wanted === "message1" || wanted === "followup" ? "message" : wanted);
+    const doneCounts = new Map<string, { count: number; who: string; kind: string }>();
+    for (const row of rows) {
+      const wanted = step(row);
+      if (row.status !== "done" || wanted === null || row.prospectId === null) continue;
+      const person = personOfProspect.get(row.prospectId);
+      if (person === undefined) continue;
+      const key = `${person.memberId ?? person.publicId}|${kindOf(wanted)}`;
+      const entry = doneCounts.get(key) ?? { count: 0, who: person.publicId, kind: kindOf(wanted) };
+      entry.count += 1;
+      doneCounts.set(key, entry);
+    }
+    const receivedCounts = new Map<string, number>();
+    for (const entry of log) {
+      if (!SEND_KINDS.has(entry.kind)) continue;
+      const key = `${entry.memberId ?? entry.publicId ?? "?"}|${entry.kind}`;
+      receivedCounts.set(key, (receivedCounts.get(key) ?? 0) + 1);
+    }
+    for (const [key, { count, who, kind }] of doneCounts) {
+      const received = receivedCounts.get(key) ?? 0;
+      if (count > received && received > 0) {
+        violations.push({ message: `the ledger holds ${count} done ${kind} rows for ${who} but LinkedIn received ${received}` });
+      }
+    }
     const done = rows.filter((row) => row.status === "done").length;
     return {
       id: 8,
