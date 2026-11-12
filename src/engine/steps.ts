@@ -440,7 +440,9 @@ function claimGate(ctx: StepContext, kind: BudgetKind): ClaimGate {
   if (end.getTime() - now.getTime() <= WINDOW_END_MARGIN_MS) return { ok: false, why: "after_hours" };
   const budget = checkBudget(ctx.db, settings, kind, now);
   if (!budget.allowed) return { ok: false, why: "budget", kind, resumesAt: budget.resumesAt };
-  return { ok: true, guard: { notAfter: end } };
+  // `end` is the first instant outside the window and the driver's deadline is inclusive, so the
+  // deadline is the last instant inside it: at closing time exactly, nothing goes out.
+  return { ok: true, guard: { notAfter: new Date(end.getTime() - 1) } };
 }
 
 function notClaimed(label: string, name: string, gate: Exclude<ClaimGate, { ok: true }>): StepOutcome {

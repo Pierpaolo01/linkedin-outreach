@@ -1,7 +1,9 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getSettings } from "../config/settings";
 import { actions, campaigns, eventLog, people, prospects, type ProspectStage } from "../db/schema";
 import type { DriverOp, KillPhase, MemberSpec } from "../linkedin/fake/world";
+import { isInWorkingWindow } from "./workingWindow";
 import {
   actionByKey,
   actionRows,
@@ -579,7 +581,7 @@ describe("a write the laptop sleeps through (SendGuard)", () => {
     expect(kit.world.messagesSentTo(p.spec.publicId)).toHaveLength(1);
   });
 
-  it("the deadline passed to the driver is the end of the current working window, from the settings read at claim time", async () => {
+  it("the deadline passed to the driver is the last instant inside the current working window, from the settings read at claim time", async () => {
     const guards: Date[] = [];
     kit.close();
     start({
@@ -594,7 +596,11 @@ describe("a write the laptop sleeps through (SendGuard)", () => {
     accepted(campaign(), {}, { nextActionAt: LATE });
     kit.clock.set(LATE);
     await step(kit);
-    expect(guards).toEqual([WINDOW_END]);
+    // The window's end is exclusive and the driver's deadline inclusive: at 18:00:00.000 exactly nothing may go out.
+    expect(guards).toEqual([new Date(WINDOW_END.getTime() - 1)]);
+    const lastAllowed = guards[0];
+    expect(lastAllowed !== undefined && isInWorkingWindow(getSettings(kit.db), lastAllowed)).toBe(true);
+    expect(isInWorkingWindow(getSettings(kit.db), WINDOW_END)).toBe(false);
   });
 });
 
