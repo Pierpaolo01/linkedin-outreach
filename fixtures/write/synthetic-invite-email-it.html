@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<!-- Synthetic fixture: invented, never seen on LinkedIn. The email-required dialog, Italian wording (assumptions 7, 13).
+     The shape copies the closed <dialog> elements seen on saved 2026 profile and sent-invitation pages
+     (Dismiss button, header#dialog-header with an h2, data-testid="dialog-content", footer buttons),
+     shown open. Checked on the live site per docs/research/write-operations.md. -->
+<html lang="it"><head><title>fragment</title></head><body>
+<dialog open><button type="button" aria-label="Chiudi"><span></span></button><div><header id="dialog-header"><h2>Aggiungi una nota al tuo invito</h2></header><div data-testid="dialog-content"><p>Per verificare che questo utente ti conosca, inserisci il suo indirizzo email per collegarti.</p><label for="email">Email</label><input id="email" type="email" name="email"></div><footer><div><button type="button"><span><span>Annulla</span></span></button><button type="submit" disabled><span><span>Invia</span></span></button></div></footer></div></dialog>
+</body></html>
