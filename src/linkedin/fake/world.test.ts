@@ -139,6 +139,17 @@ describe("sendInvite", () => {
     const fresh = world.connect({ clock: later, random: () => 0.5 }).driver;
     expect(await fresh.sendInvite(ref(3), null)).toBe("sent");
   });
+
+  it("counts an invitation sent outside the app against the weekly cap until a week after it was sent", async () => {
+    const { world, driver } = setup([person(1, { invitedOutsideApp: true, invitedAt: START }), person(2)], { weeklyInviteCap: 1 });
+    await expect(driver.sendInvite(ref(2), null)).rejects.toBeInstanceOf(LimitHit);
+    // It is LinkedIn's count, not the app's: the log of what the app sent stays empty.
+    expect(world.log.filter((entry) => entry.kind === "invite")).toEqual([]);
+
+    const later = virtualClock(new Date(START.getTime() + 7 * DAY + MINUTE));
+    const fresh = world.connect({ clock: later, random: () => 0.5 }).driver;
+    expect(await fresh.sendInvite(ref(2), null)).toBe("sent");
+  });
 });
 
 describe("acceptance", () => {
@@ -204,7 +215,8 @@ describe("readThread", () => {
       isNew: true,
       viaCompose: true,
       messages: [],
-      kind: "message",
+      // As the live parser reads LinkedIn's empty "New message" pane.
+      kind: "unknown",
       threadUrl: null,
       participant: { fullName: "Test Person 1", publicId: "test-person-1" },
     });

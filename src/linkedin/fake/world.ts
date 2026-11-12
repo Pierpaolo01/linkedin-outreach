@@ -162,6 +162,8 @@ export class FakeWorld {
   readonly #members = new Map<string, Member>();
   readonly #byMemberId = new Map<string, Member>();
   readonly #log: LogEntry[] = [];
+  /** When invitations sent outside the app went out. They use up LinkedIn's weekly cap but are not in the log of what the app did. */
+  readonly #outsideInvites: Date[] = [];
   readonly #faults = new Map<DriverOp, FaultKind[]>();
   readonly #searches = new Map<string, readonly string[]>();
   #recommendations: readonly RecommendationGroupSpec[] = [];
@@ -196,6 +198,7 @@ export class FakeWorld {
       firstAppMessageAt: null,
       fired: new Set(),
     };
+    if (member.invite !== null) this.#outsideInvites.push(member.invite.sentAt);
     this.#members.set(spec.publicId, member);
     this.#byMemberId.set(spec.memberId, member);
   }
@@ -571,7 +574,8 @@ export class FakeWorld {
             publicId: shownId,
             profileUrl: shownId === null ? null : profileUrlFor(shownId),
           },
-          kind: "message",
+          // The live parser cannot tell the kind of an empty "New message" pane.
+          kind: isNew ? "unknown" : "message",
           messages,
           isNew,
           viaCompose: true,
@@ -592,7 +596,10 @@ export class FakeWorld {
         }
         const cap = this.#options.weeklyInviteCap;
         const since = now.getTime() - WEEK_MS;
-        if (cap !== null && this.#log.filter((entry) => entry.kind === "invite" && entry.at.getTime() > since).length >= cap) {
+        const recent = (at: Date): boolean => at.getTime() > since;
+        const used =
+          this.#log.filter((entry) => entry.kind === "invite" && recent(entry.at)).length + this.#outsideInvites.filter(recent).length;
+        if (cap !== null && used >= cap) {
           this.#pageLoad("profile", now, member);
           throw new LimitHit("fake world: weekly invitation limit reached");
         }
