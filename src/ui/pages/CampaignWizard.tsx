@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createCampaign, getCampaign, startCampaign, toApiError, updateCampaign } from "../api";
 import type { Campaign } from "../apiSchemas";
@@ -66,15 +66,53 @@ function firstOpenStep(c: Campaign): number {
 const stepJson = (form: CampaignForm, step: number) => JSON.stringify((STEPS[step]?.keys ?? []).map((key) => form[key]));
 const allSaved = (form: CampaignForm) => new Map(STEPS.map((_, s) => [s, stepJson(form, s)] as const));
 
+/** What Start checks the app kept exactly as the review shows: the brief, the texts and the timings. */
+const CHECKED_KEYS: readonly FormKey[] = [...STEPS[2].keys, ...STEPS[4].keys, ...STEPS[5].keys];
+
+/** The checked fields whose saved value differs from the form's, compared as they are sent. */
+function keptDifferently(form: CampaignForm, kept: Campaign): FormKey[] {
+  const keptForm = formFromCampaign(kept);
+  return CHECKED_KEYS.filter((key) => JSON.stringify(toFields(form, [key]).fields) !== JSON.stringify(toFields(keptForm, [key]).fields));
+}
+
+type SaveResult = { readonly ok: true; readonly campaign: Campaign } | { readonly ok: false };
+
+/** A save waiting for its turn. Its values are read from the form only when it is sent. */
+interface WaitingSave {
+  readonly keys: Set<FormKey>;
+  quiet: boolean;
+  readonly done: ((result: SaveResult) => void)[];
+}
+
+/**
+ * Every save of one draft, one request at a time. `waiting` is the one save not yet sent: a newer
+ * save takes it over (its fields join), so a superseded save is never sent with old values.
+ */
+interface SaveQueue {
+  tail: Promise<void>;
+  waiting: WaitingSave | null;
+  campaignId: number | null;
+  /** The app's copy of the campaign as the last save that went through returned it. */
+  lastSaved: Campaign | null;
+}
+
 function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCreated: (id: number) => void }) {
   const { refresh, timeZone } = useAppData();
   const loaded = useLoad(() => (id === null ? Promise.resolve(null) : getCampaign(id).then((r) => r.campaign)), `wizard-${id ?? "new"}`);
   const [campaignId, setCampaignId] = useState<number | null>(id);
   const [form, setForm] = useState<CampaignForm | null>(id === null ? BLANK_FORM : null);
+  /** The form as last drawn, for a save that is sent later than it was asked for. */
+  const formNow = useRef(form);
+  useLayoutEffect(() => {
+    formNow.current = form;
+  });
+  const queue = useRef<SaveQueue>({ tail: Promise.resolve(), waiting: null, campaignId: id, lastSaved: null });
   const [status, setStatus] = useState<Campaign["status"]>("draft");
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [saving, setSaving] = useState(false);
+  /** Saves asked for by a button that have not finished yet. */
+  const [loudSaves, setLoudSaves] = useState(0);
+  const saving = loudSaves > 0;
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [startError, setStartError] = useState<string | undefined>(undefined);
@@ -93,43 +131,79 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     setSaved(allSaved(filled));
   }
 
-  const save = async (keys: readonly FormKey[], { quiet = false } = {}): Promise<boolean> => {
-    if (form === null) return false;
-    const { fields, errors: local } = toFields(form, keys);
+  /** Sends one save with the form as it is now. Never throws. */
+  const send = async (job: WaitingSave): Promise<SaveResult> => {
+    const snapshot = formNow.current;
+    if (snapshot === null) return { ok: false };
+    const keys = [...job.keys];
+    const { fields, errors: local } = toFields(snapshot, keys);
     if (Object.keys(local).length > 0) {
-      if (!quiet) setErrors((e) => ({ ...e, ...local }));
-      return false;
+      if (!job.quiet) setErrors((e) => ({ ...e, ...local }));
+      return { ok: false };
     }
-    const snapshot = form;
-    if (!quiet) setSaving(true);
     setSaveError(undefined);
     try {
-      if (campaignId === null) {
-        const { campaign } = await createCampaign(fields);
+      let campaign: Campaign;
+      if (queue.current.campaignId === null) {
+        ({ campaign } = await createCampaign(fields));
+        queue.current.campaignId = campaign.id;
         const filled = { ...formFromCampaign(campaign), name: snapshot.name };
+        // A save waiting behind this one is sent before the next draw: give it the filled form.
+        formNow.current = filled;
         setCampaignId(campaign.id);
         setForm(filled);
         setSaved(allSaved(filled));
         onCreated(campaign.id);
         refresh();
       } else {
-        await updateCampaign(campaignId, fields);
+        ({ campaign } = await updateCampaign(queue.current.campaignId, fields));
         setSaved((map) => {
           const next = new Map(map);
-          for (const [s, { keys: stepKeys }] of STEPS.entries()) if (stepKeys.every((key) => keys.includes(key))) next.set(s, stepJson(snapshot, s));
+          for (const [s, { keys: stepKeys }] of STEPS.entries()) if (stepKeys.every((key) => job.keys.has(key))) next.set(s, stepJson(snapshot, s));
           return next;
         });
       }
+      queue.current.lastSaved = campaign;
       setSavedAt(new Date());
-      return true;
+      return { ok: true, campaign };
     } catch (failure) {
       const error = toApiError(failure);
       if (Object.keys(error.fields).length > 0) setErrors((e) => ({ ...e, ...error.fields }));
       else setSaveError(`Could not save the draft: ${error.message}`);
-      return false;
-    } finally {
-      if (!quiet) setSaving(false);
+      return { ok: false };
     }
+  };
+
+  /** Puts a save in the queue; it resolves once that save (or the newer one that took it over) is done. */
+  const save = (keys: readonly FormKey[], { quiet = false } = {}): Promise<SaveResult> => {
+    if (!quiet) setLoudSaves((n) => n + 1);
+    const result = new Promise<SaveResult>((resolve) => {
+      const waiting = queue.current.waiting;
+      if (waiting !== null) {
+        for (const key of keys) waiting.keys.add(key);
+        waiting.quiet &&= quiet;
+        waiting.done.push(resolve);
+        return;
+      }
+      const job: WaitingSave = { keys: new Set(keys), quiet, done: [resolve] };
+      queue.current.waiting = job;
+      queue.current.tail = queue.current.tail.then(async () => {
+        // From here on it is on its way; a save asked for now waits behind it.
+        queue.current.waiting = null;
+        const outcome = await send(job).catch((): SaveResult => ({ ok: false }));
+        for (const done of job.done) done(outcome);
+      });
+    });
+    return quiet ? result : result.finally(() => setLoudSaves((n) => n - 1));
+  };
+
+  /** Waits until no save is on its way or waiting. */
+  const drain = async () => {
+    let tail: Promise<void>;
+    do {
+      tail = queue.current.tail;
+      await tail;
+    } while (tail !== queue.current.tail || queue.current.waiting !== null);
   };
 
   // Save the current step in the background once typing pauses, so nothing is lost.
@@ -179,7 +253,8 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         setErrors((e) => ({ ...e, name: "Give the campaign a name" }));
         return;
       }
-      const ok = await save(STEPS[step]?.keys ?? []);
+      const { ok } = await save(STEPS[step]?.keys ?? []);
+      await drain();
       // Going back never waits on a problem; going on does.
       if (!ok && next > step) return;
     }
@@ -191,11 +266,24 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     if (campaignId === null) return;
     setStarting(true);
     setStartError(undefined);
-    const ok = await save(ALL_KEYS);
-    if (!ok) {
+    const { ok } = await save(ALL_KEYS);
+    await drain();
+    const stop = (message: string) => {
       setStarting(false);
       setConfirmAuto(false);
-      setStartError("Some answers could not be saved. They are marked below.");
+      setStartError(message);
+    };
+    if (!ok) {
+      stop("Some answers could not be saved. They are marked below.");
+      return;
+    }
+    // Start only what the review shows: the app's copy after the last save must hold exactly these values.
+    const shown = formNow.current;
+    const kept = queue.current.lastSaved;
+    const differ = shown === null || kept === null ? CHECKED_KEYS : keptDifferently(shown, kept);
+    if (differ.length > 0) {
+      const labels = [...new Set(differ.map((key) => FIELD_LABEL[key]))].join(", ");
+      stop(`The campaign was not started: the app's copy of the draft differs from this page (${labels}). Press Start again to save this page and check once more.`);
       return;
     }
     try {

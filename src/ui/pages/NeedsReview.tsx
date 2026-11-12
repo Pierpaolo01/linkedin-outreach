@@ -35,6 +35,23 @@ function progress(item: ReviewItem, timeZone: string, now: Date): string {
   return `Found ${when(item.foundAt)}; not contacted.`;
 }
 
+/**
+ * What one hold looks like in the item's own data: the reason and the progress it was held at. A
+ * resolve changes these (the stage's time is set, the reason cleared), so a later hold differs.
+ */
+function holdOf(item: ReviewItem): string {
+  return JSON.stringify([
+    item.reviewReason,
+    item.approvedAt,
+    item.invitedAt,
+    item.acceptanceObservedAt,
+    item.firstMessageSentAt,
+    item.followUpSentAt,
+    item.nextActionAt,
+    item.screenshotUrl,
+  ]);
+}
+
 /** Needs review: people the app would not decide on by itself, each with the reason and what the user can do. */
 export function NeedsReview() {
   const { home, refresh } = useAppData();
@@ -43,14 +60,30 @@ export function NeedsReview() {
   const loaded = useLoad(() => listReview({ pageSize: 100 }), key, { keepPrevious: true });
   // When each person was held: the activity log's warning line about them (the API has no such field).
   const held = useLoad(() => listActivity({ level: "warning", pageSize: 200 }), key, { keepPrevious: true });
-  const [gone, setGone] = useState<ReadonlySet<number>>(new Set());
+  /**
+   * People resolved on this visit, each with the hold they were resolved from. They stay hidden while
+   * an answer still lists that same hold (it was asked for before the resolve), and come back when a
+   * fresh answer lists them with another hold, held again by a later step.
+   */
+  const [gone, setGone] = useState<ReadonlyMap<number, string>>(new Map());
+  const [checkedFor, setCheckedFor] = useState(loaded.data);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+
+  if (loaded.data !== checkedFor) {
+    setCheckedFor(loaded.data);
+    if (loaded.data !== undefined && gone.size > 0) {
+      const listed = new Map(loaded.data.items.map((item) => [item.id, holdOf(item)] as const));
+      // Not listed any more: the resolve has landed, so a later listing is a new hold.
+      const still = new Map([...gone].filter(([id, hold]) => listed.get(id) === hold));
+      if (still.size !== gone.size) setGone(still);
+    }
+  }
 
   const heldAt = new Map<number, string>();
   for (const line of held.data?.items ?? []) {
     if (line.prospectId !== null && line.message.includes("needs review") && !heldAt.has(line.prospectId)) heldAt.set(line.prospectId, line.at);
   }
-  const items = (loaded.data?.items ?? []).filter((item) => !gone.has(item.id));
+  const items = (loaded.data?.items ?? []).filter((item) => gone.get(item.id) !== holdOf(item));
 
   return (
     <>
@@ -88,9 +121,11 @@ export function NeedsReview() {
               item={item}
               heldAt={heldAt.get(item.id)}
               onResolved={(stage) => {
-                setGone((set) => new Set(set).add(item.id));
+                setGone((map) => new Map(map).set(item.id, holdOf(item)));
                 setNotice(`${item.person.fullName} ${CHOICE_DONE[stage]}.`);
                 refresh();
+                // A fresh answer, asked for after the resolve, no longer lists them and so lets a later hold show.
+                loaded.reload();
               }}
             />
           ))}

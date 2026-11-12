@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { approveAll, approveProspect, listApprovals, rejectProspect, toApiError } from "../api";
 import type { ApprovalItem, Evidence, PreviewText } from "../apiSchemas";
 import { useAppData } from "../appData";
@@ -36,7 +36,38 @@ export function Approvals() {
   const [confirmIds, setConfirmIds] = useState<readonly number[] | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
   const [allError, setAllError] = useState<string | undefined>(undefined);
+  /** Single decisions sent and not answered yet. */
+  const [deciding, setDeciding] = useState(0);
   const rows = useRef(new Map<number, HTMLDivElement>());
+
+  // New people: Home's count of prospects waiting rises as the engine scores them. The list is
+  // loaded again when that count moves away from the one it is in step with, but never in the
+  // middle of a decision (a dialog open or a request on its way): then a line says who is waiting.
+  const waiting = home?.needsYou.pendingApproval;
+  const busy = confirmIds !== null || approvingAll || deciding > 0;
+  /** Home's count the list on screen matches, less the decisions made here since. */
+  const [inStep, setInStep] = useState(waiting);
+  const [reloads, setReloads] = useState(0);
+  if (waiting !== undefined && waiting !== inStep && (inStep === undefined || !busy)) {
+    setInStep(waiting);
+    // The first count to arrive is the one the list was loaded with.
+    if (inStep !== undefined) setReloads((n) => n + 1);
+  }
+  const arrived = busy && waiting !== undefined && inStep !== undefined ? waiting - inStep : 0;
+  /** The row that had the focus when the list was asked for again, to give it back. */
+  const focusedBefore = useRef<number | undefined>(undefined);
+  const { reload } = loaded;
+  useEffect(() => {
+    if (reloads === 0) return;
+    focusedBefore.current = [...rows.current].find(([, element]) => element.contains(document.activeElement))?.[0];
+    reload();
+  }, [reloads, reload]);
+  useEffect(() => {
+    const id = focusedBefore.current;
+    focusedBefore.current = undefined;
+    const element = id === undefined ? undefined : rows.current.get(id);
+    if (element !== undefined && !element.contains(document.activeElement)) element.focus();
+  }, [loaded.data]);
 
   const all = loaded.data?.items ?? [];
   const items = all.filter((item) => !gone.has(item.id));
@@ -59,9 +90,12 @@ export function Approvals() {
     setGone((set) => new Set(set).add(item.id));
     setRowErrors(withoutError(item.id));
     setNotice(undefined);
+    setDeciding((n) => n + 1);
     (decision === "approve" ? approveProspect(item.id) : rejectProspect(item.id))
       .then(() => {
         setDecided((n) => n + 1);
+        // Home's count drops by this one; that is not news.
+        setInStep((n) => (n === undefined ? n : n - 1));
         refresh();
       })
       .catch((failure: unknown) => {
@@ -74,7 +108,8 @@ export function Approvals() {
         }
         setGone(without(item.id));
         setRowErrors((map) => new Map(map).set(item.id, `Could not ${decision} ${item.person.fullName}: ${error.message}`));
-      });
+      })
+      .finally(() => setDeciding((n) => n - 1));
   };
 
   const onRowKey = (item: ApprovalItem) => (event: KeyboardEvent<HTMLDivElement>) => {
@@ -111,6 +146,7 @@ export function Approvals() {
       .then(({ approved, skipped }) => {
         setGone((set) => new Set([...set, ...ids]));
         setDecided((n) => n + approved);
+        setInStep((n) => (n === undefined ? n : n - approved));
         setNotice(`${approved} approved${skipped === 0 ? "" : `, ${skipped} no longer waiting`}.`);
         setConfirmIds(null);
       })
@@ -122,7 +158,6 @@ export function Approvals() {
       });
   };
 
-  const waiting = home?.needsYou.pendingApproval;
   const filtered = minScore > 0 || campaignId !== null;
 
   return (
@@ -280,6 +315,14 @@ export function Approvals() {
           {campaignName === undefined ? "" : ` in ${campaignName}`} will be invited.
         </p>
         <p className="text-base-content/75">The app sends the invites itself, within your working hours and daily limits.</p>
+        {arrived > 0 && (
+          <p role="status" className="text-sm" data-testid="new-arrivals">
+            {arrived === 1 ? "1 new person is" : `${arrived} new people are`} waiting —{" "}
+            <button type="button" className="link" disabled={approvingAll} onClick={() => setConfirmIds(null)}>
+              refresh
+            </button>
+          </p>
+        )}
       </ConfirmDialog>
     </>
   );

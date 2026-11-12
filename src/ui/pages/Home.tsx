@@ -10,6 +10,7 @@ import {
   formatToday,
   joinWords,
 } from "../format";
+import { LoadError } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { useLoad } from "../useLoad";
@@ -17,12 +18,14 @@ import { PageHeader } from "./PageHeader";
 
 /** Home: what needs the user, the campaigns, today's usage against each limit, and what the app did. */
 export function Home() {
-  const { home, timeZone } = useAppData();
+  const { home, homeError, refresh, timeZone } = useAppData();
   const now = new Date();
   return (
     <>
       <PageHeader title="Home" aside={formatToday(timeZone, now)} />
-      {home === undefined ? (
+      {home === undefined && homeError !== undefined ? (
+        <LoadError what="Home" message={homeError.message} onRetry={refresh} />
+      ) : home === undefined ? (
         <div className="mt-10 flex justify-center">
           <span className="loading loading-dots loading-md" aria-label="Loading" />
         </div>

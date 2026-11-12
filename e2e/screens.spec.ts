@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 
 // A route handler that re-fetches a response can still be running when its test ends (the dashboard
 // polls). Let such a handler finish or fail quietly instead of failing a test that already passed.
@@ -94,6 +94,88 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   const saved = (await (await page.request.get(`/api/campaigns/${id}`)).json()) as { campaign: { inviteNote: string; sourceUrls: string[] } };
   expect(saved.campaign.inviteNote).toBe("test note for {{first_name}}");
   expect(saved.campaign.sourceUrls).toEqual(["https://www.linkedin.com/search/results/people/?keywords=test"]);
+});
+
+const OLD_TEXT = "test older first message {{first_name}}";
+const NEW_TEXT = "test newer first message {{first_name}}";
+
+/** A new draft through the first four steps, ending on Messages. Returns its id. */
+async function draftToMessages(page: Page, name: string): Promise<number> {
+  await page.goto("/campaigns/new");
+  await page.getByLabel("Campaign name").fill(name);
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page).toHaveURL(/\/campaigns\/\d+\/edit$/);
+  const id = Number(/\/campaigns\/(\d+)\/edit/.exec(page.url())?.[1]);
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await page.getByLabel("Who fits this campaign, and who does not").fill("Test targeting: invented owners of invented companies.");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByRole("heading", { name: "Approval" })).toBeVisible();
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByRole("heading", { name: "Messages" })).toBeVisible();
+  return id;
+}
+
+const campaignPath = (url: URL) => /^\/api\/campaigns\/\d+$/.test(url.pathname);
+
+test("wizard: an autosave held on its way never overwrites newer text; Start starts what the review showed", async ({ page }) => {
+  const id = await draftToMessages(page, "Test campaign for the save order");
+
+  // Hold the background save of the older text for two seconds before it reaches the app.
+  let seen: (request: Request) => void = () => undefined;
+  const heldRequest = new Promise<Request>((resolve) => (seen = resolve));
+  let held = false;
+  await page.route(campaignPath, async (route) => {
+    const request = route.request();
+    const body = request.method() === "PATCH" ? (request.postDataJSON() as Record<string, unknown>) : {};
+    if (held || body["firstMessage"] !== OLD_TEXT) return route.fallback();
+    held = true;
+    seen(request);
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+    await route.fallback();
+  });
+
+  await page.getByLabel(/^First message/).fill(OLD_TEXT);
+  const old = await heldRequest;
+  await page.getByLabel(/^First message/).fill(NEW_TEXT);
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await page.getByRole("button", { name: "Save and review" }).click();
+  await expect(page.getByTestId("review-step-5")).toContainText("test newer first message {{first_name}}");
+  await page.getByRole("button", { name: "Start the campaign" }).click();
+  await expect(page).toHaveURL(new RegExp(`/campaigns/${id}$`), { timeout: 10_000 });
+
+  // Whatever the held save did, it has landed by now.
+  await old.response();
+  const saved = (await (await page.request.get(`/api/campaigns/${id}`)).json()) as { campaign: { status: string; firstMessage: string } };
+  expect(saved.campaign.status).toBe("finding");
+  expect(saved.campaign.firstMessage).toBe(NEW_TEXT);
+});
+
+test("wizard: Start refuses when the app kept other text than the review shows", async ({ page }) => {
+  const id = await draftToMessages(page, "Test campaign for the start check");
+  await page.getByLabel(/^First message/).fill(NEW_TEXT);
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await page.getByRole("button", { name: "Save and review" }).click();
+
+  // The browser test changes the app's answer to the save Start makes: it claims other text was kept.
+  await page.route(campaignPath, async (route) => {
+    const request = route.request();
+    const body = request.method() === "PATCH" ? (request.postDataJSON() as Record<string, unknown>) : {};
+    if (!("name" in body && "firstMessage" in body)) return route.fallback();
+    const response = await route.fetch();
+    const json = (await response.json()) as { campaign: Record<string, unknown> };
+    await route.fulfill({ response, json: { ...json, campaign: { ...json.campaign, firstMessage: "test text the app kept" } } });
+  });
+  let startSent = false;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && new URL(request.url()).pathname === `/api/campaigns/${id}/start`) startSent = true;
+  });
+
+  await page.getByRole("button", { name: "Start the campaign" }).click();
+  await expect(page.getByTestId("start-error")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/campaigns/${id}/edit$`));
+  expect(startSent).toBe(false);
+  const saved = (await (await page.request.get(`/api/campaigns/${id}`)).json()) as { campaign: { status: string } };
+  expect(saved.campaign.status).toBe("draft");
 });
 
 test("campaigns: pause and resume, a waiting discovery, and archive after a confirm", async ({ page }) => {
@@ -257,6 +339,37 @@ test("settings: the LinkedIn window section says the session state, when it was 
   await expect(recheck).toBeEnabled();
   await expect(section.getByTestId("linkedin-window-state")).toHaveText("Connected");
   await expect(section.getByTestId("linkedin-window-checked")).toHaveText(/^Last checked today at \d\d:\d\d\.$/);
+});
+
+test("settings: a failed first load says so in words, tries again by itself, and has a button to try again", async ({ page }) => {
+  let failures = 2;
+  let asked = 0;
+  await page.route(
+    (url) => url.pathname === "/api/settings",
+    (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      asked += 1;
+      if (failures <= 0) return route.fallback();
+      failures -= 1;
+      return route.fulfill({ status: 500, json: { error: "test: settings unavailable" } });
+    },
+  );
+
+  // Two failures, then the app answers: the page appears without a click.
+  await page.goto("/settings");
+  await expect(page.getByText("Could not load the settings: test: settings unavailable")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save settings" })).toBeVisible({ timeout: 10_000 });
+  expect(asked).toBe(3);
+
+  // It keeps failing: the error stays, and Try again loads it once the app answers.
+  failures = 1_000;
+  await page.reload();
+  await expect(page.getByText("Could not load the settings: test: settings unavailable")).toBeVisible();
+  failures = 0;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("button", { name: "Save settings" })).toBeVisible();
+  await expect(page.getByText("Could not load the settings")).toHaveCount(0);
 });
 
 test("settings: a refused save shows the problem in place, a good one saves; AI test and backups", async ({ page }) => {

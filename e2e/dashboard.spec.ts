@@ -65,6 +65,17 @@ test("Home reads what needs you as sentences and shows today's usage", async ({ 
   await expect(campaigns.getByRole("button", { name: "Pause Hotel owners, Rome" })).toBeVisible();
 });
 
+test("Home: a failed first load says so in words, with a button to try again", async ({ page }) => {
+  let failing = true;
+  await page.route("**/api/home", (route) => (failing ? route.fulfill({ status: 500, json: { error: "test: home unavailable" } }) : route.fallback()));
+  await page.goto("/");
+  await expect(page.getByText("Could not load Home: test: home unavailable")).toBeVisible();
+  failing = false;
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByTestId("needs-you")).toBeVisible();
+  await expect(page.getByText("Could not load Home")).toHaveCount(0);
+});
+
 test("the approval queue shows each follow-up folded under the first message, or No follow-up", async ({ page }) => {
   await page.goto("/approvals");
   const rows = page.getByTestId("approval-row");
@@ -126,6 +137,87 @@ test("approve all says how many were no longer waiting", async ({ page }) => {
   await page.getByRole("dialog", { name: "Approve all 2 prospects shown?" }).getByRole("button", { name: "Approve 2" }).click();
   await expect(page.getByText("1 approved, 1 no longer waiting.")).toBeVisible();
   await expect(rows).toHaveCount(0);
+});
+
+const LATE_PERSON = "Test Person scored later";
+const LATE_ID = 990_001;
+
+/**
+ * Makes one more person wait, as if the engine had just scored them: Home counts one more and the
+ * queue lists a copy of its first row under a new id. Only the browser test's answers change.
+ */
+async function routeLatePerson(page: Page, state: { arrived: boolean }) {
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { needsYou: { pendingApproval: number } };
+    const pendingApproval = json.needsYou.pendingApproval + (state.arrived ? 1 : 0);
+    await route.fulfill({ response, json: { ...json, needsYou: { ...json.needsYou, pendingApproval } } });
+  });
+  await page.route(
+    (url) => url.pathname === "/api/approvals",
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { total: number; items: { id: number; person: Record<string, unknown> }[] };
+      const first = json.items[0];
+      if (!state.arrived || first === undefined) return route.fulfill({ response, json });
+      const late = { ...first, id: LATE_ID, person: { ...first.person, id: LATE_ID, fullName: LATE_PERSON } };
+      await route.fulfill({ response, json: { ...json, total: json.total + 1, items: [late, ...json.items] } });
+    },
+  );
+}
+
+test("the approval queue takes in people scored while it is open, and keeps the selected row", async ({ page }) => {
+  const state = { arrived: false };
+  await routeLatePerson(page, state);
+  await page.goto("/approvals");
+  const before = await badge(page, "approvals");
+  const rows = page.getByTestId("approval-row");
+  await expect(rows).toHaveCount(before);
+  const second = (await rows.locator("p.font-semibold").allInnerTexts())[1];
+  if (second === undefined) throw new Error("Need two prospects");
+  const secondRow = rows.filter({ has: page.getByText(second, { exact: true }) });
+  await secondRow.getByText(second, { exact: true }).click();
+  await expect(secondRow).toBeFocused();
+
+  state.arrived = true;
+  // Home is asked again every five seconds.
+  await expect(page.getByTestId("count-approvals")).toHaveText(String(before + 1), { timeout: 8_000 });
+  await expect(rows).toHaveCount(before + 1);
+  await expect(rows.first()).toContainText(LATE_PERSON);
+  await expect(secondRow).toBeFocused();
+});
+
+test("people scored while Approve all is open wait behind a line; the dialog approves only the rows it opened with", async ({ page }) => {
+  const state = { arrived: false };
+  await routeLatePerson(page, state);
+  // The answer is the browser test's own: nothing is approved on the app.
+  await page.route("**/api/approvals/approve-all", (route) => {
+    const { prospectIds } = route.request().postDataJSON() as { prospectIds: number[] };
+    return route.fulfill({ json: { approved: prospectIds.length, skipped: 0 } });
+  });
+  await page.goto("/approvals");
+  const before = await badge(page, "approvals");
+  const rows = page.getByTestId("approval-row");
+  await expect(rows).toHaveCount(before);
+  const shown = (await (await page.request.get("/api/approvals?pageSize=200")).json()) as { items: { id: number }[] };
+
+  await page.getByRole("button", { name: `Approve all ${before} shown` }).click();
+  const dialog = page.getByRole("dialog", { name: `Approve all ${before} prospects shown?` });
+  await expect(dialog).toBeVisible();
+  state.arrived = true;
+  await expect(page.getByTestId("count-approvals")).toHaveText(String(before + 1), { timeout: 8_000 });
+  await expect(page.getByTestId("new-arrivals")).toContainText("1 new person is waiting");
+  await expect(rows).toHaveCount(before);
+  await expect(rows.filter({ hasText: LATE_PERSON })).toHaveCount(0);
+
+  const sent = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/approvals/approve-all");
+  await dialog.getByRole("button", { name: `Approve ${before}` }).click();
+  const body = (await sent).postDataJSON() as { prospectIds: number[] };
+  const ascending = (ids: readonly number[]) => [...ids].sort((x, y) => x - y);
+  expect(ascending(body.prospectIds)).toEqual(ascending(shown.items.map((item) => item.id)));
+  expect(body.prospectIds).not.toContain(LATE_ID);
+  // Once the dialog is closed the queue takes in the newcomer.
+  await expect(rows.filter({ hasText: LATE_PERSON })).toHaveCount(1);
 });
 
 test("approve with the mouse, approve with A and reject with R; the counts drop", async ({ page }) => {
@@ -213,6 +305,61 @@ test("needs review: a screenshot the app cannot serve is said in words, not show
   await expect(page.getByTestId("screenshot-thumbnail")).toHaveCount(0);
 });
 
+test("needs review: a person resolved and then held again by a later step comes back", async ({ page }) => {
+  // The browser test plays the app: the resolve is answered here, and the later hold is added to
+  // the answers of Home and of the review list. Nothing changes on the app.
+  let phase: "held" | "resolved" | "held again" = "held";
+  let target: Record<string, unknown> | undefined;
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { needsYou: { needsReview: number } };
+    const needsReview = json.needsYou.needsReview - (phase === "resolved" ? 1 : 0);
+    await route.fulfill({ response, json: { ...json, needsYou: { ...json.needsYou, needsReview } } });
+  });
+  await page.route(
+    (url) => url.pathname === "/api/review",
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { total: number; items: Record<string, unknown>[] };
+      target ??= json.items[0];
+      const items = json.items.flatMap((item) => {
+        if (item["id"] !== target?.["id"]) return [item];
+        if (phase === "resolved") return [];
+        if (phase === "held again") return [{ ...item, stage: "needs_review", reviewReason: "test: held again on a later step", invitedAt: new Date().toISOString() }];
+        return [item];
+      });
+      await route.fulfill({ response, json: { ...json, total: items.length, items } });
+    },
+  );
+  await page.route(
+    (url) => /^\/api\/prospects\/\d+\/resolve$/.test(url.pathname),
+    async (route) => {
+      phase = "resolved";
+      await route.fulfill({ json: { prospect: { ...target, stage: "invited", reviewReason: null } } });
+    },
+  );
+
+  await page.goto("/review");
+  const items = page.getByTestId("review-item");
+  await expect(items.first()).toBeVisible();
+  const before = await items.count();
+  const first = items.first();
+  const name = await first.getByRole("heading").innerText();
+  await first.getByRole("radio", { name: "Invited: wait for them to accept" }).check();
+  await first.getByRole("button", { name: "Confirm" }).click();
+  await expect(items.filter({ hasText: name })).toHaveCount(0);
+  await expect(items).toHaveCount(before - 1);
+  // Home has answered with the lower count, so the list has been asked for again without them.
+  const badgeText = before - 1 === 0 ? undefined : String(before - 1);
+  if (badgeText === undefined) await expect(page.getByTestId("count-review")).toHaveCount(0);
+  else await expect(page.getByTestId("count-review")).toHaveText(badgeText);
+
+  phase = "held again";
+  // Home is asked again every five seconds; the higher count brings the list again.
+  await expect(items.filter({ hasText: name })).toHaveCount(1, { timeout: 8_000 });
+  await expect(items.filter({ hasText: name })).toContainText("held again on a later step");
+});
+
 test("needs review: nothing is chosen until you choose; continue one with a note, reject the other", async ({ page }) => {
   await page.goto("/review");
   const before = await badge(page, "review");
@@ -280,6 +427,28 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
     await expect(page.locator(".loading, .skeleton")).toHaveCount(0);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
+  }
+
+  // Settings: the seven working-day buttons stay inside the screen, each tall enough to tap.
+  await page.goto("/settings");
+  const days = page.getByRole("group", { name: "Working days" });
+  await expect(days.getByRole("button")).toHaveCount(7);
+  const boxes = await Promise.all((await days.getByRole("button").all()).map((button) => button.boundingBox()));
+  const placed = boxes.filter((box) => box !== null);
+  expect(placed).toHaveLength(7);
+  // The group's right edge, and every button's, stay inside the section that holds them (and so the screen).
+  const edges = await days.evaluate((group) => ({
+    group: group.getBoundingClientRect().right,
+    section: group.closest("section")?.getBoundingClientRect().right ?? Number.NaN,
+    screen: window.innerWidth,
+  }));
+  const right = Math.max(...placed.map((box) => box.x + box.width));
+  expect(edges.section).toBeLessThanOrEqual(edges.screen);
+  expect(edges.group, "the working-day group ends beyond its section").toBeLessThanOrEqual(edges.section);
+  expect(right, "a working-day button ends beyond its section").toBeLessThanOrEqual(edges.section);
+  for (const box of placed) {
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.height, "a working-day button is too short to tap").toBeGreaterThanOrEqual(40);
   }
 
   const nav = page.getByRole("navigation", { name: "Main" });

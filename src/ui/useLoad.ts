@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { toApiError, type ApiError } from "./api";
 
 export type Loaded<T> =
@@ -12,32 +12,56 @@ interface Stored<T> {
   readonly error: ApiError | undefined;
 }
 
+/** The first wait before a failed first load is tried again; each further wait is twice as long. */
+const RETRY_FIRST_MS = 1_000;
+
 /**
  * Loads data for `key` and loads again whenever `key` changes or `reload()` is called. While a new
  * key loads, the answer is "loading" unless `keepPrevious` is set, in which case the last data
  * stays on screen until the new answer arrives (for screens that refresh in the background).
+ * With `retries`, a first load that fails (no data yet for this key) is tried again by itself that
+ * many times, after 1 s, 2 s, 4 s…; the error is the answer meanwhile. `reload()` starts the count again.
  */
-export function useLoad<T>(load: () => Promise<T>, key: string, { keepPrevious = false } = {}): Loaded<T> & { readonly reload: () => void } {
+export function useLoad<T>(
+  load: () => Promise<T>,
+  key: string,
+  { keepPrevious = false, retries = 0 } = {},
+): Loaded<T> & { readonly reload: () => void } {
   const [nonce, setNonce] = useState(0);
   const [stored, setStored] = useState<Stored<T> | undefined>(undefined);
   const run = useEffectEvent(load);
+  /** The key that has data, and how many automatic tries the current key has had. */
+  const tries = useRef<{ readonly key: string; readonly count: number; readonly loaded: boolean }>({ key, count: 0, loaded: false });
 
   useEffect(() => {
     let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (tries.current.key !== key) tries.current = { key, count: 0, loaded: false };
     run().then(
       (data) => {
-        if (live) setStored({ key, data, error: undefined });
+        if (!live) return;
+        tries.current = { key, count: 0, loaded: true };
+        setStored({ key, data, error: undefined });
       },
       (error: unknown) => {
-        if (live) setStored((previous) => ({ key, data: previous?.key === key ? previous.data : undefined, error: toApiError(error) }));
+        if (!live) return;
+        setStored((previous) => ({ key, data: previous?.key === key ? previous.data : undefined, error: toApiError(error) }));
+        const { count, loaded } = tries.current;
+        if (loaded || count >= retries) return;
+        tries.current = { key, count: count + 1, loaded };
+        timer = setTimeout(() => setNonce((n) => n + 1), RETRY_FIRST_MS * 2 ** count);
       },
     );
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, [key, nonce]);
+  }, [key, nonce, retries]);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
+  const reload = useCallback(() => {
+    tries.current = { ...tries.current, count: 0 };
+    setNonce((n) => n + 1);
+  }, []);
 
   const usable = stored !== undefined && (stored.key === key || keepPrevious) ? stored : undefined;
   if (usable === undefined) return { status: "loading", data: undefined, error: undefined, reload };

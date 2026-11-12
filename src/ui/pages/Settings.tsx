@@ -133,12 +133,16 @@ const PROVIDER_LABEL: Readonly<Record<AiProvider, string>> = {
 // ------------------------------------------------------------ the page
 
 export function Settings() {
-  const { settings, refreshSettings } = useAppData();
+  const { settings, settingsError, refreshSettings } = useAppData();
   if (settings === undefined) {
     return (
       <>
         <PageHeader title="Settings" />
-        <div className="skeleton mt-6 h-96 w-full" />
+        {settingsError === undefined ? (
+          <div className="skeleton mt-6 h-96 w-full" />
+        ) : (
+          <LoadError what="the settings" message={settingsError.message} onRetry={refreshSettings} />
+        )}
       </>
     );
   }
@@ -232,9 +236,9 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               </datalist>
               <FieldError message={errors["timeZone"]} />
             </div>
-            <fieldset>
+            <fieldset className="min-w-0">
               <legend className="font-medium">Working days</legend>
-              <div className="join mt-1.5">
+              <div className="mt-1.5 grid max-w-md grid-cols-7 gap-1">
                 {DAYS.map((day, i) => {
                   const iso = i + 1;
                   const on = form.workingDays.includes(iso);
@@ -243,7 +247,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                       key={day}
                       type="button"
                       aria-pressed={on}
-                      className={`btn join-item btn-sm ${on ? "btn-neutral" : "bg-base-100"}`}
+                      className={`btn min-w-0 px-0 ${on ? "btn-neutral" : "border-base-300 bg-base-100"}`}
                       onClick={() => change({ workingDays: on ? form.workingDays.filter((d) => d !== iso) : [...form.workingDays, iso] }, "workingDays")}
                     >
                       {day}

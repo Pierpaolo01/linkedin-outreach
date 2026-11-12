@@ -6,6 +6,8 @@ import { useLoad } from "./useLoad";
 /** How often the shell asks the app for Home (session, safety stop, counts). */
 const POLL_MS = 5_000;
 const FALLBACK_TIME_ZONE = "Europe/Rome";
+/** How many times a failed first load of Settings is tried again by itself, with a growing wait. */
+const SETTINGS_RETRIES = 3;
 
 export interface AppData {
   /** The latest Home answer, kept on screen while the next one loads. */
@@ -13,6 +15,8 @@ export interface AppData {
   /** Set while the app cannot be reached or answered with an error. */
   readonly homeError: ApiError | undefined;
   readonly settings: Settings | undefined;
+  /** Set while Settings could not be loaded (it is tried again by itself a few times). */
+  readonly settingsError: ApiError | undefined;
   /** The app's time zone; every time on screen is shown in it. */
   readonly timeZone: string;
   /** Ask for Home again now (after a decision, so the counts and banners update at once). */
@@ -25,7 +29,7 @@ const AppDataContext = createContext<AppData | null>(null);
 
 export function AppDataProvider({ children }: { readonly children: ReactNode }) {
   const home = useLoad(getHome, "home", { keepPrevious: true });
-  const settings = useLoad(getSettings, "settings", { keepPrevious: true });
+  const settings = useLoad(getSettings, "settings", { keepPrevious: true, retries: SETTINGS_RETRIES });
   const { reload } = home;
 
   useEffect(() => {
@@ -38,11 +42,12 @@ export function AppDataProvider({ children }: { readonly children: ReactNode }) 
       home: home.data,
       homeError: home.error,
       settings: settings.data,
+      settingsError: settings.error,
       timeZone: settings.data?.timeZone ?? FALLBACK_TIME_ZONE,
       refresh: reload,
       refreshSettings: settings.reload,
     }),
-    [home.data, home.error, settings.data, reload, settings.reload],
+    [home.data, home.error, settings.data, settings.error, reload, settings.reload],
   );
   return <AppDataContext value={value}>{children}</AppDataContext>;
 }
