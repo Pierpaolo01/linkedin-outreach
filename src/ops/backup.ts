@@ -141,13 +141,24 @@ async function makeBackup(db: Database.Database, paths: BackupPaths, now: Date, 
 }
 
 /** One backup at a time per folder, so two callers never race on the same file. */
-const running = new Map<string, Promise<unknown>>();
+const running = new Map<string, Promise<BackupOutcome>>();
 
-function serialised<T>(paths: BackupPaths, work: () => Promise<T>): Promise<T> {
+/**
+ * Runs `work` after any backup already running on the same folder. Whatever `work`
+ * throws becomes a `failed` outcome, so the promise returned and the one kept in
+ * `running` never reject: no rejection can go unobserved and end the process.
+ */
+function serialised(paths: BackupPaths, work: () => Promise<BackupOutcome>): Promise<BackupOutcome> {
   const previous = running.get(paths.backups) ?? Promise.resolve();
-  const next = previous.then(work, work);
+  const next = previous.then(async (): Promise<BackupOutcome> => {
+    try {
+      return await work();
+    } catch (error) {
+      return { kind: "failed", error: message(error) };
+    }
+  });
   running.set(paths.backups, next);
-  void next.finally(() => {
+  void next.then(() => {
     if (running.get(paths.backups) === next) running.delete(paths.backups);
   });
   return next;
@@ -171,7 +182,7 @@ export function backupIfDue(
   });
 }
 
-/** A fresh backup now, replacing today's once the new copy checks out (`npm run backup`, `npm run update`). */
+/** A fresh backup now, replacing today's once the new copy checks out (`npm run backup`, `npm run update`). Never throws. */
 export function backupNow(
   db: Database.Database,
   paths: BackupPaths,

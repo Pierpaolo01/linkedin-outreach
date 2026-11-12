@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -137,6 +147,70 @@ describe("backupNow", () => {
     expect((await backupNow(sqlite, paths, NOW, { timeZone: TZ })).kind).toBe("failed");
     expect(marker(today)).toBe("this morning");
     expect(readdirSync(paths.backups)).toEqual(["app-2026-11-12.db"]);
+  });
+});
+
+/** Runs `work`, then lets Node's unhandled-rejection check run, and returns its result with every rejection Node reported meanwhile. */
+async function withRejectionWatch<T>(work: () => Promise<T>): Promise<{ result: T; unhandled: unknown[] }> {
+  const unhandled: unknown[] = [];
+  const listener = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", listener);
+  try {
+    const result = await work();
+    for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    return { result, unhandled };
+  } finally {
+    process.off("unhandledRejection", listener);
+  }
+}
+
+describe("a backup that fails", () => {
+  it("reports the copy step throwing as failed, and leaves no rejected promise behind", async () => {
+    sqlite.close(); // the copy (db.backup) now throws: the connection is not open
+    const { result, unhandled } = await withRejectionWatch(() => backupIfDue(sqlite, paths, NOW, { timeZone: TZ }));
+    sqlite = new Database(paths.db);
+
+    expect(result.kind).toBe("failed");
+    expect(unhandled).toEqual([]);
+    expect(readdirSync(paths.backups)).toEqual([]);
+  });
+
+  it("reports a filesystem error after the copy as failed from backupIfDue, with no unhandled rejection", async () => {
+    // A backup name that cannot be read: listing the old backups throws once the copy is in place.
+    symlinkSync(join(dir, "nowhere"), join(paths.backups, "app-2026-11-01.db"));
+
+    const { result, unhandled } = await withRejectionWatch(() => backupIfDue(sqlite, paths, NOW, { timeZone: TZ }));
+
+    expect(result.kind).toBe("failed");
+    expect(result.kind === "failed" && result.error).toMatch(/ENOENT/);
+    expect(unhandled).toEqual([]);
+  });
+
+  it("reports a filesystem error after the copy as failed from backupNow, with no unhandled rejection", async () => {
+    symlinkSync(join(dir, "nowhere"), join(paths.backups, "app-2026-11-01.db"));
+
+    const { result, unhandled } = await withRejectionWatch(() => backupNow(sqlite, paths, NOW, { timeZone: TZ }));
+
+    expect(result.kind).toBe("failed");
+    expect(unhandled).toEqual([]);
+  });
+
+  it("reports an unusable time zone as failed instead of throwing", async () => {
+    const { result, unhandled } = await withRejectionWatch(() =>
+      backupIfDue(sqlite, paths, NOW, { timeZone: "Not/AZone" }),
+    );
+    expect(result.kind).toBe("failed");
+    expect(unhandled).toEqual([]);
+  });
+
+  it("lets the next backup run after one failed", async () => {
+    const link = join(paths.backups, "app-2026-11-01.db");
+    symlinkSync(join(dir, "nowhere"), link);
+    expect((await backupNow(sqlite, paths, NOW, { timeZone: TZ })).kind).toBe("failed");
+    rmSync(link);
+    expect((await backupNow(sqlite, paths, NOW, { timeZone: TZ })).kind).toBe("created");
   });
 });
 

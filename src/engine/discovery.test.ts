@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { AiUnavailable } from "../ai/types";
-import { discoveryRuns, people, prospects } from "../db/schema";
+import { campaigns, discoveryRuns, people, prospects } from "../db/schema";
+import { EMPTY_LOADS_TO_PAUSE } from "./discovery";
 import type { MemberSpec } from "../linkedin/fake/world";
 import {
   actionRows,
@@ -228,6 +229,81 @@ describe("how much discovery runs", () => {
     kit.db.update(prospects).set({ stage: "rejected" }).where(eq(prospects.id, first?.prospect.id ?? 0)).run();
     expect((await next()).did).toContain("discovery");
     expect(campaignProspects(c).filter((row) => row.prospect.stage !== "rejected")).toHaveLength(3);
+  });
+
+  it("keeps a last page that the target cut short and loads it again when there is room, until every card was considered", async () => {
+    const c = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [SEARCH], targetProspectCount: 3 });
+    const ids = members(10);
+    kit.world.setSearchResults(SEARCH, ids);
+    const open = () => campaignProspects(c).filter((row) => row.prospect.stage !== "rejected");
+    const rejectAll = () => kit.db.update(prospects).set({ stage: "rejected" }).where(eq(prospects.campaignId, c)).run();
+
+    await next();
+    expect(open().map((row) => row.person.publicId)).toEqual(ids.slice(0, 3));
+    // Seven people on the page were never looked at: the page is not done, the search not exhausted.
+    expect(runs(c)).toMatchObject([{ cursor: "1", exhausted: false }]);
+
+    // All three rejected: the campaign does not complete, the same page is loaded again.
+    rejectAll();
+    expect((await next()).did).toContain("discovery");
+    expect(open().map((row) => row.person.publicId)).toEqual(ids.slice(3, 6));
+    expect(runs(c)).toMatchObject([{ cursor: "1", exhausted: false }]);
+
+    rejectAll();
+    await next();
+    expect(open().map((row) => row.person.publicId)).toEqual(ids.slice(6, 9));
+    expect(runs(c)).toMatchObject([{ cursor: "1", exhausted: false }]);
+
+    rejectAll();
+    await next();
+    expect(open().map((row) => row.person.publicId)).toEqual(ids.slice(9));
+    expect(runs(c)).toMatchObject([{ cursor: "2", exhausted: true }]);
+    expect(campaignProspects(c)).toHaveLength(10);
+    expect(pageLoads("search")).toBe(4);
+  });
+
+  it("moves to the next page when the target is reached by the last card that could be taken", async () => {
+    const c = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [SEARCH], targetProspectCount: 2 });
+    const [connection] = members(1, { degree: 1 });
+    const fresh = members(2);
+    kit.world.setSearchResults(SEARCH, [...fresh, String(connection)]);
+    await next();
+    expect(campaignProspects(c)).toHaveLength(2);
+    // The third card is skipped by a rule, so every card on the page was considered.
+    expect(runs(c)).toMatchObject([{ cursor: "2", exhausted: true }]);
+  });
+
+  it("does not count a suggestions load cut short by a full target as one that brought nobody new", async () => {
+    const lowered = createKit({
+      ai,
+      wrap: (driver) => ({
+        ...driver,
+        listRecommendations: async () => {
+          // The user lowers the target to what the campaign already holds while the page loads.
+          lowered.db.update(campaigns).set({ targetProspectCount: 0 }).run();
+          return driver.listRecommendations();
+        },
+      }),
+    });
+    try {
+      lowered.settings({
+        actionGapSeconds: { min: 1, max: 1 },
+        breaks: { everyActionsMin: 1000, everyActionsMax: 1000, minutesMin: 1, minutesMax: 1 },
+      });
+      const c = addCampaign(lowered, { status: "running", discoverySource: "recommendations", targetProspectCount: 5 });
+      for (let i = 0; i < 3; i++) {
+        lowered.world.addMember({ publicId: `lowered-${i}`, memberId: `ACoALowered${i}`, fullName: `Lowered Person ${i}`, degree: 2 });
+      }
+      lowered.world.setRecommendations([{ title: "People you may know", publicIds: ["lowered-0", "lowered-1", "lowered-2"] }]);
+      for (let i = 0; i < EMPTY_LOADS_TO_PAUSE; i++) {
+        expect((await next(lowered)).did).toContain("discovery");
+        lowered.db.update(campaigns).set({ targetProspectCount: 5 }).run();
+      }
+      const [run] = lowered.db.select().from(discoveryRuns).where(eq(discoveryRuns.campaignId, c)).all();
+      expect(run).toMatchObject({ emptyLoads: 0, pausedUntil: null, exhausted: false });
+    } finally {
+      lowered.close();
+    }
   });
 
   it("spends the discovery page budget, shared by search and recommendations pages", async () => {

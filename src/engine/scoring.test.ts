@@ -433,11 +433,32 @@ describe("campaign status", () => {
       expect(events(kit)).toContain("Test campaign completed: nobody is left to approve and there is nothing more to find");
     });
 
-    it("completes once its target number of prospects is reached", async () => {
+    it("completes once its target number of prospects is reached and no sequence is under way", async () => {
       const c = addCampaign(kit, { status: "awaiting_approval", discoverySource: "search", sourceUrls: [SEARCH], targetProspectCount: 1 });
-      found(c, {}, { stage: "invited" });
+      found(c, {}, { stage: "stopped" });
       await step(kit);
       expect(statusOf(c)).toBe("completed");
+    });
+
+    it("runs once the rest of a batch with someone approved during finding is rejected", async () => {
+      const c = collecting({ batchSize: 3 });
+      // The user approved one while the campaign was still finding; two wait for approval.
+      found(c, {}, { stage: "approved", approvedAt: kit.clock.now() });
+      const waiting = [found(c, {}, { stage: "pending_approval" }), found(c, {}, { stage: "pending_approval" })];
+      expect((await step(kit)).did).toBe("campaign: Test campaign awaiting approval");
+
+      for (const { prospectId } of waiting) kit.db.update(prospects).set({ stage: "rejected" }).where(eq(prospects.id, prospectId)).run();
+      expect((await step(kit)).did).toBe("campaign: Test campaign running");
+      expect(statusOf(c)).toBe("running");
+      expect(events(kit)).toContain("Test campaign is running: nobody is left to approve and 1 prospect is approved");
+    });
+
+    it("runs when nobody waits and a prospect is further along than approved", async () => {
+      const c = collecting({ status: "awaiting_approval" });
+      found(c, {}, { stage: "invited", approvedAt: kit.clock.now() });
+      found(c, {}, { stage: "rejected" });
+      await step(kit);
+      expect(statusOf(c)).toBe("running");
     });
 
     it("stays awaiting approval while someone waits for approval", async () => {

@@ -6,7 +6,7 @@
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, type SQL } from "drizzle-orm";
 import type { Db } from "../db/index";
 import { actions, campaigns, people, prospects, type CampaignStatus, type ProspectStage } from "../db/schema";
-import { logEvent, type Conn } from "../engine/ledger";
+import { logEvent, stepKey, type Conn, type Step } from "../engine/ledger";
 import { assertMove, canMove, isClosed, TRANSITIONS } from "../engine/lifecycle";
 import { templateValues } from "../engine/steps";
 import { conflict, done, notFound, offsetOf, type Outcome, type Page, type Paging } from "./results";
@@ -329,10 +329,73 @@ export function approveAll(
 
 const FROM_REVIEW = TRANSITIONS.needs_review;
 
+type SentColumn = "invitedAt" | "acceptanceObservedAt" | "firstMessageSentAt" | "followUpSentAt";
+
+/** The step the engine takes next from each stage the user may resume a prospect at. */
+const STEP_OF_STAGE = { approved: "invite", invited: "withdraw", accepted: "message1", message_sent: "followup" } as const satisfies Partial<Record<ProspectStage, Step>>;
+
+/** The steps already sent by the time a prospect is in each of those stages. */
+const SENT_BEFORE = { approved: [], invited: ["invite"], accepted: ["invite"], message_sent: ["invite", "message1"] } as const satisfies Record<
+  keyof typeof STEP_OF_STAGE,
+  readonly Step[]
+>;
+
+/** Where the time a step was sent is kept on the prospect. */
+const SENT_AT = { invite: "invitedAt", message1: "firstMessageSentAt" } as const satisfies Partial<Record<Step, SentColumn>>;
+
+/** The time each of those stages was reached, which the engine's picks and the statistics read. */
+const REACHED_AT = { invited: "invitedAt", accepted: "acceptanceObservedAt", message_sent: "firstMessageSentAt" } as const satisfies Partial<Record<ProspectStage, SentColumn>>;
+
+const UNKNOWN_SEND =
+  "The app could not tell whether this was sent. Check LinkedIn: if it was sent, continue from the next step; if not, stop the sequence.";
+const ALREADY_SENT = "This step was already sent";
+
+const isResumeStage = (stage: ProspectStage): stage is keyof typeof STEP_OF_STAGE => stage in STEP_OF_STAGE;
+
+function stepRow(db: Conn, step: Step, prospectId: number) {
+  return db.select().from(actions).where(eq(actions.idempotencyKey, stepKey(step, prospectId))).get();
+}
+
+/**
+ * Makes the ledger agree with a prospect resumed at `stage`. Its own step's row: unknown or in
+ * progress (maybe sent) or done (sent) refuses, with nothing written; planned or failed (not sent)
+ * goes back to planned with its attempts and error cleared, so the step can be claimed again. A step
+ * before `stage` whose result was unknown is what the user just confirmed as sent: done, with its
+ * send time when none is stored. Returns the prospect's times to set, or why it refused.
+ */
+function resumeLedger(
+  tx: Conn,
+  prospect: ProspectRow,
+  stage: keyof typeof STEP_OF_STAGE,
+  now: Date,
+): { readonly ok: true; readonly times: Partial<Record<SentColumn, Date>> } | { readonly ok: false; readonly message: string } {
+  const own = stepRow(tx, STEP_OF_STAGE[stage], prospect.id);
+  if (own?.status === "unknown" || own?.status === "in_progress") return { ok: false, message: UNKNOWN_SEND };
+  if (own?.status === "done") return { ok: false, message: ALREADY_SENT };
+  if (own !== undefined) {
+    tx.update(actions).set({ status: "planned", attempts: 0, error: null, errorKind: null }).where(eq(actions.id, own.id)).run();
+  }
+
+  const times: Partial<Record<SentColumn, Date>> = {};
+  for (const step of SENT_BEFORE[stage]) {
+    const row = stepRow(tx, step, prospect.id);
+    if (row?.status !== "unknown") continue;
+    tx.update(actions).set({ status: "done", finishedAt: now }).where(eq(actions.id, row.id)).run();
+    const column = SENT_AT[step];
+    if (prospect[column] === null) times[column] = row.startedAt ?? now;
+  }
+  if (stage !== "approved") {
+    const column = REACHED_AT[stage];
+    if (prospect[column] === null && times[column] === undefined) times[column] = now;
+  }
+  return { ok: true, times };
+}
+
 /**
  * The user's decision on a prospect in needs review: reject, stop, or back to the stage it should
  * continue from. A closed stage is stamped `closedAt`; any other is due at once, so the engine
- * looks at it on its next tick. The note goes into the activity log.
+ * looks at it on its next tick, and the ledger is made to agree with it (`resumeLedger`). The
+ * note goes into the activity log.
  */
 export function resolveReview(
   db: Db,
@@ -351,10 +414,12 @@ export function resolveReview(
     }
     assertMove(row.prospect.stage, stage);
     const closed = isClosed(stage);
+    const ledger = isResumeStage(stage) ? resumeLedger(tx, row.prospect, stage, now) : { ok: true as const, times: {} };
+    if (!ledger.ok) return conflict(ledger.message);
     // Approving is the user's own decision here, and the engine invites only a prospect with an approval time.
     const approvedAt = stage === "approved" ? (row.prospect.approvedAt ?? now) : row.prospect.approvedAt;
     tx.update(prospects)
-      .set({ stage, reviewReason: null, closedAt: closed ? now : null, nextActionAt: closed ? null : now, approvedAt })
+      .set({ stage, reviewReason: null, closedAt: closed ? now : null, nextActionAt: closed ? null : now, approvedAt, ...ledger.times })
       .where(eq(prospects.id, id))
       .run();
     const noted = note === null || note.trim() === "" ? "" : `. Note: ${note.trim()}`;

@@ -70,6 +70,24 @@ function readyCounts(db: Conn, campaignId: number): { readonly pending: number; 
   return { pending, ready: pending + stageCount(db, campaignId, "approved") };
 }
 
+/** Stages of a prospect the user approved whose sequence is not over: approved or further along. */
+const APPROVED_ONWARD = ["approved", "invited", "accepted", "message_sent", "follow_up_sent"] as const satisfies readonly ProspectStage[];
+
+function approvedOnward(db: Conn, campaignId: number): number {
+  return db.select({ n: count() }).from(prospects).where(and(eq(prospects.campaignId, campaignId), inArray(prospects.stage, [...APPROVED_ONWARD]))).get()?.n ?? 0;
+}
+
+/**
+ * Where a campaign `awaiting_approval` goes, or null while someone still waits for approval:
+ * `running` when someone is approved or further along, else `finding` when more may come, else `completed`.
+ */
+function awaitingMove(db: Conn, campaign: CampaignRow): { readonly to: CampaignStatus; readonly approved: number } | null {
+  if (stageCount(db, campaign.id, "pending_approval") > 0) return null;
+  const approved = approvedOnward(db, campaign.id);
+  if (approved > 0) return { to: "running", approved };
+  return { to: moreToCome(db, campaign) ? "finding" : "completed", approved };
+}
+
 /**
  * More prospects may still come: some found are still to be scored, or the target is not reached
  * and a source may bring more, now or after a wait (recommendations are never exhausted for good).
@@ -83,8 +101,9 @@ function moreToCome(db: Conn, campaign: CampaignRow): boolean {
  * A campaign in `finding` moves on once its first batch is ready (prospects waiting for approval, or
  * approved already, reach the batch size), or once nothing is left to discover or score now and at
  * least one is ready. With none ready and nothing that can ever come it is completed: nobody matched.
- * A campaign `awaiting_approval` whose prospects were all decided without an approval (rejected)
- * goes back to finding when more may come, else it is completed.
+ * A campaign `awaiting_approval` with nobody left waiting for approval runs when someone is approved
+ * or further along (the user may approve during finding, then reject the rest); when all were
+ * decided without an approval (rejected) it goes back to finding when more may come, else it is completed.
  */
 function campaignStatusWork(db: Conn, now: Date): LocalWork | null {
   const finding = db.select().from(campaigns).where(eq(campaigns.status, "finding")).orderBy(asc(campaigns.id)).all();
@@ -107,16 +126,15 @@ function campaignStatusWork(db: Conn, now: Date): LocalWork | null {
   }
   const awaiting = db.select().from(campaigns).where(eq(campaigns.status, "awaiting_approval")).orderBy(asc(campaigns.id)).all();
   for (const campaign of awaiting) {
-    if (readyCounts(db, campaign.id).ready > 0) continue;
-    return moreToCome(db, campaign)
-      ? { kind: "campaign_status", campaign, from: "awaiting_approval", to: "finding", message: `${campaign.name}: nobody is waiting for your approval; finding more people` }
-      : {
-          kind: "campaign_status",
-          campaign,
-          from: "awaiting_approval",
-          to: "completed",
-          message: `${campaign.name} completed: nobody is left to approve and there is nothing more to find`,
-        };
+    const going = awaitingMove(db, campaign);
+    if (going === null) continue;
+    const message =
+      going.to === "running"
+        ? `${campaign.name} is running: nobody is left to approve and ${going.approved} prospect${going.approved === 1 ? " is" : "s are"} approved`
+        : going.to === "finding"
+          ? `${campaign.name}: nobody is waiting for your approval; finding more people`
+          : `${campaign.name} completed: nobody is left to approve and there is nothing more to find`;
+    return { kind: "campaign_status", campaign, from: "awaiting_approval", to: going.to, message };
   }
   return null;
 }
@@ -229,8 +247,8 @@ export async function runLocalWork(ctx: ScoringContext, ai: Ai | null, work: Loc
     case "campaign_status": {
       const at = clock.now();
       db.transaction((tx) => {
-        // Leaving `awaiting_approval` only while still nobody waits for approval or is approved.
-        if (work.from === "awaiting_approval" && readyCounts(tx, work.campaign.id).ready > 0) return;
+        // Leaving `awaiting_approval` only for where the campaign still goes now: the user may have acted meanwhile.
+        if (work.from === "awaiting_approval" && awaitingMove(tx, work.campaign)?.to !== work.to) return;
         const changed = tx
           .update(campaigns)
           .set({ status: work.to, updatedAt: at })

@@ -174,19 +174,45 @@ function pageOf(run: RunRow): number {
   return Number.isInteger(page) && page >= 1 ? page : 1;
 }
 
+/** A stored person who may not become a prospect of the campaign: marked do not contact, ever contacted, active anywhere, or already in it. */
+function excluded(db: Conn, campaignId: number, person: typeof people.$inferSelect): boolean {
+  if (person.doNotContact || person.contactedAt !== null || person.contactedProspectId !== null) return true;
+  const inCampaign = db
+    .select({ id: prospects.id })
+    .from(prospects)
+    .where(and(eq(prospects.personId, person.id), eq(prospects.campaignId, campaignId)))
+    .get();
+  const activeAnywhere = db
+    .select({ id: prospects.id })
+    .from(prospects)
+    .where(and(eq(prospects.personId, person.id), notInArray(prospects.stage, [...CLOSED_STAGES])))
+    .get();
+  return inCampaign !== undefined || activeAnywhere !== undefined;
+}
+
+/** What `takeCards` did with a page: how many prospects it created, and whether it considered every card. */
+interface Taken {
+  readonly created: number;
+  /** False when the campaign's target stopped it with a card left that could have been taken. */
+  readonly complete: boolean;
+}
+
 /**
  * Turns cards into found prospects of the campaign, in one transaction. Skips a 1st-degree card, a
  * person marked do not contact or ever contacted, one with an active prospect anywhere, and one
- * already in this campaign. Stops at the campaign's target number. Returns how many it created.
+ * already in this campaign. Stops at the campaign's target number; the page is then complete only
+ * when every card left would have been skipped anyway.
  */
-function takeCards(db: Conn, campaign: CampaignRow, cards: readonly Card[], now: Date): number {
+function takeCards(db: Conn, campaign: CampaignRow, cards: readonly Card[], now: Date): Taken {
   let room = campaign.targetProspectCount === null ? Number.POSITIVE_INFINITY : campaign.targetProspectCount - notRejected(db, campaign.id);
   let created = 0;
   for (const card of cards) {
-    if (room <= 0) break;
     if (card.degree === 1) continue;
+    const stored = db.select().from(people).where(eq(people.publicId, card.publicId)).get();
+    if (stored !== undefined && excluded(db, campaign.id, stored)) continue;
+    if (room <= 0) return { created, complete: false };
     const person =
-      db.select().from(people).where(eq(people.publicId, card.publicId)).get() ??
+      stored ??
       db
         .insert(people)
         .values({
@@ -203,23 +229,11 @@ function takeCards(db: Conn, campaign: CampaignRow, cards: readonly Card[], now:
         })
         .returning()
         .get();
-    if (person.doNotContact || person.contactedAt !== null || person.contactedProspectId !== null) continue;
-    const inCampaign = db
-      .select({ id: prospects.id })
-      .from(prospects)
-      .where(and(eq(prospects.personId, person.id), eq(prospects.campaignId, campaign.id)))
-      .get();
-    const activeAnywhere = db
-      .select({ id: prospects.id })
-      .from(prospects)
-      .where(and(eq(prospects.personId, person.id), notInArray(prospects.stage, [...CLOSED_STAGES])))
-      .get();
-    if (inCampaign !== undefined || activeAnywhere !== undefined) continue;
     db.insert(prospects).values({ campaignId: campaign.id, personId: person.id, stage: "found", foundAt: now }).run();
     created += 1;
     room -= 1;
   }
-  return created;
+  return { created, complete: true };
 }
 
 function sourceWords(ref: SourceRef): string {
@@ -231,6 +245,8 @@ function sourceWords(ref: SourceRef): string {
  * prospects. Recommendations have no cursor: after three loads in a row that bring nobody new they
  * wait until the start of the next day in the app's time zone, since LinkedIn's suggestions
  * change. A search keeps the next page number in the cursor and is exhausted after its last page.
+ * A page is done only when every card on it was considered: one the campaign's target cut short
+ * keeps the cursor on it (and does not count as a load with nobody new).
  * LinkedIn's monthly search cap pauses the search until the first instant of next month; nothing
  * else stops for it.
  */
@@ -273,25 +289,29 @@ export async function discoveryPageStep(ctx: StepContext, campaign: CampaignRow,
     const fresh = tx.select().from(discoveryRuns).where(eq(discoveryRuns.id, run.id)).get() ?? run;
     // The target as it is now: the user may have changed it while the page loaded.
     const current = tx.select().from(campaigns).where(eq(campaigns.id, campaign.id)).get() ?? campaign;
-    const n = takeCards(tx, current, cards, at);
-    const emptyLoads = n > 0 ? 0 : fresh.emptyLoads + 1;
+    const { created: n, complete } = takeCards(tx, current, cards, at);
+    // A page the target cut short had someone new on it: not an empty load, and not done. Its
+    // search page is loaded again when there is room; those already stored are skipped then.
+    const emptyLoads = n > 0 || !complete ? 0 : fresh.emptyLoads + 1;
     const quietToday = url === null && emptyLoads >= EMPTY_LOADS_TO_PAUSE;
-    const exhausted = url !== null && !hasNextPage;
+    const exhausted = url !== null && complete && !hasNextPage;
     tx.update(discoveryRuns)
       .set({
         emptyLoads: quietToday ? 0 : emptyLoads,
         exhausted,
-        cursor: url === null ? null : String(page + 1),
+        cursor: url === null ? null : String(complete ? page + 1 : page),
         ...(quietToday ? { pausedUntil: startOfNextDay(ctx.settings.timeZone, at) } : {}),
         updatedAt: at,
       })
       .where(eq(discoveryRuns.id, run.id))
       .run();
-    const more = exhausted
-      ? `; ${sourceWords(ref)} has nothing more to show`
-      : quietToday
-        ? "; no new people in LinkedIn's suggestions today; looks again tomorrow"
-        : "";
+    const more = !complete
+      ? "; the target is reached, the rest of this page waits for room"
+      : exhausted
+        ? `; ${sourceWords(ref)} has nothing more to show`
+        : quietToday
+          ? "; no new people in LinkedIn's suggestions today; looks again tomorrow"
+          : "";
     logEvent(tx, { campaignId: campaign.id, message: `Discovery for ${campaign.name}: ${n} new prospect${n === 1 ? "" : "s"} from ${cards.length} cards (${sourceWords(ref)})${more}` }, at);
     return n;
   });

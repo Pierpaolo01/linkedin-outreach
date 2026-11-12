@@ -12,6 +12,16 @@ import {
   setDoNotContact,
 } from "./prospects";
 import { openTestDb, seedCampaign, seedPerson, seedPersonProspect, seedProspect, T0, type TestDb } from "./testSeed";
+import {
+  actionByKey,
+  createKit,
+  prospect as engineProspect,
+  runUntil,
+  seedAccepted,
+  seedCampaign as engineCampaign,
+  step,
+  type Kit,
+} from "../engine/testKit";
 
 const LATER = new Date(T0.getTime() + 60_000);
 const ALL = { page: 1, pageSize: 50 };
@@ -340,6 +350,137 @@ describe("resolveReview", () => {
       kind: "conflict",
       message: "Only a prospect in needs review can be resolved; this one is invited",
     });
+  });
+
+  describe("the ledger row of the step it continues from", () => {
+    const STARTED = new Date(T0.getTime() - 3_600_000);
+    const held = (values: Partial<typeof prospects.$inferInsert> = {}) =>
+      seedPersonProspect(t.db, seedCampaign(t.db, { status: "running" }), 1, "needs_review", { approvedAt: T0, ...values }).prospectId;
+    function stepRow(prospectId: number, step: string, status: (typeof actions.$inferInsert)["status"], values: Partial<typeof actions.$inferInsert> = {}) {
+      t.db
+        .insert(actions)
+        .values({ type: step === "invite" ? "invite" : step === "withdraw" ? "withdraw" : "message", prospectId, status, idempotencyKey: `${step}:${prospectId}`, startedAt: STARTED, ...values })
+        .run();
+    }
+    const row = (key: string) => t.db.select().from(actions).where(eq(actions.idempotencyKey, key)).get();
+    const UNKNOWN = "The app could not tell whether this was sent. Check LinkedIn: if it was sent, continue from the next step; if not, stop the sequence.";
+
+    it.each([
+      ["approved", "invite"],
+      ["accepted", "message1"],
+      ["message_sent", "followup"],
+      ["invited", "withdraw"],
+    ] as const)("resolved to %s, puts a %s row known not sent back to planned with no attempts and no error", (stage, step) => {
+      const prospectId = held();
+      stepRow(prospectId, step, "planned", { attempts: 3, error: "timed out", errorKind: "timeout_before_effect", finishedAt: T0 });
+
+      expect(resolveReview(t.db, prospectId, { stage, note: null }, LATER)).toMatchObject({ ok: true, value: { stage } });
+      expect(row(`${step}:${prospectId}`)).toMatchObject({ status: "planned", attempts: 0, error: null, errorKind: null });
+    });
+
+    it("puts a failed row back to planned the same way", () => {
+      const prospectId = held();
+      stepRow(prospectId, "message1", "failed", { attempts: 2, error: "send failed", errorKind: "unexpected" });
+
+      expect(resolveReview(t.db, prospectId, { stage: "accepted", note: null }, LATER).ok).toBe(true);
+      expect(row(`message1:${prospectId}`)).toMatchObject({ status: "planned", attempts: 0, error: null, errorKind: null });
+    });
+
+    it.each(["unknown", "in_progress"] as const)("refuses to re-arm a step whose row is %s, and changes nothing", (status) => {
+      const prospectId = held();
+      stepRow(prospectId, "message1", status, { attempts: 1 });
+
+      expect(resolveReview(t.db, prospectId, { stage: "accepted", note: null }, LATER)).toEqual({ ok: false, kind: "conflict", message: UNKNOWN });
+      expect(prospect(prospectId).stage).toBe("needs_review");
+      expect(row(`message1:${prospectId}`)).toMatchObject({ status, attempts: 1 });
+      expect(messages()).toEqual([]);
+    });
+
+    it("refuses a step that was already sent", () => {
+      const prospectId = held();
+      stepRow(prospectId, "invite", "done", { attempts: 1 });
+
+      expect(resolveReview(t.db, prospectId, { stage: "approved", note: null }, LATER)).toEqual({ ok: false, kind: "conflict", message: "This step was already sent" });
+      expect(prospect(prospectId).stage).toBe("needs_review");
+    });
+
+    it("resolved past a first message of unknown result, takes it as sent: the row is done and the send time set", () => {
+      const prospectId = held({ invitedAt: T0, acceptanceObservedAt: T0 });
+      stepRow(prospectId, "invite", "done", { attempts: 1 });
+      stepRow(prospectId, "message1", "unknown", { attempts: 1 });
+
+      expect(resolveReview(t.db, prospectId, { stage: "message_sent", note: null }, LATER)).toMatchObject({ ok: true, value: { stage: "message_sent", firstMessageSentAt: STARTED } });
+      expect(row(`message1:${prospectId}`)).toMatchObject({ status: "done" });
+      expect(row(`invite:${prospectId}`)).toMatchObject({ status: "done" });
+    });
+
+    it("resolved past an invite of unknown result, takes it as sent and keeps a send time already there", () => {
+      const prospectId = held({ invitedAt: T0 });
+      stepRow(prospectId, "invite", "unknown", { attempts: 1 });
+
+      expect(resolveReview(t.db, prospectId, { stage: "accepted", note: null }, LATER)).toMatchObject({ ok: true, value: { invitedAt: T0 } });
+      expect(row(`invite:${prospectId}`)).toMatchObject({ status: "done" });
+    });
+
+    it("resolved to invited past an invite of unknown result, sets the invite time from the claim", () => {
+      const prospectId = held();
+      stepRow(prospectId, "invite", "unknown", { attempts: 1 });
+
+      expect(resolveReview(t.db, prospectId, { stage: "invited", note: null }, LATER)).toMatchObject({ ok: true, value: { invitedAt: STARTED } });
+      expect(row(`invite:${prospectId}`)).toMatchObject({ status: "done" });
+    });
+  });
+
+  describe("the time of the stage it continues from", () => {
+    it.each([
+      ["invited", "invitedAt"],
+      ["accepted", "acceptanceObservedAt"],
+      ["message_sent", "firstMessageSentAt"],
+    ] as const)("resolved to %s, sets %s to now when it is empty", (stage, field) => {
+      const { prospectId } = seedPersonProspect(t.db, seedCampaign(t.db, { status: "running" }), 1, "needs_review", { approvedAt: T0 });
+
+      expect(resolveReview(t.db, prospectId, { stage, note: null }, LATER)).toMatchObject({ ok: true, value: { [field]: LATER } });
+    });
+
+    it.each([
+      ["invited", "invitedAt"],
+      ["accepted", "acceptanceObservedAt"],
+      ["message_sent", "firstMessageSentAt"],
+    ] as const)("resolved to %s, keeps %s when it is already set", (stage, field) => {
+      const { prospectId } = seedPersonProspect(t.db, seedCampaign(t.db, { status: "running" }), 1, "needs_review", { approvedAt: T0, [field]: T0 });
+
+      expect(resolveReview(t.db, prospectId, { stage, note: null }, LATER)).toMatchObject({ ok: true, value: { [field]: T0 } });
+    });
+  });
+});
+
+describe("resolveReview with the engine", () => {
+  let kit: Kit;
+  beforeEach(() => {
+    kit = createKit();
+    kit.settings({
+      actionGapSeconds: { min: 1, max: 1 },
+      breaks: { everyActionsMin: 1000, everyActionsMax: 1000, minutesMin: 1, minutesMax: 1 },
+    });
+  });
+  afterEach(() => kit.close());
+
+  it("a person held after three failed first-message attempts and put back to accepted gets the first message, not held again", async () => {
+    const p = seedAccepted(kit, engineCampaign(kit));
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      kit.world.failNext("sendMessage", "timeout_before_effect");
+      await step(kit);
+      await step(kit);
+    }
+    await step(kit);
+    expect(engineProspect(kit, p.prospectId)).toMatchObject({ stage: "needs_review", reviewReason: "tried 3 times without a confirmed result" });
+
+    expect(resolveReview(kit.db, p.prospectId, { stage: "accepted", note: "Checked: nothing was sent" }, kit.clock.now()).ok).toBe(true);
+    await runUntil(kit, () => engineProspect(kit, p.prospectId).stage !== "accepted");
+
+    expect(engineProspect(kit, p.prospectId).stage).toBe("message_sent");
+    expect(kit.world.messagesSentTo(p.spec.publicId)).toHaveLength(1);
+    expect(actionByKey(kit, `message1:${p.prospectId}`)).toMatchObject({ status: "done", attempts: 1 });
   });
 });
 
