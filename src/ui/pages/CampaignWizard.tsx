@@ -716,6 +716,7 @@ function ApprovalStep({ form, set, errors }: StepProps) {
             id={ids.auto}
             label="Auto-approve"
             checked={form.autoApprove}
+            error={errors["autoApprove"]}
             onChange={(on) => set("autoApprove", on)}
             hint={form.autoApprove ? undefined : "Off: you approve each person before the app invites them."}
           />

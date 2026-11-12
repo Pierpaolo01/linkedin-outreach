@@ -81,7 +81,8 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
   const { home, timeZone } = useAppData();
   if (home === undefined) {
     return (
-      <div className="mt-3 rounded-box bg-base-100 px-3 py-2.5 text-sm">
+      // As tall as the loaded card (two lines; a 44px Re-check below 1024px), so the menu under it does not move.
+      <div className="mt-3 min-h-16 rounded-box bg-base-100 px-3 py-2.5 text-sm max-lg:min-h-21">
         <span role="status" className="loading loading-dots loading-sm" aria-label="Loading" />
       </div>
     );

@@ -121,6 +121,19 @@
 body {
   font-feature-settings: "kern";
   -webkit-font-smoothing: antialiased;
+  /* An underline (a link on hover) clears the descenders instead of cutting them. */
+  text-underline-offset: 0.2em;
+}
+
+/* Selected text takes the palette's mint, not the browser's blue. */
+::selection {
+  background-color: var(--color-score-high);
+  color: var(--color-base-content);
+}
+
+/* A paragraph never ends on one short word ("follow-" / "up."). */
+p {
+  text-wrap: pretty;
 }
 
 .btn.btn-sm {
@@ -129,6 +142,13 @@ body {
 
 .btn.btn-xs {
   --fontsize: var(--text-caption);
+}
+
+/* A small field, select or textarea shows its value at the size of the sentence and the buttons beside it (14px), not daisyUI's 12px. */
+.input.input-sm,
+.select.select-sm,
+.textarea.textarea-sm {
+  --font-size-min: var(--text-sm);
 }
 
 /* Below 1024px an extra-small button is a 44px target (see the utilities layer), so it takes the small size's text and padding. */
@@ -234,6 +254,10 @@ body {
   @media (width < 64rem) {
     :where(.btn, .input, .select, .menu li > a) {
       min-height: 2.75rem;
+    }
+    /* A taller menu item keeps its words in the middle of its box. */
+    :where(.menu li > a) {
+      align-content: center;
     }
     /* 16px in a field, so a phone does not zoom the page when the field takes focus. */
     :where(.input, .select, .textarea) {

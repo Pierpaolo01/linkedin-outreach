@@ -192,7 +192,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                   <th role="columnheader" scope="col" className="font-medium">Company</th>
                   <th role="columnheader" scope="col" className="font-medium">Stage</th>
                   <th role="columnheader" scope="col" className="font-medium">Score</th>
-                  <th role="columnheader" scope="col" className="min-w-[14rem] font-medium">Why the AI scored them so</th>
+                  <th role="columnheader" scope="col" className="min-w-56 font-medium">Why the AI scored them so</th>
                   <th role="columnheader" scope="col" className="font-medium">Next action</th>
                   <th role="columnheader" scope="col">
                     <span className="sr-only">LinkedIn profile</span>
@@ -252,9 +252,9 @@ function ProspectRow(props: {
     <tr
       role="row"
       data-testid="prospect-row"
-      className={`@max-people:flex @max-people:flex-col @max-people:gap-2 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-content/5 ${props.open ? "bg-base-200/60" : ""}`}
+      className={`@max-people:flex @max-people:flex-col @max-people:gap-2 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-300 ${props.open ? "bg-base-200/60" : ""}`}
     >
-      <th role="rowheader" scope="row" className={`min-w-[10rem] text-left font-normal ${STACK_CELL}`}>
+      <th role="rowheader" scope="row" className={`min-w-40 text-left font-normal ${STACK_CELL}`}>
         <button
           type="button"
           className="inline-flex min-h-6 items-center gap-1 text-left font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11"
@@ -267,7 +267,7 @@ function ProspectRow(props: {
           />
         </button>
         {p.person.headline !== null && <p className="text-base-content">{p.person.headline}</p>}
-        {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/15 text-error">Do not contact</span>}
+        {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/10 text-caption text-error">Do not contact</span>}
       </th>
       <td role="cell" className={STACK_PAIR}>
         <StackLabel>Company</StackLabel>
@@ -289,7 +289,7 @@ function ProspectRow(props: {
         <StackLabel>Why the AI scored them so</StackLabel>
         <span>{p.scoreReason ?? <span className="text-muted">Not scored yet</span>}</span>
       </td>
-      <td role="cell" className={`min-w-[9rem] ${STACK_PAIR}`}>
+      <td role="cell" className={`min-w-36 ${STACK_PAIR}`}>
         <StackLabel>Next action</StackLabel>
         {p.nextActionAt === null ? (
           <span className="text-muted">

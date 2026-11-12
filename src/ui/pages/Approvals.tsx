@@ -4,7 +4,7 @@ import type { ApprovalItem, Evidence, Person, PreviewText } from "../apiSchemas"
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatScore, plural } from "../format";
-import { ActionError, Announce, CampaignSelect, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, TOOLBAR } from "../formParts";
+import { ActionError, Announce, CampaignSelect, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -168,6 +168,8 @@ export function Approvals() {
   };
 
   const filtered = minScore > 0 || campaignId !== null;
+  /** Until the list has loaded there is no count to show: the bar says nothing rather than "0". */
+  const counted = loaded.status === "ok";
 
   // The decided row folds to nothing, so the rows below slide up instead of jumping. The focus has already moved on.
   const ghost = (item: ApprovalItem) => (
@@ -217,10 +219,12 @@ export function Approvals() {
           <span className="sr-only sm:not-sr-only">Campaign</span>
           <CampaignSelect campaigns={campaigns} value={campaignId} onChange={setCampaignId} />
         </label>
-        <span className="nums text-sm text-muted" data-testid="showing">
-          Showing {shownCount}
-          {matching > shownCount ? ` of ${matching}` : ""}
-        </span>
+        {counted && (
+          <span className="nums text-sm text-muted" data-testid="showing">
+            Showing {shownCount}
+            {matching > shownCount ? ` of ${matching}` : ""}
+          </span>
+        )}
         <button
           type="button"
           className="btn btn-sm btn-primary w-full sm:ml-auto sm:w-auto"
@@ -231,25 +235,24 @@ export function Approvals() {
           }}
         >
           <IconCheck />
-          Approve all {shownCount} shown
+          {counted ? `Approve all ${shownCount} shown` : "Approve all shown"}
         </button>
       </div>
 
-      <p className="hidden text-sm text-muted lg:block">
-        Click a row, then press <kbd className="kbd kbd-sm">A</kbd> to approve or <kbd className="kbd kbd-sm">R</kbd> to reject. The next row
-        is selected for you; <kbd className="kbd kbd-sm">↑</kbd> <kbd className="kbd kbd-sm">↓</kbd> move between rows.
-      </p>
+      {/* While it loads the hint stays, so the list does not move; with nobody to decide there is nothing to press. */}
+      {!(counted && items.length === 0) && (
+        <p className="hidden text-sm text-muted lg:block">
+          Click a row, then press <kbd className="kbd kbd-sm">A</kbd> to approve or <kbd className="kbd kbd-sm">R</kbd> to reject. The next row
+          is selected for you; <kbd className="kbd kbd-sm">↑</kbd> <kbd className="kbd kbd-sm">↓</kbd> move between rows.
+        </p>
+      )}
 
       <Announce message={said}>{notice !== undefined && <p className="text-sm text-primary">{notice}</p>}</Announce>
 
       {loaded.status === "error" ? (
         <LoadError what="the approval queue" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.status === "loading" ? (
-        <div className="flex flex-col gap-3" role="status" aria-label="Loading">
-          {[0, 1, 2].map((n) => (
-            <div key={n} className="skeleton h-24 w-full" />
-          ))}
-        </div>
+        <SkeletonRows rows={3} rowClassName="h-40" />
       ) : items.length === 0 ? (
         filtered ? (
           <EmptyState
@@ -396,7 +399,7 @@ function Row({
         <FollowUp text={item.followUpPreview} person={person} />
       </div>
       <div role="cell" className="col-span-2 flex items-start gap-2 lg:col-span-1 lg:flex-col lg:items-stretch">
-        <button type="button" className="btn btn-sm btn-outline flex-1 border-primary/50 text-primary lg:flex-none" onClick={() => onDecide?.("approve")}>
+        <button type="button" className="btn btn-sm flex-1 border-primary/50 bg-base-100 text-primary hover:not-disabled:bg-base-200 lg:flex-none" onClick={() => onDecide?.("approve")}>
           <IconCheck />
           Approve
           <kbd className="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">

@@ -223,7 +223,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                 const halted = haltedBy(c.status, stopped);
                 return (
                   <tr key={c.id}>
-                    <th scope="row" className="text-left font-normal @funnel:min-w-[10.5rem]">
+                    <th scope="row" className="text-left font-normal @funnel:min-w-42">
                       <Link to={`/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                         {c.name}
                       </Link>

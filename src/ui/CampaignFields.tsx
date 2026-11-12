@@ -130,6 +130,7 @@ export function MessageFields({
               label="Let the AI write one line for each person"
               hint="The line goes where you put the AI-written line variable, based only on what their profile says."
               checked={form.aiPersonalise}
+              error={errors["aiPersonalise"]}
               onChange={(on) => set("aiPersonalise", on)}
             />
             <FieldError controlId={ids.personalise} message={errors["aiPersonalise"]} />

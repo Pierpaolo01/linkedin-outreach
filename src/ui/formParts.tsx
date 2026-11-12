@@ -23,7 +23,7 @@ export const ON_RED_BUTTON = "btn border-error-content/40 bg-error-content text-
 // ------------------------------------------------------------ errors and notices
 
 /** The id of the error line under the control `controlId`. */
-export const errorIdOf = (controlId: string) => `${controlId}-error`;
+const errorIdOf = (controlId: string) => `${controlId}-error`;
 
 /** What a control carries when it has an error: marked invalid, and described by its error line (`FieldError` with the same id). */
 export function errorProps(controlId: string, message: string | undefined) {
@@ -260,6 +260,8 @@ export function SwitchRow(props: {
   readonly hint?: ReactNode;
   readonly checked: boolean;
   readonly disabled?: boolean;
+  /** The switch's error, shown by the caller in a `FieldError` with the switch's id: the switch points at it. */
+  readonly error?: string | undefined;
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
@@ -272,6 +274,7 @@ export function SwitchRow(props: {
         checked={props.checked}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.checked)}
+        {...errorProps(props.id, props.error)}
       />
       <div>
         <label htmlFor={props.id} className="font-medium max-lg:after:absolute max-lg:after:inset-0 max-lg:after:cursor-pointer">

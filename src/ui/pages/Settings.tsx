@@ -365,7 +365,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                   hint="Starts with few invites a day and adds more each day until it reaches the daily invite budget."
                 />
                 {form.warmUpEnabled && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm sm:pl-14">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm sm:pl-13">
                     <span className="inline-flex items-center gap-2 whitespace-nowrap">
                       Start at {num("warmUp.invitesStartPerDay", "Warm-up: invites on the first day")} invites a day
                     </span>

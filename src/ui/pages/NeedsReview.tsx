@@ -3,7 +3,7 @@ import { listActivity, listReview, resolveReview, toApiError } from "../api";
 import type { ResolveStage, ReviewItem } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatScore, formatWhen, plural } from "../format";
-import { ActionError, Announce, EmptyState, LoadError, Notice, SECONDARY_BUTTON } from "../formParts";
+import { ActionError, Announce, EmptyState, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows } from "../formParts";
 import { IconExternal } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -113,10 +113,7 @@ export function NeedsReview() {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the people held for review" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="flex flex-col gap-3" role="status" aria-label="Loading">
-          <div className="skeleton h-40 w-full" />
-          <div className="skeleton h-40 w-full" />
-        </div>
+        <SkeletonRows rows={2} rowClassName="h-96" />
       ) : items.length === 0 ? (
         <EmptyState title="Nobody is held for review." testId="review-empty">
           When the app is unsure what happened with a person, it holds them here instead of guessing.
@@ -234,7 +231,9 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
           </div>
         </fieldset>
         <label className="flex flex-col gap-1 text-sm" htmlFor={noteId}>
-          <span>Note for the activity log (optional)</span>
+          <span>
+            <span className="font-medium">Note for the activity log</span> (optional)
+          </span>
           <textarea
             id={noteId}
             className="textarea textarea-sm w-full bg-base-100"
@@ -258,7 +257,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
             {busy && <span className="loading loading-spinner loading-xs" />}
             Confirm
           </button>
-          {choice === null && <p className="text-caption text-muted">Choose what should happen first.</p>}
+          {choice === null && <p className="text-sm text-muted">Choose what should happen first.</p>}
         </div>
         <ActionError message={error} />
       </div>
@@ -311,7 +310,7 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
         What the app saw. Open at full size.
       </figcaption>
       <dialog ref={ref} className="modal" aria-labelledby={titleId} onClose={() => setOpen(false)}>
-        <div className="modal-box max-h-[92vh] w-11/12 max-w-6xl">
+        <div className="modal-box w-11/12 max-w-6xl">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 id={titleId} className="font-semibold">
               Screenshot: {name}
@@ -322,8 +321,11 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
           </div>
           <img src={url} alt={alt} className="h-auto w-full" />
         </div>
+        {/* As in the confirm dialog: a click outside closes it; the keyboard has Escape and Close, so this is no tab stop. */}
         <form method="dialog" className="modal-backdrop">
-          <button type="submit">Close</button>
+          <button type="submit" tabIndex={-1} aria-hidden="true">
+            Close
+          </button>
         </form>
       </dialog>
     </figure>

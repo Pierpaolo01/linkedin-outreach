@@ -155,7 +155,7 @@ function CampaignTable(props: {
             const busy = props.busyId === c.id;
             return (
               <tr key={c.id} data-testid="campaign-row">
-                <th scope="row" className="text-left font-normal @funnel:min-w-[10.5rem]">
+                <th scope="row" className="text-left font-normal @funnel:min-w-42">
                   <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
