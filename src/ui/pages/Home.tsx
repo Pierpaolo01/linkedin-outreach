@@ -2,18 +2,12 @@ import { useState } from "react";
 import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, resumeCampaign, toApiError } from "../api";
 import type { Budget, BudgetKind, Campaign, Home as HomeData, Settings } from "../apiSchemas";
 import { useAppData } from "../appData";
-import {
-  CAMPAIGN_STATUS_DOT,
-  CAMPAIGN_STATUS_LABEL,
-  formatResume,
-  formatShort,
-  formatToday,
-  joinWords,
-} from "../format";
-import { LoadError } from "../formParts";
+import { formatResume, formatShort, formatToday, joinWords } from "../format";
+import { ActionError, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
+import { FUNNEL, FUNNEL_LABEL, PAUSABLE, plainMessage } from "../words";
 import { PageHeader } from "./PageHeader";
 
 /** Home: what needs the user, the campaigns, today's usage against each limit, and what the app did. */
@@ -94,7 +88,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
                 count={needsReview}
                 sentence={`${needsReview === 1 ? "person is" : "people are"} held for review.`}
                 detail={reviewDetail}
-                action="Open"
+                action="Open review"
                 to="/review"
               />
             )}
@@ -128,7 +122,7 @@ function NeedRow(props: {
         </p>
         {props.detail !== undefined && <p className="text-sm text-base-content/65">{props.detail}</p>}
       </div>
-      <Link to={props.to} className={`btn btn-sm ${props.primary === true ? "btn-primary" : ""}`}>
+      <Link to={props.to} className={props.primary === true ? "btn btn-sm btn-primary" : `${SECONDARY_BUTTON} btn-sm`}>
         {props.action}
       </Link>
     </div>
@@ -136,17 +130,6 @@ function NeedRow(props: {
 }
 
 // ------------------------------------------------------------ campaigns
-
-const PAUSABLE = new Set<Campaign["status"]>(["finding", "awaiting_approval", "running"]);
-const FUNNEL = ["found", "approved", "invited", "accepted", "messaged", "replied"] as const;
-const FUNNEL_LABEL: Readonly<Record<(typeof FUNNEL)[number], string>> = {
-  found: "Found",
-  approved: "Approved",
-  invited: "Invited",
-  accepted: "Accepted",
-  messaged: "Messaged",
-  replied: "Replied",
-};
 
 function Campaigns({ home }: { readonly home: HomeData }) {
   const { refresh } = useAppData();
@@ -181,13 +164,9 @@ function Campaigns({ home }: { readonly home: HomeData }) {
           All campaigns
         </Link>
       </div>
-      {error !== undefined && (
-        <p role="alert" className="mb-3 rounded-box bg-error/10 px-3 py-2 text-sm text-error">
-          {error}
-        </p>
-      )}
+      <ActionError message={error} className="mb-3" />
       {loaded.status === "error" && loaded.data === undefined ? (
-        <p className="rounded-box border border-base-300 px-4 py-4 text-sm text-error">Could not load the campaigns: {loaded.error.message}</p>
+        <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} className="" />
       ) : loaded.data === undefined ? (
         <div className="skeleton h-40 w-full" />
       ) : campaigns.length === 0 ? (
@@ -216,17 +195,14 @@ function Campaigns({ home }: { readonly home: HomeData }) {
             </thead>
             <tbody className="nums">
               {campaigns.map((c) => {
-                const halted = stopped && PAUSABLE.has(c.status);
+                const halted = haltedBy(c.status, stopped);
                 return (
                   <tr key={c.id}>
                     <td className="py-3 md:min-w-[10.5rem]">
-                      <Link to={`/campaigns/${c.id}`} className="text-[0.95rem] font-semibold hover:underline">
+                      <Link to={`/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
                         {c.name}
                       </Link>
-                      <p className="mt-0.5 flex items-center gap-1.5 text-sm text-base-content/65">
-                        <span className={`status ${halted ? "status-error" : CAMPAIGN_STATUS_DOT[c.status]}`} aria-hidden="true" />
-                        {halted ? "Stopped by safety stop" : CAMPAIGN_STATUS_LABEL[c.status]}
-                      </p>
+                      <StatusLine status={c.status} safetyStop={stopped} className="mt-0.5 text-sm text-base-content/65" />
                       <p className="mt-0.5 text-sm text-base-content/65 md:hidden">
                         {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                       </p>
@@ -240,7 +216,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                       {(PAUSABLE.has(c.status) || c.status === "paused") && (
                         <button
                           type="button"
-                          className="btn btn-xs btn-ghost border-base-300"
+                          className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-xs`}
                           disabled={busyId === c.id}
                           onClick={() => toggle(c)}
                           aria-label={`${c.status === "paused" ? "Resume" : "Pause"} ${c.name}`}
@@ -339,7 +315,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
         </Link>
       </div>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <p className="text-sm text-error">Could not load the activity log: {loaded.error.message}</p>
+        <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} className="" />
       ) : loaded.data === undefined ? (
         <div className="skeleton h-28 w-full" />
       ) : items.length === 0 ? (
@@ -350,7 +326,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
             <li key={item.id} className="grid grid-cols-[3.25rem_1fr] gap-2">
               <span className="nums text-base-content/60">{formatShort(item.at, timeZone, now)}</span>
               <span className={item.level === "error" ? "text-error" : item.level === "warning" ? "text-base-content/70" : ""}>
-                {item.message.replace(/_/g, " ")}
+                {plainMessage(item.message)}
               </span>
             </li>
           ))}

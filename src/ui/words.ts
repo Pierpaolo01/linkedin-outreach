@@ -20,6 +20,9 @@ export const FUNNEL_LABEL: Readonly<Record<FunnelStep, string>> = {
 /** Statuses a campaign can be paused from. */
 export const PAUSABLE: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(["finding", "awaiting_approval", "running"]);
 
+/** How a campaign's waits count days, as the end of a sentence. */
+export const POLICY_WORDS = { calendar: "every day counts", working_days: "only working days count" } as const;
+
 /** Started and not finished: its messages and timings can still change. */
 export const LIVE: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(["finding", "awaiting_approval", "running", "paused"]);
 

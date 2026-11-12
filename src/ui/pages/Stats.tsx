@@ -1,7 +1,7 @@
 import { getStats } from "../api";
 import type { Stats as StatsData } from "../apiSchemas";
-import { CAMPAIGN_STATUS_LABEL } from "../format";
-import { LoadError } from "../formParts";
+import { useAppData } from "../appData";
+import { LoadError, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { useLoad } from "../useLoad";
 import { formatHours } from "../words";
@@ -82,13 +82,14 @@ export function Stats() {
 }
 
 function StatsRow({ row }: { readonly row: Row }) {
+  const { home } = useAppData();
   return (
     <tr data-testid="stats-row" className="align-top">
       <td className="py-4">
         <Link to={`/campaigns/${row.campaignId}`} className="font-semibold hover:underline">
           {row.name}
         </Link>
-        <p className="text-base-content/65">{CAMPAIGN_STATUS_LABEL[row.status]}</p>
+        <StatusLine status={row.status} safetyStop={home?.safetyStop != null} className="text-base-content/65" />
       </td>
       <td className="py-4">
         <Rate value={row.acceptanceRate} part={row.accepted} whole={row.invitesSent} of="invited" />

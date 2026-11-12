@@ -15,8 +15,6 @@
   --color-base-content: #1d2521;
   --color-primary: #2c5e4f;
   --color-primary-content: #ffffff;
-  --color-secondary: #3d5a6c;
-  --color-secondary-content: #ffffff;
   --color-accent: #e5ad42;
   --color-accent-content: #2b1d03;
   --color-neutral: #26302b;
@@ -45,6 +43,14 @@
 
 @theme {
   --font-sans: "Seravek", "Avenir Next", system-ui, sans-serif;
+
+  /* Sizes outside Tailwind's scale, named once. */
+  --text-title: 1.75rem; /* the page title */
+  --text-title--line-height: 1.25;
+  --text-nav: 0.95rem; /* sidebar items, and a campaign's name in a table */
+  --text-caption: 0.8125rem; /* extra-small buttons */
+  --container-page: 1180px; /* the page column */
+
   --color-score-high: #d5e8dc;
   --color-score-mid: #f6e3bb;
   --color-score-mid-content: #5c3f07;
@@ -56,11 +62,11 @@ body {
 }
 
 .btn.btn-sm {
-  --fontsize: 0.875rem;
+  --fontsize: var(--text-sm);
 }
 
 .btn.btn-xs {
-  --fontsize: 0.8125rem;
+  --fontsize: var(--text-caption);
 }
 
 .nums {

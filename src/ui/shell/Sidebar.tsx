@@ -1,5 +1,6 @@
 import { useAppData } from "../appData";
-import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatClock, formatWorkingHours, workingNow } from "../format";
+import { formatClock, formatWorkingHours, workingNow } from "../format";
+import { ON_RED_BUTTON, SECONDARY_BUTTON, StatusDot } from "../formParts";
 import { Link } from "../router";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
@@ -8,6 +9,7 @@ import type { Recheck } from "./useRecheck";
 export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; readonly recheck: Recheck; readonly onNavigate: () => void }) {
   const { home } = useAppData();
   const campaigns = home?.campaigns ?? [];
+  const stopped = home?.safetyStop != null;
   return (
     <aside className="flex min-h-full w-64 flex-col border-r border-base-300 bg-base-200" aria-label="Sidebar">
       <div className="px-5 pt-6 pb-4">
@@ -15,7 +17,7 @@ export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; 
         <SessionCard recheck={recheck} />
       </div>
       <nav aria-label="Main">
-        <ul className="menu w-full gap-0.5 px-3 text-[0.95rem]">
+        <ul className="menu w-full gap-0.5 px-3 text-nav">
           <NavItem to="/" label="Home" path={path} onNavigate={onNavigate} />
           <NavItem to="/approvals" label="Approval queue" count={home?.needsYou.pendingApproval} path={path} onNavigate={onNavigate} />
           <NavItem to="/review" label="Needs review" count={home?.needsYou.needsReview} path={path} onNavigate={onNavigate} />
@@ -35,7 +37,7 @@ export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; 
                   return (
                     <li key={c.id}>
                       <Link to={to} className={`text-sm ${path === to ? "menu-active" : ""}`} aria-current={path === to ? "page" : undefined} onClick={onNavigate}>
-                        <span className={`status ${CAMPAIGN_STATUS_DOT[c.status]}`} title={CAMPAIGN_STATUS_LABEL[c.status]} aria-hidden="true" />
+                        <StatusDot status={c.status} safetyStop={stopped} />
                         <span className="truncate">{c.name}</span>
                       </Link>
                     </li>
@@ -99,7 +101,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
         </p>
         <button
           type="button"
-          className={`btn btn-xs shrink-0 ${stop === null ? "btn-ghost border-base-300" : "border-error-content/40 bg-error-content text-error"}`}
+          className={`${stop === null ? SECONDARY_BUTTON : ON_RED_BUTTON} btn-xs shrink-0`}
           disabled={recheck.checking}
           onClick={recheck.run}
         >

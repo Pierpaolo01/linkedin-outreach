@@ -3,7 +3,7 @@ import { listActivity, listCampaigns } from "../api";
 import type { ActivityItem, Page } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatToday } from "../format";
-import { LoadError, Pager } from "../formParts";
+import { CampaignSelect, LoadError, Pager, SECONDARY_BUTTON } from "../formParts";
 import { useLoad } from "../useLoad";
 import { formatStamp, plainMessage } from "../words";
 import { PageHeader } from "./PageHeader";
@@ -71,7 +71,7 @@ export function Activity() {
               key={value}
               type="button"
               aria-pressed={level === value}
-              className={`btn join-item btn-sm ${level === value ? "btn-neutral" : "bg-base-100"}`}
+              className={`${level === value ? "btn btn-neutral" : SECONDARY_BUTTON} join-item btn-sm`}
               onClick={() => {
                 setLevel(value);
                 setPage(1);
@@ -84,22 +84,15 @@ export function Activity() {
         <label htmlFor={campaignFilter} className="text-sm">
           Campaign
         </label>
-        <select
+        <CampaignSelect
           id={campaignFilter}
-          className="select select-sm w-auto max-w-[16rem] bg-base-100"
-          value={campaignId ?? ""}
-          onChange={(event) => {
-            setCampaignId(event.target.value === "" ? null : Number(event.target.value));
+          campaigns={campaigns.data?.campaigns ?? []}
+          value={campaignId}
+          onChange={(id) => {
+            setCampaignId(id);
             setPage(1);
           }}
-        >
-          <option value="">All campaigns</option>
-          {(campaigns.data?.campaigns ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       {loaded.status === "error" && loaded.data === undefined ? (

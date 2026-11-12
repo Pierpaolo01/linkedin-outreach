@@ -2,7 +2,7 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { previewCampaign } from "./api";
 import type { PreviewText } from "./apiSchemas";
 import { INVITE_NOTE_MAX, VARIABLES, type CampaignForm, type FieldErrors, type SetField } from "./campaignForm";
-import { FieldError, SwitchRow, useDebounced } from "./formParts";
+import { FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
 import { Link } from "./router";
 import { useLoad } from "./useLoad";
 
@@ -74,7 +74,7 @@ export function MessageFields({
               <button
                 key={v.name}
                 type="button"
-                className="btn btn-xs border-base-300 bg-base-100 font-normal"
+                className={`${SECONDARY_BUTTON} btn-xs font-normal`}
                 aria-label={`Insert ${v.label}`}
                 title={`Adds {{${v.name}}}`}
                 // Keep the cursor where it is in the text box.
@@ -181,7 +181,7 @@ function TemplatePreview(props: {
     <aside aria-label="Preview" className="min-w-0 lg:sticky lg:top-6 lg:self-start" data-testid="preview">
       <h3 className="font-semibold">Preview</h3>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <p className="mt-2 text-sm text-error">Could not fill in the preview: {loaded.error.message}</p>
+        <LoadError what="the preview" message={loaded.error.message} onRetry={loaded.reload} className="mt-2 text-sm" />
       ) : loaded.data === undefined ? (
         <div className="skeleton mt-2 h-40 w-full" />
       ) : (
@@ -218,7 +218,7 @@ function PreviewLine({ label, text, none }: { readonly label: string; readonly t
       </>
     );
   } else if (text.problem === "empty") body = <p className="text-base-content/55">Nothing written yet.</p>;
-  else body = <p className="rounded-field bg-warning/25 px-2 py-1">{text.message}</p>;
+  else body = <Notice tone="waits">{text.message}</Notice>;
   return (
     <div>
       <p className="text-xs text-base-content/55">{label}</p>
@@ -293,14 +293,14 @@ export function TimingFields({ form, set, errors }: { readonly form: CampaignFor
         <FieldError message={errors["withdrawAfterDays"]} />
       </div>
 
-      <p className="rounded-box bg-base-200 px-4 py-3 text-sm">
+      <Notice tone="note" className="text-sm">
         The app picks a random moment inside each range, and only acts inside your working hours. How many invites and messages go out each day is
         set in{" "}
         <Link to="/settings" className="link">
           Settings
         </Link>
         ; those limits are shared by all campaigns.
-      </p>
+      </Notice>
     </div>
   );
 }

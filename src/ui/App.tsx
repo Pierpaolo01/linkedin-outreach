@@ -74,7 +74,7 @@ function Shell() {
           home !== undefined && <SessionBanner session={home.session} recheck={recheck} />
         )}
 
-        <main className="w-full max-w-[1180px] px-4 py-6 lg:px-10 lg:py-8">
+        <main className="w-full max-w-page px-4 py-6 lg:px-10 lg:py-8">
           {found === null ? <ComingSoon title="Page not found" lead="There is no page at this address." about="Use the menu to find your way." /> : found.route.render(found.params)}
         </main>
       </div>

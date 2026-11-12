@@ -3,8 +3,8 @@ import { archiveCampaign, listCampaigns, pauseCampaign, resumeCampaign, toApiErr
 import type { Campaign, DiscoveryWait } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, plural } from "../format";
-import { LoadError } from "../formParts";
+import { plural } from "../format";
+import { ActionError, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
@@ -72,11 +72,7 @@ export function Campaigns() {
         </Link>
       </div>
 
-      {error !== undefined && (
-        <p role="alert" className="mt-4 rounded-box bg-error/10 px-3 py-2 text-sm text-error">
-          {error}
-        </p>
-      )}
+      <ActionError message={error} className="mt-4" />
 
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
@@ -159,19 +155,16 @@ function CampaignTable(props: {
         </thead>
         <tbody className="nums">
           {props.campaigns.map((c) => {
-            const halted = props.stopped && PAUSABLE.has(c.status);
+            const halted = haltedBy(c.status, props.stopped);
             const wait = props.waits.get(c.id) ?? null;
             const busy = props.busyId === c.id;
             return (
               <tr key={c.id} data-testid="campaign-row">
                 <td className="py-3 md:min-w-[14rem]">
-                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="text-[0.95rem] font-semibold hover:underline">
+                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-sm text-base-content/65" data-testid="campaign-status">
-                    <span className={`status ${halted ? "status-error" : CAMPAIGN_STATUS_DOT[c.status]}`} aria-hidden="true" />
-                    {halted ? "Stopped by safety stop" : CAMPAIGN_STATUS_LABEL[c.status]}
-                  </p>
+                  <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-base-content/65" testId="campaign-status" />
                   {wait !== null && <p className="mt-1 max-w-sm text-sm text-base-content/80">{discoveryWaitSentence(wait, timeZone)}</p>}
                   <p className="mt-0.5 text-sm text-base-content/65 md:hidden">
                     {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
@@ -185,14 +178,14 @@ function CampaignTable(props: {
                 <td className="text-right">
                   <div className="flex flex-wrap justify-end gap-1.5">
                     {c.status === "draft" && (
-                      <Link to={`/campaigns/${c.id}/edit`} className="btn btn-xs btn-ghost border-base-300">
+                      <Link to={`/campaigns/${c.id}/edit`} className={`${SECONDARY_BUTTON} btn-xs`}>
                         Continue setting up
                       </Link>
                     )}
                     {(PAUSABLE.has(c.status) || c.status === "paused") && (
                       <button
                         type="button"
-                        className="btn btn-xs btn-ghost border-base-300"
+                        className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-xs`}
                         disabled={busy}
                         onClick={() => props.onToggle(c)}
                         aria-label={`${c.status === "paused" ? "Resume" : "Pause"} ${c.name}`}
@@ -204,7 +197,7 @@ function CampaignTable(props: {
                     {props.onArchive !== undefined && (
                       <button
                         type="button"
-                        className="btn btn-xs btn-ghost text-base-content/70"
+                        className={`${QUIET_BUTTON} btn-xs`}
                         onClick={() => props.onArchive?.(c)}
                         aria-label={`Archive ${c.name}`}
                       >

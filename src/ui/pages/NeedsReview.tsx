@@ -3,6 +3,7 @@ import { listActivity, listReview, resolveReview, toApiError } from "../api";
 import { RESOLVE_STAGES, type ResolveStage, type ReviewItem } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatScore, formatWhen, plural } from "../format";
+import { ActionError, LoadError, Notice, SECONDARY_BUTTON } from "../formParts";
 import { IconExternal } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -97,12 +98,7 @@ export function NeedsReview() {
         </p>
       )}
       {loaded.status === "error" && loaded.data === undefined ? (
-        <div role="alert" className="mt-5 flex flex-wrap items-center gap-3 rounded-box border border-error/40 bg-error/5 px-4 py-4">
-          <p className="text-error">Could not load the people held for review: {loaded.error.message}</p>
-          <button type="button" className="btn btn-sm" onClick={loaded.reload}>
-            Try again
-          </button>
-        </div>
+        <LoadError what="the people held for review" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <div className="mt-5 flex flex-col gap-3" aria-label="Loading">
           <div className="skeleton h-40 w-full" />
@@ -174,10 +170,10 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
           In {item.campaignName}
           {heldAt === undefined ? "" : `, held ${formatWhen(heldAt, timeZone, now)}`}.
         </p>
-        <p className="mt-3 rounded-field bg-accent/20 px-3 py-2">
+        <Notice tone="waits" className="mt-3">
           <span className="font-medium">Why: </span>
           {item.reviewReason === null ? "The app did not record a reason." : asSentence(item.reviewReason)}
-        </p>
+        </Notice>
         <p className="mt-2 text-sm" data-testid="review-score">
           {item.score === null ? (
             <span className="text-base-content/75">Not scored</span>
@@ -238,11 +234,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
           </button>
           {choice === null && <p className="text-xs text-base-content/60">Choose what should happen first.</p>}
         </div>
-        {error !== undefined && (
-          <p role="alert" className="text-sm text-error">
-            {error}
-          </p>
-        )}
+        <ActionError message={error} />
       </div>
     </li>
   );
@@ -294,7 +286,7 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
             <h3 id={titleId} className="font-semibold">
               Screenshot: {name}
             </h3>
-            <button type="button" className="btn btn-sm btn-ghost border-base-300" onClick={() => setOpen(false)}>
+            <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} onClick={() => setOpen(false)}>
               Close
             </button>
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { ActionError, SECONDARY_BUTTON } from "./formParts";
 
 /** A modal question with one action and a way out. Escape or the backdrop count as cancel. */
 export function ConfirmDialog(props: {
@@ -38,18 +39,14 @@ export function ConfirmDialog(props: {
           {props.title}
         </h2>
         <div className="mt-3 flex flex-col gap-2">{props.children}</div>
-        {props.error !== undefined && (
-          <p role="alert" className="mt-3 text-sm text-error">
-            {props.error}
-          </p>
-        )}
+        <ActionError message={props.error} className="mt-3" />
         <div className="modal-action">
-          <button type="button" className="btn btn-ghost border-base-300" onClick={props.onCancel} disabled={props.busy}>
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} onClick={props.onCancel} disabled={props.busy}>
             {props.cancelLabel ?? "Cancel"}
           </button>
           <button
             type="button"
-            className={`btn ${props.tone === "error" ? "btn-error" : "btn-primary"}`}
+            className={`btn btn-sm ${props.tone === "error" ? "btn-error" : "btn-primary"}`}
             onClick={props.onConfirm}
             disabled={props.busy}
           >

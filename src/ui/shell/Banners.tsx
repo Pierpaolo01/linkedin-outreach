@@ -4,12 +4,13 @@ import type { SafetyStop, Session } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { asSentence, formatWhen } from "../format";
+import { ON_RED_BUTTON } from "../formParts";
 import { IconStop } from "../icons";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
 
 const BAR = "flex flex-col gap-3 bg-error px-4 py-4 text-error-content sm:flex-row sm:items-center lg:px-10";
-const ON_RED = "btn btn-sm shrink-0 border-error-content/40 bg-error-content text-error sm:ml-auto";
+const ON_RED = `${ON_RED_BUTTON} btn-sm shrink-0 sm:ml-auto`;
 
 /** The red banner of an active safety stop: what LinkedIn showed, what to do, and Resume (after a confirm). */
 export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {

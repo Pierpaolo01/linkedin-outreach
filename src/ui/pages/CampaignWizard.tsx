@@ -20,10 +20,11 @@ import {
 import { MessageFields, TimingFields } from "../CampaignFields";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatClock } from "../format";
-import { Field, FieldError, LoadError, SwitchRow } from "../formParts";
+import { ActionError, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link, navigate } from "../router";
 import { useLoad } from "../useLoad";
+import { POLICY_WORDS } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const SEARCH_PREFIX = "https://www.linkedin.com/search/results/people/";
@@ -233,7 +234,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         <div className="mt-6 max-w-xl rounded-box border border-base-300 px-5 py-5">
           <p className="font-medium">This campaign has already started.</p>
           <p className="mt-1 text-base-content/70">Its messages and timings can still change on its page; the rest stays as it started.</p>
-          <Link to={`/campaigns/${campaignId}`} className="btn btn-sm mt-4 border-base-300 bg-base-100">
+          <Link to={`/campaigns/${campaignId}`} className={`${SECONDARY_BUTTON} btn-sm mt-4`}>
             Open the campaign
           </Link>
         </div>
@@ -344,11 +345,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         </nav>
 
         <div className="min-w-0">
-          {saveError !== undefined && (
-            <p role="alert" className="mb-4 rounded-box bg-error/10 px-3 py-2 text-sm text-error">
-              {saveError}
-            </p>
-          )}
+          <ActionError message={saveError} className="mb-4" />
           {step === 0 && <NameStep form={form} set={set} errors={errors} onEnter={() => void goTo(1)} />}
           {step === 1 && <SourceStep form={form} set={set} errors={errors} />}
           {step === 2 && <WhoFitsStep form={form} set={set} errors={errors} />}
@@ -367,7 +364,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
 
           <div className="mt-8 flex flex-wrap items-center gap-3 border-t border-base-300 pt-5">
             {step > 0 && (
-              <button type="button" className="btn btn-sm btn-ghost border-base-300" disabled={saving || starting} onClick={() => void goTo(step - 1)}>
+              <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving || starting} onClick={() => void goTo(step - 1)}>
                 Back
               </button>
             )}
@@ -515,7 +512,7 @@ function SourceStep({ form, set, errors }: StepProps) {
                     {urls.length > 1 && (
                       <button
                         type="button"
-                        className="btn btn-ghost border-base-300"
+                        className={SECONDARY_BUTTON}
                         aria-label={`Remove search address ${index + 1}`}
                         onClick={() => setUrls(urls.filter((_, i) => i !== index))}
                       >
@@ -534,7 +531,7 @@ function SourceStep({ form, set, errors }: StepProps) {
           </ul>
           <FieldError message={errors["sourceUrls"]} />
           {urls.length < MAX_SEARCHES && (
-            <button type="button" className="btn btn-sm mt-3 border-base-300 bg-base-100" onClick={() => setUrls([...urls, ""])}>
+            <button type="button" className={`${SECONDARY_BUTTON} btn-sm mt-3`} onClick={() => setUrls([...urls, ""])}>
               Add another search
             </button>
           )}
@@ -631,10 +628,10 @@ function ApprovalStep({ form, set, errors }: StepProps) {
             hint={form.autoApprove ? undefined : "Off: you approve each person before the app invites them."}
           />
           {form.autoApprove && (
-            <p role="alert" className="mt-3 rounded-field bg-warning/25 px-3 py-2 text-sm">
+            <Notice tone="note" role="alert" className="mt-3 text-sm">
               With auto-approve on, the app invites and messages everyone who reaches the score threshold without your review. You will not see
               them in the approval queue first.
-            </p>
+            </Notice>
           )}
           <FieldError message={errors["autoApprove"]} />
         </div>
@@ -644,8 +641,6 @@ function ApprovalStep({ form, set, errors }: StepProps) {
 }
 
 // ------------------------------------------------------------ review
-
-const POLICY_WORDS = { calendar: "every day counts", working_days: "only working days count" } as const;
 
 function Review({
   form,
@@ -717,11 +712,7 @@ function Review({
         Review and start
       </h2>
       <p className="mt-1 max-w-2xl text-base-content/75">Check everything once more. The app checks it too when you press Start.</p>
-      {startError !== undefined && (
-        <p role="alert" className="mt-4 rounded-box border border-error/40 bg-error/5 px-4 py-3 text-error" data-testid="start-error">
-          {startError}
-        </p>
-      )}
+      <ActionError message={startError} className="mt-4" testId="start-error" />
       <div className="mt-5 divide-y divide-base-300 rounded-box border border-base-300">
         {sections.map(({ step, rows }) => {
           const list = problems(step);

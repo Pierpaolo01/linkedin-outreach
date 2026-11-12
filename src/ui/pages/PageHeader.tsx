@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 export function PageHeader({ title, aside }: { readonly title: string; readonly aside?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-      <h1 className="text-[1.75rem] leading-tight font-semibold">{title}</h1>
+      <h1 className="text-title font-semibold">{title}</h1>
       {aside !== undefined && <div className="nums text-base-content/65">{aside}</div>}
     </div>
   );

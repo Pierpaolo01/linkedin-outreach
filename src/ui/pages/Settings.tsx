@@ -3,7 +3,7 @@ import { backUpNow, getOps, prospectsCsvUrl, testAi, toApiError, updateSettings 
 import { AI_PROVIDERS, type AiProvider, type AiTest, type BackupResult, type Ops, type Settings as SettingsData, type SettingsPatch } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatWhen } from "../format";
-import { FieldError, LoadError, SwitchRow } from "../formParts";
+import { ActionError, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
 import { sessionView } from "../shell/sessionView";
 import { useRecheck } from "../shell/useRecheck";
 import { useLoad, type Loaded } from "../useLoad";
@@ -247,7 +247,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                       key={day}
                       type="button"
                       aria-pressed={on}
-                      className={`btn min-w-0 px-0 ${on ? "btn-neutral" : "border-base-300 bg-base-100"}`}
+                      className={`${on ? "btn btn-neutral" : SECONDARY_BUTTON} min-w-0 px-0`}
                       onClick={() => change({ workingDays: on ? form.workingDays.filter((d) => d !== iso) : [...form.workingDays, iso] }, "workingDays")}
                     >
                       {day}
@@ -285,10 +285,10 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         </Section>
 
         <Section title="Daily limits" lead="Shared by all campaigns. When a limit is reached, that kind of work waits for the next day by itself.">
-          <p className="mb-5 rounded-field bg-accent/20 px-3 py-2 text-sm">
+          <Notice tone="note" className="mb-5 text-sm">
             What you do by hand on LinkedIn also counts. LinkedIn sees one account, so the invites and messages you send yourself add to the
             app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these limits.
-          </p>
+          </Notice>
           <div className="flex flex-col divide-y divide-base-300">
             <LimitRow control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
             <LimitRow
@@ -434,7 +434,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         <AutoStart ops={ops} />
 
         <Section title="Export" lead="Every prospect of every campaign, with stage, score, dates and the texts sent, for a spreadsheet.">
-          <a href={prospectsCsvUrl()} className="btn btn-sm border-base-300 bg-base-100" download>
+          <a href={prospectsCsvUrl()} className={`${SECONDARY_BUTTON} btn-sm`} download>
             Download all prospects (CSV)
           </a>
         </Section>
@@ -446,7 +446,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
           Save settings
         </button>
         {dirty && (
-          <button type="button" className="btn btn-sm btn-ghost border-base-300" disabled={saving} onClick={() => {
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving} onClick={() => {
               setForm(toForm(base));
               setErrors({});
               setResult(undefined);
@@ -517,17 +517,13 @@ function LinkedInWindow() {
             </p>
             {view.problem !== undefined && <p className="mt-1 text-sm">{view.problem}</p>}
           </div>
-          <button type="button" className="btn btn-sm border-base-300 bg-base-100" disabled={recheck.checking} onClick={recheck.run}>
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={recheck.checking} onClick={recheck.run}>
             {recheck.checking && <span className="loading loading-spinner loading-xs" />}
             Re-check
           </button>
         </div>
       )}
-      {recheck.error !== undefined && (
-        <p role="status" className="mt-2 text-sm text-error">
-          {recheck.error}
-        </p>
-      )}
+      <ActionError message={recheck.error} className="mt-2" />
       <p className="mt-4 text-sm text-base-content/75">
         If LinkedIn logs the app out, log in again in the app&rsquo;s own Chrome window, not in your usual browser, then press Re-check.
       </p>
@@ -561,7 +557,7 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" className="btn btn-sm border-base-300 bg-base-100" disabled={running || blocked} onClick={run}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={running || blocked} onClick={run}>
           {running && <span className="loading loading-spinner loading-xs" />}
           Test
         </button>
@@ -640,7 +636,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Backups" lead="The app copies its database once a day and keeps the last seven copies.">
       {ops.status === "error" && ops.data === undefined ? (
-        <LoadError what="the backups" message={ops.error.message} onRetry={ops.reload} />
+        <LoadError what="the backups" message={ops.error.message} onRetry={ops.reload} className="" />
       ) : ops.data === undefined ? (
         <div className="skeleton h-20 w-full" />
       ) : backups.length === 0 ? (
@@ -658,7 +654,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
         </ul>
       )}
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button type="button" className="btn btn-sm border-base-300 bg-base-100" disabled={busy} onClick={backUp}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={busy} onClick={backUp}>
           {busy && <span className="loading loading-spinner loading-xs" />}
           Back up now
         </button>
@@ -698,7 +694,7 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Start at login" lead="Whether the app starts by itself when you log in to the Mac.">
       {ops.status === "error" && ops.data === undefined ? (
-        <p className="text-sm text-error">Could not read whether it is set up: {ops.error.message}</p>
+        <LoadError what="whether it is set up" message={ops.error.message} onRetry={ops.reload} className="" />
       ) : (
         <p data-testid="service-state">{state}</p>
       )}

@@ -3,17 +3,13 @@ import { approveAll, approveProspect, listApprovals, rejectProspect, toApiError 
 import type { ApprovalItem, Evidence, PreviewText } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { formatScore, plural, scoreTone } from "../format";
+import { formatScore, plural } from "../format";
+import { ActionError, CampaignSelect, LoadError, Notice, ScoreChip, SECONDARY_BUTTON } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
 
 const SCORE_STEPS = [0, 5, 6, 7, 8] as const;
-const SCORE_CHIP = {
-  high: "bg-score-high text-primary",
-  mid: "bg-score-mid text-score-mid-content",
-  low: "bg-base-200 text-base-content/55",
-} as const;
 const COLUMNS = "lg:grid-cols-[3.25rem_minmax(12rem,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_8.75rem]";
 
 type Decision = "approve" | "reject";
@@ -174,7 +170,7 @@ export function Approvals() {
               key={step}
               type="button"
               aria-pressed={minScore === step}
-              className={`btn join-item btn-sm nums ${minScore === step ? "btn-neutral" : "bg-base-100"}`}
+              className={`${minScore === step ? "btn btn-neutral" : SECONDARY_BUTTON} join-item btn-sm nums`}
               onClick={() => setMinScore(step)}
             >
               {step === 0 ? "Any" : `${step}+`}
@@ -183,18 +179,7 @@ export function Approvals() {
         </div>
         <label className="flex items-center gap-2 text-sm">
           <span className="sr-only sm:not-sr-only">Campaign</span>
-          <select
-            className="select select-sm w-auto max-w-[14rem] bg-base-100"
-            value={campaignId ?? ""}
-            onChange={(event) => setCampaignId(event.target.value === "" ? null : Number(event.target.value))}
-          >
-            <option value="">All campaigns</option>
-            {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <CampaignSelect campaigns={campaigns} value={campaignId} onChange={setCampaignId} />
         </label>
         <span className="nums text-sm text-base-content/65" data-testid="showing">
           Showing {shownCount}
@@ -226,12 +211,7 @@ export function Approvals() {
       )}
 
       {loaded.status === "error" ? (
-        <div role="alert" className="mt-4 flex flex-wrap items-center gap-3 rounded-box border border-error/40 bg-error/5 px-4 py-4">
-          <p className="text-error">Could not load the approval queue: {loaded.error.message}</p>
-          <button type="button" className="btn btn-sm" onClick={loaded.reload}>
-            Try again
-          </button>
-        </div>
+        <LoadError what="the approval queue" message={loaded.error.message} onRetry={loaded.reload} className="mt-4" />
       ) : loaded.status === "loading" ? (
         <div className="mt-4 flex flex-col gap-3" aria-label="Loading">
           {[0, 1, 2].map((n) => (
@@ -248,7 +228,7 @@ export function Approvals() {
               </p>
               <button
                 type="button"
-                className="btn btn-sm mt-3 border-base-300 bg-base-100"
+                className={`${SECONDARY_BUTTON} btn-sm mt-3`}
                 onClick={() => {
                   setMinScore(0);
                   setCampaignId(null);
@@ -344,7 +324,6 @@ function Row({
   readonly register: (element: HTMLDivElement | null) => void;
 }) {
   const { person } = item;
-  const tone = scoreTone(item.score);
   const place = [person.company, person.location].filter((part): part is string => part !== null && part !== "").join(", ");
   return (
     <div
@@ -356,13 +335,7 @@ function Row({
       data-testid="approval-row"
       className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-4 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-within:shadow-[inset_4px_0_0_0_var(--color-accent)] lg:gap-x-4 ${COLUMNS}`}
     >
-      <span
-        role="cell"
-        className={`nums flex size-10 items-center justify-center rounded-field text-lg font-semibold ${SCORE_CHIP[tone]}`}
-        aria-label={item.score === null ? "Not scored" : `Score ${formatScore(item.score)} of 10`}
-      >
-        {item.score === null ? "–" : formatScore(item.score)}
-      </span>
+      <ScoreChip score={item.score} size="lg" role="cell" />
       <div role="cell" className="min-w-0">
         <p className="font-semibold">{person.fullName}</p>
         {person.headline !== null && <p className="text-sm">{person.headline}</p>}
@@ -396,7 +369,7 @@ function Row({
             A
           </kbd>
         </button>
-        <button type="button" className="btn btn-sm btn-ghost flex-1 border-base-300 lg:flex-none" onClick={() => onDecide("reject")}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm flex-1 lg:flex-none`} onClick={() => onDecide("reject")}>
           <IconX />
           Reject
           <kbd className="kbd kbd-xs hidden lg:inline-flex" aria-hidden="true">
@@ -404,11 +377,7 @@ function Row({
           </kbd>
         </button>
       </div>
-      {error !== undefined && (
-        <p role="alert" className="col-span-2 text-sm text-error lg:col-span-5">
-          {error}
-        </p>
-      )}
+      <ActionError message={error} className="col-span-2 lg:col-span-5" />
     </div>
   );
 }
@@ -420,7 +389,9 @@ function Text({ label, text }: { readonly label: string; readonly text: PreviewT
       {text.ok ? (
         <p className="whitespace-pre-line">{text.text}</p>
       ) : (
-        <p className="rounded-field bg-warning/25 px-2 py-1 text-base-content">Cannot be written for this person yet: {text.message}</p>
+        <Notice tone="waits" className="text-base-content">
+          Cannot be written for this person yet: {text.message}
+        </Notice>
       )}
     </div>
   );

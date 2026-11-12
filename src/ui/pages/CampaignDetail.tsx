@@ -4,20 +4,14 @@ import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone } from "../format";
-import { LoadError, Pager, SwitchRow } from "../formParts";
+import { ActionError, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, StatusLine, SwitchRow } from "../formParts";
 import { IconExternal } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { discoveryWaitSentence, formatNext, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextStepWords, PAUSABLE, stageWords } from "../words";
+import { discoveryWaitSentence, formatNext, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const PAGE_SIZE = 25;
-const SCORE_CHIP = {
-  high: "bg-score-high text-primary",
-  mid: "bg-score-mid text-score-mid-content",
-  low: "bg-base-200 text-base-content/55",
-} as const;
 type Stage = (typeof PROSPECT_STAGES)[number];
 
 /** One campaign: its funnel and status, its people with stage and score, and its messages and timings. */
@@ -52,7 +46,8 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const wait = home?.campaigns.find((c) => c.id === campaign.id)?.discoveryWait ?? null;
-  const halted = home?.safetyStop != null && PAUSABLE.has(campaign.status);
+  const stopped = home?.safetyStop != null;
+  const halted = haltedBy(campaign.status, stopped);
 
   const toggle = () => {
     setBusy(true);
@@ -71,12 +66,9 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
       <PageHeader title={campaign.name} aside={<a href={prospectsCsvUrl(campaign.id)} className="link text-sm link-hover">Download its people as CSV</a>} />
 
       <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <p className="flex items-center gap-2 font-medium" data-testid="campaign-status">
-          <span className={`status ${halted ? "status-error" : CAMPAIGN_STATUS_DOT[campaign.status]}`} aria-hidden="true" />
-          {halted ? "Stopped by safety stop" : CAMPAIGN_STATUS_LABEL[campaign.status]}
-        </p>
+        <StatusLine status={campaign.status} safetyStop={stopped} className="gap-2 font-medium" testId="campaign-status" />
         {(PAUSABLE.has(campaign.status) || campaign.status === "paused") && (
-          <button type="button" className="btn btn-sm btn-ghost border-base-300" disabled={busy} onClick={toggle}>
+          <button type="button" className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-sm`} disabled={busy} onClick={toggle}>
             {busy && <span className="loading loading-spinner loading-xs" />}
             {campaign.status === "paused" ? "Resume" : "Pause"}
           </button>
@@ -92,11 +84,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
         </p>
       </div>
       {wait !== null && <p className="mt-2 text-sm text-base-content/80">{discoveryWaitSentence(wait, timeZone)}</p>}
-      {error !== undefined && (
-        <p role="alert" className="mt-3 rounded-box bg-error/10 px-3 py-2 text-sm text-error">
-          {error}
-        </p>
-      )}
+      <ActionError message={error} className="mt-3" />
 
       <ol className="mt-6 grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
         {FUNNEL.map((step) => (
@@ -251,12 +239,7 @@ function ProspectRow(props: {
         {stopped}
       </td>
       <td>
-        <span
-          className={`nums inline-flex size-7 items-center justify-center rounded-field font-semibold ${SCORE_CHIP[scoreTone(p.score)]}`}
-          aria-label={p.score === null ? "Not scored" : `Score ${formatScore(p.score)} of 10`}
-        >
-          {p.score === null ? "–" : formatScore(p.score)}
-        </span>
+        <ScoreChip score={p.score} size="sm" />
       </td>
       <td className="text-base-content/85">{p.scoreReason ?? <span className="text-base-content/45">Not scored yet</span>}</td>
       <td className="min-w-[9rem]">
@@ -340,7 +323,11 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
             </div>
           ))}
         </dl>
-        {p.reviewReason !== null && <p className="mt-3 rounded-field bg-accent/20 px-3 py-2">Held for review: {p.reviewReason.replace(/_/g, " ")}</p>}
+        {p.reviewReason !== null && (
+          <Notice tone="waits" className="mt-3">
+            Held for review: {p.reviewReason.replace(/_/g, " ")}
+          </Notice>
+        )}
       </div>
       <div className="flex flex-col gap-4">
         <div>
@@ -364,11 +351,7 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
             onChange={change}
             hint="The app never invites or messages this person, in any campaign."
           />
-          {error !== undefined && (
-            <p role="alert" className="mt-2 text-sm text-error">
-              {error}
-            </p>
-          )}
+          <ActionError message={error} className="mt-2" />
         </div>
       </div>
     </div>
@@ -376,8 +359,6 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
 }
 
 // ------------------------------------------------------------ messages and timings
-
-const POLICY_WORDS = { calendar: "every day counts", working_days: "only working days count" } as const;
 
 function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign; readonly onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
@@ -393,7 +374,7 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
         {live && !editing && (
           <button
             type="button"
-            className="btn btn-sm border-base-300 bg-base-100"
+            className={`${SECONDARY_BUTTON} btn-sm`}
             onClick={() => {
               setNotice(undefined);
               setEditing(true);
@@ -481,21 +462,19 @@ function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign
 
   return (
     <div className="mt-3 rounded-box border border-base-300 px-4 py-5" data-testid="live-edit">
-      <p className="mb-5 rounded-field bg-accent/20 px-3 py-2">Edits apply only to steps not yet sent. Texts already sent stay as they were.</p>
+      <Notice tone="note" className="mb-5">
+        Edits apply only to steps not yet sent. Texts already sent stay as they were.
+      </Notice>
       <MessageFields campaignId={campaign.id} form={form} set={set} errors={errors} />
       <h3 className="mt-8 mb-4 font-semibold">Timings</h3>
       <TimingFields form={form} set={set} errors={errors} />
-      {error !== undefined && (
-        <p role="alert" className="mt-5 text-sm text-error">
-          {error}
-        </p>
-      )}
+      <ActionError message={error} className="mt-5" />
       <div className="mt-6 flex gap-3">
         <button type="button" className="btn btn-sm btn-primary" disabled={saving} onClick={save}>
           {saving && <span className="loading loading-spinner loading-xs" />}
           Save changes
         </button>
-        <button type="button" className="btn btn-sm btn-ghost border-base-300" disabled={saving} onClick={onCancel}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving} onClick={onCancel}>
           Cancel
         </button>
       </div>
