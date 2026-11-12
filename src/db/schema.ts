@@ -108,6 +108,8 @@ export const campaigns = sqliteTable("campaigns", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   status: text("status", { enum: CAMPAIGN_STATUSES }).notNull().default("draft"),
+  /** While paused: the status to return to on resume. */
+  pausedFrom: text("paused_from", { enum: CAMPAIGN_STATUSES }),
   // Targeting
   discoverySource: text("discovery_source", { enum: DISCOVERY_SOURCES }).notNull(),
   sourceUrls: text("source_urls", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
@@ -164,6 +166,8 @@ export const people = sqliteTable("people", {
   sizeEvidence: text("size_evidence", { mode: "json" }).$type<Evidence>(),
   raw: text("raw", { mode: "json" }).$type<unknown>(),
   firstSeenAt: timestamp("first_seen_at").notNull(),
+  /** When the profile was last opened and its fields stored on this row. */
+  profileViewedAt: timestamp("profile_viewed_at"),
   doNotContact: flag("do_not_contact").notNull().default(false),
   /**
    * Suppression: set when the first invite to this person is claimed in the ledger, and never
@@ -184,6 +188,9 @@ export const prospects = sqliteTable(
     personId: integer("person_id")
       .notNull()
       .references(() => people.id),
+    /** The score from the card alone (name and headline), before any profile was opened. */
+    cardScore: real("card_score"),
+    /** The final score: from the profile when one was opened, else the card score. */
     score: real("score"),
     scoreReason: text("score_reason"),
     scoreModel: text("score_model"),
@@ -197,6 +204,8 @@ export const prospects = sqliteTable(
     firstMessageSent: text("first_message_sent"),
     followUpSent: text("follow_up_sent"),
     aiLine: text("ai_line"),
+    /** The profile text the AI line rests on, shown at approval. */
+    aiLineEvidence: text("ai_line_evidence"),
     // Lifecycle timestamps
     foundAt: timestamp("found_at").notNull(),
     approvedAt: timestamp("approved_at"),
@@ -266,6 +275,10 @@ export const discoveryRuns = sqliteTable("discovery_runs", {
   sourceUrl: text("source_url"),
   cursor: text("cursor"),
   exhausted: flag("exhausted").notNull().default(false),
+  /** Discovery from this source waits until then, e.g. the first day of next month after the search cap. */
+  pausedUntil: timestamp("paused_until"),
+  /** Loads in a row that brought no new person; a recommendations source is exhausted after a few. */
+  emptyLoads: integer("empty_loads").notNull().default(0),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });

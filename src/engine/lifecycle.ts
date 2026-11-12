@@ -5,7 +5,8 @@
 import { CLOSED_STAGES, type ProspectStage } from "../db/schema";
 
 export const TRANSITIONS: Readonly<Record<ProspectStage, readonly ProspectStage[]>> = {
-  found: ["scored", "needs_review"],
+  // `rejected` straight from `found`: a card scored below the open-profile threshold, an existing connection, a profile that is gone.
+  found: ["scored", "rejected", "needs_review"],
   scored: ["rejected", "pending_approval", "approved", "needs_review"],
   pending_approval: ["approved", "rejected", "needs_review"],
   approved: ["invited", "rejected", "needs_review"],

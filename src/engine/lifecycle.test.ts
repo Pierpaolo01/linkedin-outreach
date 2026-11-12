@@ -5,6 +5,7 @@ import { assertMove, canMove, isClosed } from "./lifecycle";
 /** Every allowed move, written out from spec section 5 and decisions 27–29. Every other pair is refused. */
 const ALLOWED: readonly (readonly [ProspectStage, ProspectStage])[] = [
   ["found", "scored"],
+  ["found", "rejected"],
   ["found", "needs_review"],
   ["scored", "rejected"],
   ["scored", "pending_approval"],
