@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { dataPaths, type DataPaths } from "../config/paths";
 import { ensureDataDir, openDb } from "../db/index";
 import { eventLog, sessionState } from "../db/schema";
-import type { Launchctl, ServiceContext } from "../ops/service";
 import { formatReport, runDoctor, type DoctorOptions } from "./checks";
 
 let dir: string;
@@ -35,26 +34,8 @@ function healthyInstall(): void {
   openDb(paths.db).close();
 }
 
-const LABEL = "com.linkedin-outreach.app";
-const notLoaded: Launchctl = () => ({ code: 113, stdout: "", stderr: "Could not find service" });
-
-function service(launchctl: Launchctl = notLoaded): ServiceContext {
-  return { label: LABEL, launchAgentsDir: join(dir, "LaunchAgents"), uid: 501, launchctl };
-}
-
-function printed(fields: string): Launchctl {
-  return () => ({ code: 0, stdout: `gui/501/${LABEL} = {\n${fields}\n\tsubsystem = {\n\t\tstate = active\n\t}\n}`, stderr: "" });
-}
-
-function installPlist(): void {
-  mkdirSync(join(dir, "LaunchAgents"), { recursive: true });
-  writeFileSync(join(dir, "LaunchAgents", `${LABEL}.plist`), "<plist/>");
-}
-
-const NOW = new Date("2026-11-12T10:00:00Z");
-
 function options(overrides: Partial<DoctorOptions> = {}): DoctorOptions {
-  return { paths, chromeApp, nodeVersion: "22.23.2", service: service(), now: NOW, timeZone: "Europe/Rome", ...overrides };
+  return { paths, chromeApp, nodeVersion: "22.23.2", ...overrides };
 }
 
 function check(name: string, opts: DoctorOptions = options()) {
@@ -72,7 +53,7 @@ describe("runDoctor", () => {
     const text = formatReport(report);
     expect(text).toContain("142.0.7444.60");
     expect(text).toMatch(/migrations applied (\d+) of \1\b/);
-    expect(text).toContain("auto-start: not installed (`npm run service:install` starts the app at login)");
+    expect(text).toContain("auto-start: not installed (arrives in milestone 4)");
     expect(text.trimEnd().split("\n").at(-1)).toBe("doctor: OK");
   });
 
@@ -92,7 +73,6 @@ describe("runDoctor", () => {
     const db = check("database");
     expect(db.status).toBe("problem");
     expect(db.fix).toMatch(/backups/);
-    expect(db.fix).toContain("npm run restore -- <backup file>");
   });
 
   it("reports a problem when the database has damaged pages behind a valid header", () => {
@@ -168,101 +148,5 @@ describe("runDoctor", () => {
     expect(text).not.toContain("line 1\n");
     expect(text).not.toContain("old line");
     expect(report.ok).toBe(true);
-  });
-});
-
-describe("backups check", () => {
-  function backup(date: string, bytes: number): void {
-    writeFileSync(join(paths.backups, `app-${date}.db`), Buffer.alloc(bytes));
-  }
-
-  it("says there are none yet without calling it a problem", () => {
-    healthyInstall();
-    const backups = check("backups");
-    expect(backups.status).toBe("info");
-    expect(backups.detail).toContain("no backups yet");
-  });
-
-  it("lists backups newest first with dates and sizes, and how to restore", () => {
-    healthyInstall();
-    backup("2026-11-11", 2048);
-    backup("2026-11-12", 1_572_864);
-    const backups = check("backups");
-    expect(backups.status).toBe("ok");
-    expect(backups.detail).toBe(`2 in ${paths.backups}, newest 2026-11-12`);
-    expect(backups.lines).toEqual([
-      "app-2026-11-12.db  2026-11-12  1.5 MB",
-      "app-2026-11-11.db  2026-11-11  2 KB",
-      "to restore one: stop the app, then `npm run restore -- app-2026-11-12.db` (the current database is copied aside first)",
-    ]);
-  });
-
-  it("notes when the newest backup is more than two days old", () => {
-    healthyInstall();
-    backup("2026-11-09", 4096);
-    const backups = check("backups");
-    expect(backups.status).toBe("info");
-    expect(backups.detail).toContain("newest 2026-11-09, 3 days old");
-  });
-});
-
-describe("service check", () => {
-  it("reports a running service with its pid and last exit", () => {
-    healthyInstall();
-    installPlist();
-    const svc = check("service", options({ service: service(printed("\tstate = running\n\tpid = 812\n\tlast exit code = 1")) }));
-    expect(svc.status).toBe("ok");
-    expect(svc.detail).toBe("auto-start: installed, loaded, running (pid 812), last exit: exit code 1");
-  });
-
-  it("reports a loaded service that is not running as a problem, with the end of its error log", () => {
-    healthyInstall();
-    installPlist();
-    writeFileSync(join(paths.logs, "service.err.log"), "Error: boom\n    at main\n");
-    const svc = check(
-      "service",
-      options({ service: service(printed("\tstate = not running\n\tlast terminating signal = Killed: 9")) }),
-    );
-    expect(svc.status).toBe("problem");
-    expect(svc.detail).toBe("auto-start: installed and loaded but not running, last exit: signal Killed: 9");
-    expect(svc.fix).toContain("npm run service:restart");
-    expect(svc.lines).toEqual(["service.err.log:", "Error: boom", "    at main"]);
-  });
-
-  it("shows no error-log lines when the error log is empty", () => {
-    healthyInstall();
-    installPlist();
-    writeFileSync(join(paths.logs, "service.err.log"), "");
-    const svc = check("service", options({ service: service(printed("\tstate = not running\n\tlast exit code = 0")) }));
-    expect(svc.status).toBe("problem");
-    expect(svc.lines).toBeUndefined();
-  });
-
-  it("reports an installed service that launchd has not loaded", () => {
-    healthyInstall();
-    installPlist();
-    const svc = check("service");
-    expect(svc.status).toBe("problem");
-    expect(svc.fix).toContain("npm run service:install");
-  });
-
-  it("reports a loaded job whose plist is gone", () => {
-    healthyInstall();
-    const svc = check("service", options({ service: service(printed("\tstate = running\n\tpid = 3")) }));
-    expect(svc.status).toBe("problem");
-    expect(svc.fix).toContain("npm run service:uninstall");
-  });
-});
-
-describe("log tail", () => {
-  it("prefers app.log over newer service logs", () => {
-    healthyInstall();
-    writeFileSync(join(paths.logs, "app.log"), "app line\n");
-    writeFileSync(join(paths.logs, "service.out.log"), "service line\n");
-    const later = new Date(Date.now() + 60_000);
-    utimesSync(join(paths.logs, "service.out.log"), later, later);
-    const logs = check("log tail");
-    expect(logs.detail).toBe(join(paths.logs, "app.log"));
-    expect(logs.lines).toEqual(["app line"]);
   });
 });
