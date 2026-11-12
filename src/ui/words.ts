@@ -47,6 +47,8 @@ export function discoveryWaitSentence(wait: DiscoveryWait, timeZone: string): st
       return `Finding people is waiting: LinkedIn's monthly search limit is reached. It resumes on ${formatDate(wait.until, timeZone)}.`;
     case "no_new_people":
       return "Finding people is waiting: LinkedIn's recommendations show nobody new today. The app looks again tomorrow.";
+    case "unreadable":
+      return "Finding people is waiting: the app could not read LinkedIn's page. It looks again tomorrow; the activity log has the details.";
     case "exhausted":
       return "Finding people has stopped: there is nobody more to find from this campaign's sources.";
     default: {

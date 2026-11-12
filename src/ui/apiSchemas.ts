@@ -75,11 +75,13 @@ export type SafetyStop = z.infer<typeof safetyStopSchema>;
 
 /**
  * Why discovery for a campaign waits: LinkedIn's monthly search limit (until when), nobody new in the
- * recommendations today (it looks again tomorrow), or nothing left to find.
+ * recommendations today (it looks again tomorrow), a page the app could not read (it looks again
+ * tomorrow), or nothing left to find.
  */
 const discoveryWaitSchema = z.discriminatedUnion("reason", [
   z.object({ reason: z.literal("search_limit"), until: instant, message: z.string() }),
   z.object({ reason: z.literal("no_new_people"), until: instant.nullable(), message: z.string() }),
+  z.object({ reason: z.literal("unreadable"), until: instant, message: z.string() }),
   z.object({ reason: z.literal("exhausted"), until: z.null(), message: z.string() }),
 ]);
 export type DiscoveryWait = z.infer<typeof discoveryWaitSchema>;

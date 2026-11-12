@@ -70,6 +70,7 @@ describe("parseSearchResults on hand-written pages", () => {
       hasNextPage: true,
       capped: false,
       hiddenMembers: 0,
+      skipped: [],
     });
   });
 
@@ -124,7 +125,7 @@ describe("parseSearchResults on hand-written pages", () => {
   it("returns an empty list on a page that says there are no results", () => {
     const result = parseSearchResults(page("", { extra: "<h2>No results found</h2>", next: false }));
 
-    expect(result).toEqual({ cards: [], hasNextPage: false, capped: false, hiddenMembers: 0 });
+    expect(result).toEqual({ cards: [], hasNextPage: false, capped: false, hiddenMembers: 0, skipped: [] });
   });
 
   it("flags the monthly commercial-use limit notice (wording unverified)", () => {
@@ -158,6 +159,38 @@ describe("parseSearchResults on hand-written pages", () => {
     const broken = row({ id: "person-2" }).replaceAll("https://www.linkedin.com/in/person-2/?miniProfileUrn=abc", "#");
 
     expect(() => parseSearchResults(page(row() + broken))).toThrow(/result 2: no profile link/);
+  });
+
+  it("reads a result whose profile link carries a language suffix, with the canonical profile URL", () => {
+    const suffixed = row({ id: "person-2", name: "Person 2" }).replaceAll("/in/person-2/?miniProfileUrn=abc", "/in/person-2/en/");
+
+    const result = parseSearchResults(page(row() + suffixed));
+
+    expect(result.cards.map((card) => card.profileUrl)).toEqual(["https://www.linkedin.com/in/person-1/", "https://www.linkedin.com/in/person-2/"]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("leaves out a result it cannot read, says which and why, and keeps the rest of the page", () => {
+    const broken = row({ id: "person-2" }).replaceAll("https://www.linkedin.com/in/person-2/?miniProfileUrn=abc", "#");
+
+    const result = parseSearchResults(page(row() + broken + row({ id: "person-3", name: "Person 3" })));
+
+    expect(result.cards.map((card) => card.publicId)).toEqual(["person-1", "person-3"]);
+    expect(result.skipped).toEqual(["result 2: no profile link"]);
+  });
+
+  it("throws ParseError on any result it cannot read when asked for every result (fixture building: a result left out would stay unscrubbed)", () => {
+    const broken = row({ id: "person-2" }).replaceAll("https://www.linkedin.com/in/person-2/?miniProfileUrn=abc", "#");
+    const html = page(row() + broken + row({ id: "person-3", name: "Person 3" }));
+
+    expect(() => parseSearchResults(html, { everyResult: true })).toThrow(/result 2: no profile link \(1 of 3 results could not be read\)/);
+    expect(parseSearchResults(page(row()), { everyResult: true }).cards).toHaveLength(1);
+  });
+
+  it("throws ParseError when half the results or more cannot be read: the page itself has changed", () => {
+    const nameless = row({ id: "person-2", name: "" }) + row({ id: "person-3", name: "" });
+
+    expect(() => parseSearchResults(page(row() + nameless + row({ id: "person-4" })))).toThrow(/result 2: no name \(2 of 4 results could not be read\)/);
   });
 
   it("counts hidden out-of-network members instead of returning them", () => {
@@ -270,6 +303,31 @@ describe("parseSearchResults on the committed fixture", () => {
       expect(card.location).not.toBeNull();
       expect(card.summary).not.toBeNull();
       expect(card).toMatchObject({ degree: 3, action: "message", company: null });
+    }
+    expect(new Set(result.cards.map((card) => card.publicId)).size).toBe(10);
+  });
+});
+
+/** The page that raised a safety stop on 2026-11-12: a later load whose seventh result links its profile as `/in/<id>/en/`. */
+describe("parseSearchResults on the committed fixture with a language suffix in a profile link", () => {
+  const html = readFileSync(new URL("../../../fixtures/search/people-language-suffix-en.html", import.meta.url), "utf8");
+  const result = parseSearchResults(html);
+
+  it("still holds the link that broke the parser", () => {
+    expect(html).toMatch(/<p[^>]*><a[^>]* href="https:\/\/www\.linkedin\.com\/in\/person-\d+\/en\/"/);
+  });
+
+  it("reads every result, leaving none out", () => {
+    expect(result.cards).toHaveLength(10);
+    expect(result).toMatchObject({ hasNextPage: true, capped: false, hiddenMembers: 0, skipped: [] });
+  });
+
+  it("gives each card a canonical profile URL, a name, a degree and an action", () => {
+    for (const card of result.cards) {
+      expect(card.profileUrl).toMatch(/^https:\/\/www\.linkedin\.com\/in\/person-\d+\/$/);
+      expect(card.fullName).toMatch(/^Person \d+$/);
+      expect(card.degree).toBe(2);
+      expect(["connect", "follow"]).toContain(card.action);
     }
     expect(new Set(result.cards.map((card) => card.publicId)).size).toBe(10);
   });

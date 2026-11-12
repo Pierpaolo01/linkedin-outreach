@@ -277,6 +277,8 @@ export const discoveryRuns = sqliteTable("discovery_runs", {
   exhausted: flag("exhausted").notNull().default(false),
   /** Discovery from this source waits until then, e.g. the first day of next month after the search cap. */
   pausedUntil: timestamp("paused_until"),
+  /** A page of this source could not be read; the source is not loaded again until then (the next day). */
+  unreadableUntil: timestamp("unreadable_until"),
   /** Loads in a row that brought no new person; a recommendations source is exhausted after a few. */
   emptyLoads: integer("empty_loads").notNull().default(0),
   createdAt: timestamp("created_at").notNull(),

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -26,14 +26,15 @@ function fakeWindow(route: Route) {
     content: async () => current.html,
     screenshot: async () => Buffer.from(""),
   };
+  const screenshotsDir = mkdtempSync(join(tmpdir(), "driver-"));
   const driver = createLiveDriver({
     page,
     pace: async () => {
       events.push("pace");
     },
-    health: { screenshotsDir: mkdtempSync(join(tmpdir(), "driver-")) },
+    health: { screenshotsDir },
   });
-  return { driver, events, loads: () => events.filter((e) => e.startsWith("load ")) };
+  return { driver, events, screenshotsDir, loads: () => events.filter((e) => e.startsWith("load ")) };
 }
 
 /** Serves the fixture whose page the URL names, as a signed-in user would see it. */
@@ -71,6 +72,24 @@ describe("the live driver on saved pages", () => {
     expect(result.cards[0]?.publicId).toBe("person-1");
     expect(result.hasNextPage).toBe(true);
     expect(result.capped).toBe(false);
+  });
+
+  it("returns a search page with a result it cannot read without that result, and saves the page", async () => {
+    const html = fixture("search/people-en.html").replaceAll(/\/in\/person-3\/[^"]*/g, "/elsewhere/");
+    const { driver, screenshotsDir } = fakeWindow((url) => ({ url, html }));
+
+    const result = await driver.searchPeople({ keywords: "cfo" });
+
+    expect(result.cards).toHaveLength(9);
+    expect(result.skipped).toEqual(["result 3: no profile link"]);
+    expect(readdirSync(screenshotsDir).filter((name) => name.endsWith(".html"))).toHaveLength(1);
+  });
+
+  it("saves nothing for a search page it read in full", async () => {
+    const { driver, screenshotsDir } = fakeWindow(linkedIn);
+
+    expect((await driver.searchPeople({ keywords: "cfo" })).skipped).toEqual([]);
+    expect(readdirSync(screenshotsDir)).toEqual([]);
   });
 
   it("searches a people-search URL the user pasted", async () => {

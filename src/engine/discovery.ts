@@ -63,14 +63,18 @@ export function searchPausedUntil(db: Conn, now: Date): Date | null {
   return row?.until ?? null;
 }
 
-/** The first source of the campaign that can be loaded now: not exhausted and not paused. Null when none. */
+function waits(until: Date | null, now: Date): until is Date {
+  return until !== null && until > now;
+}
+
+/** The first source of the campaign that can be loaded now: not exhausted, not paused and not waiting after a page that could not be read. Null when none. */
 export function availableSource(db: Conn, campaign: CampaignRow, now: Date): SourceRef | null {
   const searchPaused = searchPausedUntil(db, now) !== null;
   for (const ref of sourcesOf(campaign)) {
     if (ref.source === "search" && searchPaused) continue;
     const run = runOf(db, campaign.id, ref);
     if (run === undefined) return ref;
-    if (run.exhausted || (run.pausedUntil !== null && run.pausedUntil > now)) continue;
+    if (run.exhausted || waits(run.pausedUntil, now) || waits(run.unreadableUntil, now)) continue;
     return ref;
   }
   return null;
@@ -86,29 +90,34 @@ export function mayDiscoverMore(db: Conn, campaign: CampaignRow): boolean {
 
 /**
  * Why discovery for a campaign is waiting: LinkedIn's search limit (until when), LinkedIn's
- * suggestions had nobody new today (until the next day), or every source exhausted.
+ * suggestions had nobody new today (until the next day), a page of every source left could not be
+ * read (until the next day), or every source exhausted.
  */
 export type DiscoveryWait =
   | { readonly kind: "search_limit"; readonly until: Date }
   | { readonly kind: "no_new_people"; readonly until: Date }
+  | { readonly kind: "unreadable"; readonly until: Date }
   | { readonly kind: "exhausted" };
 
 /**
  * Whether discovery for the campaign waits on something only time or the user changes: every one
- * of its sources is exhausted, its recommendations had nobody new today, or (for a search
- * campaign) LinkedIn's search limit holds. Null when it does not wait (it may still have no use
- * for more cards right now).
+ * of its sources is exhausted, its recommendations had nobody new today, (for a search campaign)
+ * LinkedIn's search limit holds, or every source left showed a page that could not be read. Null
+ * when it does not wait (it may still have no use for more cards right now).
  */
 export function discoveryWait(db: Conn, campaign: Pick<CampaignRow, "id" | "discoverySource" | "sourceUrls">, now: Date): DiscoveryWait | null {
   const refs = sourcesOf(campaign);
   if (refs.length === 0) return null;
-  if (refs.every((ref) => runOf(db, campaign.id, ref)?.exhausted === true)) return { kind: "exhausted" };
-  if (campaign.discoverySource === "recommendations") {
-    const pausedUntil = runOf(db, campaign.id, { source: "recommendations", url: null })?.pausedUntil ?? null;
-    return pausedUntil !== null && pausedUntil > now ? { kind: "no_new_people", until: pausedUntil } : null;
-  }
-  const until = searchPausedUntil(db, now);
-  return until === null ? null : { kind: "search_limit", until };
+  const runs = refs.map((ref) => runOf(db, campaign.id, ref));
+  if (runs.every((run) => run?.exhausted === true)) return { kind: "exhausted" };
+  // The search limit is on the account and outlasts a page that could not be read: it is the wait to report.
+  const limit = campaign.discoverySource === "search" ? searchPausedUntil(db, now) : null;
+  if (limit !== null) return { kind: "search_limit", until: limit };
+  const open = runs.filter((run) => run?.exhausted !== true);
+  const unreadable = open.map((run) => run?.unreadableUntil ?? null).filter((until) => waits(until, now));
+  if (unreadable.length === open.length) return { kind: "unreadable", until: new Date(Math.min(...unreadable.map((until) => until.getTime()))) };
+  const pausedUntil = campaign.discoverySource === "recommendations" ? (runOf(db, campaign.id, { source: "recommendations", url: null })?.pausedUntil ?? null) : null;
+  return waits(pausedUntil, now) ? { kind: "no_new_people", until: pausedUntil } : null;
 }
 
 function countIn(db: Conn, campaignId: number, stages: readonly (typeof prospects.$inferSelect)["stage"][], exclude = false): number {
@@ -144,10 +153,11 @@ export function startOfNextMonth(timeZone: string, at: Date): Date {
 
 // ---------------------------------------------------------------- the discovery page
 
-/** What a load of a source gave: the cards, and for a search whether there is a page after this one. */
+/** What a load of a source gave: the cards, for a search whether there is a page after this one, and the results left out as unreadable. */
 interface Loaded {
   readonly cards: readonly Card[];
   readonly hasNextPage: boolean;
+  readonly skipped: readonly string[];
 }
 
 /** Stored on `people.raw`: what LinkedIn showed of the person, kept as it was shown. */
@@ -249,6 +259,9 @@ function sourceWords(ref: SourceRef): string {
  * keeps the cursor on it (and does not count as a load with nobody new).
  * LinkedIn's monthly search cap pauses the search until the first instant of next month; nothing
  * else stops for it.
+ * A page the app cannot read (decision 85) is not loaded again and again: its source waits until the
+ * next day and everything else carries on. The failed read still counts as one unexpected page.
+ * Results of a search page that could not be read are left out, with a warning naming them.
  */
 export async function discoveryPageStep(ctx: StepContext, campaign: CampaignRow, ref: SourceRef): Promise<StepOutcome> {
   const { db, clock, driver } = ctx;
@@ -257,7 +270,7 @@ export async function discoveryPageStep(ctx: StepContext, campaign: CampaignRow,
   const url = ref.url;
   const result =
     url === null
-      ? await read(ctx, "recommendation_page", null, async (): Promise<Loaded> => ({ cards: flattenRecommendations(await driver.listRecommendations()), hasNextPage: false }), {
+      ? await read(ctx, "recommendation_page", null, async (): Promise<Loaded> => ({ cards: flattenRecommendations(await driver.listRecommendations()), hasNextPage: false, skipped: [] }), {
           campaignId: campaign.id,
         })
       : await read(ctx, "search_page", null, async (): Promise<Loaded> => driver.searchPeople({ url, page }), { campaignId: campaign.id });
@@ -281,10 +294,26 @@ export async function discoveryPageStep(ctx: StepContext, campaign: CampaignRow,
       });
       return loaded(`${label}: search limit reached`);
     }
+    if (result.kind === "unexpected") {
+      const until = startOfNextDay(ctx.settings.timeZone, at);
+      db.transaction((tx) => {
+        tx.update(discoveryRuns).set({ unreadableUntil: until, updatedAt: at }).where(eq(discoveryRuns.id, run.id)).run();
+        logEvent(
+          tx,
+          {
+            level: "warning",
+            campaignId: campaign.id,
+            message: `Discovery for ${campaign.name}: LinkedIn's page could not be read (${sourceWords(ref)}${url === null ? "" : ` page ${page}`}); this source waits until ${dayKey(ctx.settings.timeZone, until)}. Sequences of existing prospects carry on`,
+          },
+          at,
+        );
+      });
+      return loaded(`${label}: could not be read`);
+    }
     return loaded(`${label}: not read`);
   }
 
-  const { cards, hasNextPage } = result.value;
+  const { cards, hasNextPage, skipped } = result.value;
   const created = db.transaction((tx) => {
     const fresh = tx.select().from(discoveryRuns).where(eq(discoveryRuns.id, run.id)).get() ?? run;
     // The target as it is now: the user may have changed it while the page loaded.
@@ -313,6 +342,10 @@ export async function discoveryPageStep(ctx: StepContext, campaign: CampaignRow,
           ? "; no new people in LinkedIn's suggestions today; looks again tomorrow"
           : "";
     logEvent(tx, { campaignId: campaign.id, message: `Discovery for ${campaign.name}: ${n} new prospect${n === 1 ? "" : "s"} from ${cards.length} cards (${sourceWords(ref)})${more}` }, at);
+    if (skipped.length > 0) {
+      const what = `${skipped.length} result${skipped.length === 1 ? "" : "s"} of page ${page} could not be read and ${skipped.length === 1 ? "was" : "were"} left out`;
+      logEvent(tx, { level: "warning", campaignId: campaign.id, message: `Discovery for ${campaign.name}: ${what} (${skipped.join("; ")}). The page was saved (${sourceWords(ref)})` }, at);
+    }
     return n;
   });
   return loaded(`${label}: ${created} new`);

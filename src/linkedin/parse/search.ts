@@ -38,26 +38,56 @@ export interface SearchResults {
   readonly capped: boolean;
   /** Rows for out-of-network members LinkedIn hides ("LinkedIn Member", no profile link). */
   readonly hiddenMembers: number;
+  /**
+   * Results that could not be read and are left out of `cards`, each as which one and why
+   * ("result 7: no profile link"). Fewer than half the page's results, or the parse fails.
+   */
+  readonly skipped: readonly string[];
 }
 
-export function parseSearchResults(html: string, options: ListParseOptions = {}): SearchResults {
+export interface SearchParseOptions extends ListParseOptions {
+  /**
+   * Fail on any result that cannot be read instead of leaving it out. For building fixtures: a
+   * result left out would keep its person's name and headline in the fixture, unscrubbed.
+   */
+  readonly everyResult?: boolean;
+}
+
+export function parseSearchResults(html: string, options: SearchParseOptions = {}): SearchResults {
   const { root, screen, wording } = loadListPage(html, PAGE, hooks.screen);
   const pageText = textOf(root);
   const capped = includesAny(pageText, wording.search.capped);
 
   const cards: SearchCard[] = [];
+  const skipped: string[] = [];
   let hiddenMembers = 0;
-  screen.querySelectorAll(hooks.row).forEach((result, index) => {
-    const card = parseRow(result, `result ${index + 1}`, wording);
+  const rows = screen.querySelectorAll(hooks.row);
+  rows.forEach((result, index) => {
+    const card = readRow(result, `result ${index + 1}`, wording);
     if (card === "hidden") hiddenMembers += 1;
+    else if ("unreadable" in card) skipped.push(card.unreadable);
     else if (card.publicId !== options.selfPublicId) cards.push(card);
   });
+  // One odd result is LinkedIn's variety and is left out; half the page or more is a page that changed.
+  if (skipped[0] !== undefined && (options.everyResult === true || skipped.length * 2 >= rows.length)) {
+    throw new ParseError(PAGE, `${skipped[0]} (${skipped.length} of ${rows.length} results could not be read)`);
+  }
 
   if (cards.length === 0 && hiddenMembers === 0 && !capped && !includesAny(pageText, wording.search.noResults)) {
     throw new ParseError(PAGE, "no result rows and no 'no results' notice");
   }
 
-  return { cards, hasNextPage: root.querySelector(hooks.nextPage) !== null, capped, hiddenMembers };
+  return { cards, hasNextPage: root.querySelector(hooks.nextPage) !== null, capped, hiddenMembers, skipped };
+}
+
+/** A result's card, "hidden" for a hidden member, or which result could not be read and why. */
+function readRow(result: HTMLElement, label: string, wording: ListWording): SearchCard | "hidden" | { readonly unreadable: string } {
+  try {
+    return parseRow(result, label, wording);
+  } catch (error) {
+    if (!(error instanceof ParseError)) throw error;
+    return { unreadable: error.message.slice(`${PAGE}: `.length) };
+  }
 }
 
 function parseRow(result: HTMLElement, label: string, wording: ListWording): SearchCard | "hidden" {

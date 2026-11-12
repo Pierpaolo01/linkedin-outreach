@@ -1376,7 +1376,12 @@ const FAULT_OPS: readonly DriverOp[] = [
 ];
 const FAULT_KINDS: readonly FaultKind[] = ["unexpected", "timeout_before_effect", "timeout_after_effect"];
 
-/** Zero to two scripted faults on each working day of the run before the quiet last day, at a random time inside the window. */
+/**
+ * Zero to two scripted faults on each working day of the run before the quiet last day, at a random time inside the window.
+ * A discovery page gets a timeout where the draw says an unexpected page: an unreadable discovery
+ * page makes its source wait until the next day (decision 85), and a random one of those would
+ * take away the day a run needs to reach its profile-view limit. `discovery.test.ts` covers that wait.
+ */
 function sprinkleFaults(random: RandomSource): ScheduledFault[] {
   const faults: ScheduledFault[] = [];
   for (let day = START_DAY; day < LAST_DAY; day = addDays(day, 1)) {
@@ -1384,11 +1389,11 @@ function sprinkleFaults(random: RandomSource): ScheduledFault[] {
     const { start, end } = windowOn(DEFAULT_SETTINGS, day);
     const count = Math.floor(random() * 3);
     for (let i = 0; i < count; i++) {
-      faults.push({
-        at: new Date(start.getTime() + Math.floor(random() * (end.getTime() - start.getTime()))),
-        op: FAULT_OPS[Math.floor(random() * FAULT_OPS.length)] ?? "viewProfile",
-        fault: FAULT_KINDS[Math.floor(random() * FAULT_KINDS.length)] ?? "unexpected",
-      });
+      const at = new Date(start.getTime() + Math.floor(random() * (end.getTime() - start.getTime())));
+      const op = FAULT_OPS[Math.floor(random() * FAULT_OPS.length)] ?? "viewProfile";
+      const fault = FAULT_KINDS[Math.floor(random() * FAULT_KINDS.length)] ?? "unexpected";
+      const discoveryPage = op === "listRecommendations" || op === "searchPeople";
+      faults.push({ at, op, fault: discoveryPage && fault === "unexpected" ? "timeout_before_effect" : fault });
     }
   }
   return faults;
