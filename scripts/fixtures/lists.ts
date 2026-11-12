@@ -8,6 +8,8 @@
  * - `captures/invitations-sent.html` → `fixtures/invitations/sent-en.html`
  * - `captures/later-search-people.html` → `fixtures/search/people-later-en.html`
  * - `captures/later-connections.html` → `fixtures/connections/recent-later-en.html`
+ * - `captures/later-search-language-suffix.html` → `fixtures/search/people-language-suffix-en.html`
+ *   (the page that raised a safety stop on 2026-11-12: one result's profile link is `/in/<id>/en/`)
  *
  * The `later-` captures are later page loads, which carry no `data-view-name` (see `selectors.lists.ts`).
  *
@@ -49,6 +51,13 @@ const pages: readonly ListPage[] = [
   {
     capture: "captures/later-search-people.html",
     fixture: "fixtures/search/people-later-en.html",
+    parse: (html) => parseSearchResults(html).cards,
+    extraTexts: (card) => [card.location, "summary" in card && typeof card.summary === "string" ? card.summary : null],
+    otherNames: mutualConnectionNames,
+  },
+  {
+    capture: "captures/later-search-language-suffix.html",
+    fixture: "fixtures/search/people-language-suffix-en.html",
     parse: (html) => parseSearchResults(html).cards,
     extraTexts: (card) => [card.location, "summary" in card && typeof card.summary === "string" ? card.summary : null],
     otherNames: mutualConnectionNames,

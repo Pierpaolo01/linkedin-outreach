@@ -23,6 +23,8 @@ function waitJson(wait: DiscoveryWait | null, timeZone: string) {
       return { reason: wait.kind, until: wait.until, message: `LinkedIn's monthly search limit; resumes on ${dayKey(timeZone, wait.until)}` };
     case "no_new_people":
       return { reason: wait.kind, until: wait.until, message: "no new people in LinkedIn's suggestions today; looks again tomorrow" };
+    case "unreadable":
+      return { reason: wait.kind, until: wait.until, message: "LinkedIn's page could not be read; looks again tomorrow" };
     case "exhausted":
       return { reason: wait.kind, until: null, message: "no more people to find from this source" };
     default: {

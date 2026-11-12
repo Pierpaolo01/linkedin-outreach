@@ -167,6 +167,7 @@ export class FakeWorld {
   readonly #faults = new Map<DriverOp, FaultKind[]>();
   readonly #suspensions = new Map<DriverOp, number[]>();
   readonly #searches = new Map<string, readonly string[]>();
+  readonly #searchSkips = new Map<string, readonly string[]>();
   #recommendations: readonly RecommendationGroupSpec[] = [];
   #session: SessionBreak | "ok" = "ok";
   readonly #port: FakeLinkedIn;
@@ -208,6 +209,11 @@ export class FakeWorld {
   setSearchResults(query: string, publicIds: readonly string[]): void {
     publicIds.forEach((id) => this.#member(id));
     this.#searches.set(query, [...publicIds]);
+  }
+
+  /** Results every page of a search reports as left out because they could not be read, each as which one and why. */
+  setSearchSkipped(query: string, reasons: readonly string[]): void {
+    this.#searchSkips.set(query, [...reasons]);
   }
 
   /** The groups My Network → Grow shows. 1st-degree members are never shown. */
@@ -474,14 +480,15 @@ export class FakeWorld {
 
       searchPeople: (query: SearchQuery, now): SearchResults => {
         this.#pageLoad("search", now);
-        const ids = this.#searches.get("url" in query ? query.url : query.keywords) ?? [];
+        const key = "url" in query ? query.url : query.keywords;
+        const ids = this.#searches.get(key) ?? [];
         const page = query.page ?? 1;
         if (!Number.isInteger(page) || page < 1) throw new RangeError("page must be a whole number from 1");
         const cards: SearchCard[] = ids
           .slice((page - 1) * SEARCH_PAGE_SIZE, page * SEARCH_PAGE_SIZE)
           .map((id) => this.#member(id))
           .map((member) => ({ ...this.#card(member), action: this.#action(member), summary: null }));
-        return { cards, hasNextPage: page * SEARCH_PAGE_SIZE < ids.length, capped: false, hiddenMembers: 0 };
+        return { cards, hasNextPage: page * SEARCH_PAGE_SIZE < ids.length, capped: false, hiddenMembers: 0, skipped: this.#searchSkips.get(key) ?? [] };
       },
 
       listRecommendations: (now): RecommendationsResult => {

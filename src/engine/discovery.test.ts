@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { AiUnavailable } from "../ai/types";
 import { campaigns, discoveryRuns, people, prospects } from "../db/schema";
-import { EMPTY_LOADS_TO_PAUSE } from "./discovery";
+import { discoveryWait, EMPTY_LOADS_TO_PAUSE } from "./discovery";
+import { activeSafetyStop } from "./safetyStop";
 import type { MemberSpec } from "../linkedin/fake/world";
 import {
   actionRows,
@@ -176,6 +177,90 @@ describe("discovery from a search", () => {
     kit.clock.set(new Date("2026-12-01T08:00:00Z"));
     for (let i = 0; i < 3 && searchRows() === 1; i++) await next();
     expect(searchRows()).toBe(2);
+  });
+});
+
+describe("a discovery page the app cannot read", () => {
+  const searchRows = () => actionRows(kit).filter((row) => row.type === "search_page");
+
+  it("is loaded once, not again and again: its source waits until the next day, with a log line, and no safety stop is raised", async () => {
+    const c = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [SEARCH] });
+    kit.world.setSearchResults(SEARCH, members(3));
+    for (let i = 0; i < 3; i++) kit.world.failNext("searchPeople", "unexpected");
+
+    for (let i = 0; i < 5; i++) await next();
+
+    expect(searchRows().map((row) => row.errorKind)).toEqual(["unexpected"]);
+    expect(activeSafetyStop(kit.db)).toBeNull();
+    // 17 November 2026, 00:00 in Rome.
+    const tomorrow = new Date("2026-11-16T23:00:00Z");
+    expect(runs(c)).toMatchObject([{ cursor: "1", unreadableUntil: tomorrow, pausedUntil: null, exhausted: false }]);
+    expect(events(kit).filter((line) => line.includes("could not be read"))).toEqual([
+      expect.stringMatching(/LinkedIn's page could not be read \(search .+ page 1\); this source waits until 2026-11-17\. Sequences of existing prospects carry on$/),
+    ]);
+    const campaign = kit.db.select().from(campaigns).where(eq(campaigns.id, c)).get();
+    if (campaign === undefined) throw new Error("missing campaign");
+    expect(discoveryWait(kit.db, campaign, kit.clock.now())).toEqual({ kind: "unreadable", until: tomorrow });
+  });
+
+  it("is loaded again the next day", async () => {
+    const c = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [SEARCH] });
+    kit.world.setSearchResults(SEARCH, members(3));
+    kit.world.failNext("searchPeople", "unexpected");
+    for (let i = 0; i < 3; i++) await next();
+    expect(campaignProspects(c)).toHaveLength(0);
+
+    kit.clock.set(new Date("2026-11-17T08:00:00Z"));
+    for (let i = 0; i < 3 && searchRows().length === 1; i++) await next();
+
+    expect(searchRows().map((row) => row.status)).toEqual(["failed", "done"]);
+    expect(campaignProspects(c)).toHaveLength(3);
+  });
+
+  it("does not hold back the campaign's other search", async () => {
+    const second = `${SEARCH}&b`;
+    const c = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [SEARCH, second] });
+    kit.world.setSearchResults(SEARCH, members(2));
+    kit.world.setSearchResults(second, members(2));
+    kit.world.failNext("searchPeople", "unexpected");
+
+    await next();
+    await next();
+
+    expect(runs(c).map((run) => [run.sourceUrl, run.unreadableUntil !== null, run.exhausted])).toEqual([
+      [SEARCH, true, false],
+      [second, false, true],
+    ]);
+    expect(campaignProspects(c)).toHaveLength(2);
+  });
+
+  it("still raises the safety stop when three different pages in a row cannot be read", async () => {
+    for (const tag of ["a", "b", "c"]) {
+      addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [`${SEARCH}&${tag}`] });
+      kit.world.failNext("searchPeople", "unexpected");
+    }
+
+    for (let i = 0; i < 3; i++) await next();
+
+    expect(searchRows().map((row) => row.errorKind)).toEqual(["unexpected", "unexpected", "unexpected"]);
+    expect(activeSafetyStop(kit.db)?.reason).toBe("unexpected_pages");
+  });
+});
+
+describe("a search page with a result the app cannot read", () => {
+  it("takes the other results, moves on to the next page and says in the log what was left out", async () => {
+    const c = addCampaign(kit, { status: "finding", discoverySource: "search", sourceUrls: [SEARCH] });
+    kit.world.setSearchResults(SEARCH, members(12));
+    kit.world.setSearchSkipped(SEARCH, ["result 7: no profile link"]);
+
+    await next();
+
+    expect(campaignProspects(c)).toHaveLength(10);
+    expect(runs(c)).toMatchObject([{ cursor: "2", unreadableUntil: null }]);
+    expect(activeSafetyStop(kit.db)).toBeNull();
+    expect(events(kit).filter((line) => line.includes("left out"))).toEqual([
+      expect.stringMatching(/1 result of page 1 could not be read and was left out \(result 7: no profile link\)\. The page was saved \(search .+\)$/),
+    ]);
   });
 });
 

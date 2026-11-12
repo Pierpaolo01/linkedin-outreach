@@ -28,7 +28,12 @@ export class ParseError extends Error {
   }
 }
 
-const PROFILE_PATH = /^\/in\/([^/?#]+)\/?$/;
+/**
+ * `/in/<id>/`, or `/in/<id>/<language>/`: LinkedIn links a member who also has a profile in another
+ * language with that language after the id (seen 2026-11-12 in a search result: `/in/<id>/en/`).
+ * Group 1 is the id either way.
+ */
+const PROFILE_PATH = /^\/in\/([^/?#]+)(?:\/[a-z]{2}(?:-[a-z]{2})?)?\/?$/i;
 
 /** A link's `href`, relative or absolute, resolved against linkedin.com. Undefined when it is not a URL. */
 export function linkedInUrl(href: string): URL | undefined {

@@ -1,0 +1,1 @@
+ALTER TABLE `discovery_runs` ADD `unreadable_until` integer;

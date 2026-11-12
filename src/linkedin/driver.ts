@@ -112,9 +112,11 @@ export function createLiveDriver({ page, pace, health = {} }: LiveDriverDeps): R
     },
 
     async searchPeople(query) {
-      const url = searchUrl(query);
-      const results = await read(await open(url), (html) => parseSearchResults(html));
+      const html = await open(searchUrl(query));
+      const results = await read(html, (page) => parseSearchResults(page));
       if (results.capped) throw new SearchCapped("LinkedIn shows its monthly search limit notice");
+      // A page with a result that was left out is kept, so the parser can be taught that result.
+      if (results.skipped.length > 0) await savePage(page, html, "unknown", health);
       return results;
     },
 
