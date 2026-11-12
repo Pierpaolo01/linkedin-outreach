@@ -3,7 +3,11 @@ import Database from "better-sqlite3";
 import { dataPaths } from "../src/config/paths";
 import { backupNow } from "../src/ops/backup";
 
-/** `npm run backup`: a fresh backup of the database now, replacing today's once the copy checks out. */
+/**
+ * `npm run backup`: a fresh backup of the database now, replacing today's once the copy checks out.
+ * It does not take the app's instance lock (`app.lock`): SQLite's online backup reads a consistent
+ * copy beside a running app's open connection and changes nothing in `app.db`.
+ */
 const paths = dataPaths();
 
 if (!existsSync(paths.db)) {

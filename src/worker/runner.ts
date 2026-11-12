@@ -8,9 +8,11 @@
  * half a minute. A tick that rejects is written to the event log and to the app's log (`logs/app.log`),
  * and the runner tries again a minute later; it never exits on its own.
  */
+import { desc, isNotNull } from "drizzle-orm";
 import type { Ai } from "../ai/types";
 import { getSettings } from "../config/settings";
 import type { Db } from "../db/index";
+import { safetyStops } from "../db/schema";
 import { createEngine, pickDueWork } from "../engine/engine";
 import { logEvent } from "../engine/ledger";
 import type { Clock, Driver, Engine, EngineDeps, RandomSource } from "../engine/ports";
@@ -100,13 +102,20 @@ export function startRunner(deps: RunnerDeps): Runner {
     readonly withAi: boolean;
     /** `settings.ai` as it was when this engine was built. */
     readonly aiSettings: string;
+    /** The newest resumed safety stop when this engine was built (0: none). */
+    readonly resumedStop: number;
   }
 
   /** The AI setting, in a form two readings can be compared by. */
   const aiSettingsNow = (): string => JSON.stringify(getSettings(db).ai);
 
+  /** The id of the newest stop the user has resumed, 0 when none. Ids only grow, and one stop is resumed once. */
+  const newestResumedStop = (): number =>
+    db.select({ id: safetyStops.id }).from(safetyStops).where(isNotNull(safetyStops.resumedAt)).orderBy(desc(safetyStops.id)).limit(1).get()?.id ?? 0;
+
   function build(): Built {
     const aiSettings = aiSettingsNow();
+    const resumedStop = newestResumedStop();
     let ai: Ai | undefined;
     try {
       ai = deps.ai();
@@ -123,7 +132,7 @@ export function startRunner(deps: RunnerDeps): Runner {
       outreach: deps.outreach,
       ...(ai === undefined ? {} : { ai }),
     });
-    return { engine, withAi: ai !== undefined, aiSettings };
+    return { engine, withAi: ai !== undefined, aiSettings, resumedStop };
   }
 
   /** True when the next tick may load LinkedIn: no safety stop, inside the working window, and LinkedIn work is due. */
@@ -164,17 +173,16 @@ export function startRunner(deps: RunnerDeps): Runner {
 
   async function loop(): Promise<void> {
     let built: Built | null = null;
-    let stopWasActive = false;
     while (!stopping.signal.aborted) {
       let pause: number;
       try {
         // A driver latches on a safety error (decision 18): after the user's Resume, start afresh (decision 43).
-        const stopIsActive = activeSafetyStop(db) !== null;
-        if (built !== null && stopWasActive && !stopIsActive) {
+        // Read from the stored stops, not by sampling the active flag: a stop raised by a tick and
+        // resumed before the next loop is never seen active here.
+        if (built !== null && newestResumedStop() > built.resumedStop) {
           say("Safety stop resumed: the engine starts again with a new LinkedIn driver");
           built = null;
         }
-        stopWasActive = stopIsActive;
         // The engine holds the AI it was built with: a change in Settings needs a new one.
         if (built !== null && aiSettingsNow() !== built.aiSettings) {
           say("The AI setting changed: the engine starts again with the new AI");

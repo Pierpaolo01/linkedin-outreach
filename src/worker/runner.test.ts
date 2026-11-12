@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openTestDb, type TestDb } from "../campaigns/testSeed";
 import { getSettings, setSettings } from "../config/settings";
-import { eventLog } from "../db/schema";
+import { eventLog, safetyStops } from "../db/schema";
 import type { Driver, Engine, EngineDeps, TickResult } from "../engine/ports";
 import { systemClock } from "../engine/ports";
-import { raiseSafetyStop, resumeSafetyStop } from "../engine/safetyStop";
+import { activeSafetyStop, raiseSafetyStop, resumeSafetyStop } from "../engine/safetyStop";
 import { createFakeAi } from "../ai/fakeAi";
 import {
   actionRows,
@@ -380,6 +380,34 @@ describe("the runner with the real engine", () => {
   });
 
   // A whole simulated working day through the real engine: about 3 s alone, more on a busy CI runner.
+  it("a stop raised by a tick and resumed before the runner looks again: the next tick works on a new driver", async () => {
+    const campaignId = seedCampaign(kit, { followUpDelayMinHours: 72, followUpDelayMaxHours: 72 });
+    seedConnectionsChecked(kit);
+    const accepted = seedAccepted(kit, campaignId);
+    let drivers = 0;
+    startReal({
+      driver: () => {
+        drivers += 1;
+        return kit.world.connect({ clock: systemClock, random: kit.random }).driver;
+      },
+    });
+
+    kit.world.breakSession("logged_out");
+    // One tick meets the login wall and raises the stop; the driver latches on it.
+    for (let i = 0; i < 10 * 60 && activeSafetyStop(kit.db) === null; i++) await vi.advanceTimersByTimeAsync(SECOND);
+    expect(activeSafetyStop(kit.db)?.reason).toBe("logged_out");
+    // The user logs in and presses Resume while the runner waits for its next tick.
+    kit.world.fixSession();
+    resumeSafetyStop(kit.db, new Date());
+
+    await vi.advanceTimersByTimeAsync(2 * 60 * MINUTE);
+
+    expect(kit.db.select().from(safetyStops).all()).toHaveLength(1);
+    expect(drivers).toBe(2);
+    expect(kit.world.messagesSentTo(accepted.spec.publicId)).toHaveLength(1);
+    expect(prospect(kit, accepted.prospectId).stage).toBe("message_sent");
+  });
+
   it("on the live site's terms never sends and never reads a thread, whatever is due", { timeout: 60_000 }, async () => {
     const campaignId = seedCampaign(kit);
     seedApproved(kit, campaignId);
