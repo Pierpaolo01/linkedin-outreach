@@ -24,6 +24,9 @@ const secondsRange = z
   .object({ min: positive, max: positive })
   .refine((r) => r.min <= r.max, "min must not exceed max");
 
+export const AI_PROVIDERS = ["claude_cli", "anthropic_api"] as const;
+export type AiProviderName = (typeof AI_PROVIDERS)[number];
+
 export const settingsSchema = z.object({
   /** IANA time zone the working window and calendar day/week limits are computed in. */
   timeZone: z.string().refine(isTimeZone, "unknown time zone"),
@@ -58,6 +61,10 @@ export const settingsSchema = z.object({
   warmUp: z.object({ enabled: z.boolean(), invitesStartPerDay: count, invitesIncreasePerDay: count }),
   /** Days invites stay off after LinkedIn's own invitation-limit message, even once the safety stop is resumed. */
   inviteLimitCooldownDays: count,
+  /** Which AI scores prospects and cleans names (spec section 8). An empty model means the provider's default. */
+  ai: z.object({ provider: z.enum(AI_PROVIDERS), model: z.string() }),
+  /** Hold `caffeinate -i` while a campaign is running or finding inside the working window (spec section 11). */
+  keepAwake: z.boolean(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
@@ -89,6 +96,8 @@ export const DEFAULT_SETTINGS = {
   },
   warmUp: { enabled: true, invitesStartPerDay: 5, invitesIncreasePerDay: 2 },
   inviteLimitCooldownDays: 7,
+  ai: { provider: "claude_cli", model: "" },
+  keepAwake: true,
 } as const satisfies Settings;
 
 const SETTING_KEYS = new Set<string>(Object.keys(settingsSchema.shape));

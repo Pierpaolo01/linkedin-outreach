@@ -22,6 +22,27 @@
       "when": 1794436142985,
       "tag": "0002_drop_jobs_and_urn",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794449053777,
+      "tag": "0003_scoring_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794449179506,
+      "tag": "0004_discovery_pause",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794450682862,
+      "tag": "0005_paused_from_and_ai_evidence",
+      "breakpoints": true
     }
   ]
 }

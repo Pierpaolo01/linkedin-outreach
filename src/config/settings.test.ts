@@ -36,7 +36,16 @@ describe("settings", () => {
       },
       warmUp: { enabled: true, invitesStartPerDay: 5, invitesIncreasePerDay: 2 },
       inviteLimitCooldownDays: 7,
+      ai: { provider: "claude_cli", model: "" },
+      keepAwake: true,
     });
+  });
+
+  it("stores keep-awake off and rejects a non-boolean", () => {
+    expect(setSettings(opened.db, { keepAwake: false }).keepAwake).toBe(false);
+    expect(getSettings(opened.db).keepAwake).toBe(false);
+    expect(() => setSettings(opened.db, JSON.parse('{"keepAwake":"yes"}'))).toThrow();
+    expect(getSettings(opened.db).keepAwake).toBe(false);
   });
 
   it("round-trips a change and keeps the untouched values", () => {

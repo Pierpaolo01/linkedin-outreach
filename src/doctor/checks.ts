@@ -5,6 +5,10 @@ import Database from "better-sqlite3";
 import { z } from "zod";
 import type { DataPaths } from "../config/paths";
 import { MIGRATIONS_DIR } from "../db/index";
+import { dayKey } from "../engine/workingWindow";
+import { listBackups } from "../ops/backup";
+import { LOG_FILE } from "../ops/log";
+import { defaultServiceContext, serviceStatus, type ServiceContext } from "../ops/service";
 
 /**
  * `npm run doctor`: a diagnosis the user's AI can act on (spec section 11).
@@ -34,6 +38,11 @@ export interface DoctorOptions {
   readonly chromeApp?: string;
   readonly nodeVersion?: string;
   readonly migrationsDir?: string;
+  /** launchd access for the auto-start check; the real `launchctl` by default (read-only calls). */
+  readonly service?: ServiceContext;
+  readonly now?: Date;
+  /** Time zone for the age of the newest backup. Default: the Mac's own. */
+  readonly timeZone?: string;
 }
 
 export const CHROME_APP = "/Applications/Google Chrome.app";
@@ -41,6 +50,9 @@ const MIN_NODE_MAJOR = 22;
 const LOG_TAIL_LINES = 20;
 const LOG_TAIL_BYTES = 64 * 1024;
 const RECENT_ERRORS = 5;
+const SERVICE_ERR_LINES = 10;
+const BACKUP_STALE_DAYS = 2;
+const RESTORE_FIX = "stop the app, then `npm run restore -- <backup file>` with the newest file listed under backups";
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -178,7 +190,7 @@ function checkDatabase(file: string, migrationsDir: string): Check[] {
           name: "database",
           status: "problem",
           detail: `integrity_check failed: ${String(integrity)}`,
-          fix: `stop the app and restore the newest copy from the backups folder next to ${file}`,
+          fix: RESTORE_FIX,
         },
       ];
     }
@@ -197,7 +209,7 @@ function checkDatabase(file: string, migrationsDir: string): Check[] {
         name: "database",
         status: "problem",
         detail: `cannot read ${file}: ${message(error)}`,
-        fix: `stop the app and restore the newest copy from the backups folder next to ${file}`,
+        fix: RESTORE_FIX,
       },
     ];
   } finally {
@@ -205,7 +217,7 @@ function checkDatabase(file: string, migrationsDir: string): Check[] {
   }
 }
 
-function tail(file: string): string[] {
+function tail(file: string, lines: number = LOG_TAIL_LINES): string[] {
   const size = statSync(file).size;
   const length = Math.min(size, LOG_TAIL_BYTES);
   const buffer = Buffer.alloc(length);
@@ -215,7 +227,7 @@ function tail(file: string): string[] {
   } finally {
     closeSync(fd);
   }
-  return buffer.toString("utf8").replace(/\n$/, "").split("\n").slice(-LOG_TAIL_LINES);
+  return buffer.toString("utf8").replace(/\n$/, "").split("\n").slice(-lines);
 }
 
 function checkLogs(dir: string): Check {
@@ -224,9 +236,85 @@ function checkLogs(dir: string): Check {
         .map((name) => join(dir, name))
         .filter((f) => statSync(f).isFile())
     : [];
-  const newest = files.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
+  const app = join(dir, LOG_FILE);
+  const newest = existsSync(app) ? app : files.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
   if (newest === undefined) return { name: "log tail", status: "info", detail: `no log files in ${dir}` };
   return { name: "log tail", status: "info", detail: newest, lines: tail(newest) };
+}
+
+function size(bytes: number): string {
+  const round = (n: number) => String(Math.round(n * 10) / 10);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${round(bytes / 1024)} KB`;
+  return `${round(bytes / (1024 * 1024))} MB`;
+}
+
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
+}
+
+function checkBackups(paths: DataPaths, now: Date, timeZone: string): Check {
+  const backups = listBackups(paths);
+  const newest = backups[0];
+  if (newest === undefined) {
+    return {
+      name: "backups",
+      status: "info",
+      detail: `no backups yet in ${paths.backups}; the app makes one a day while it runs (\`npm run backup\` makes one now)`,
+    };
+  }
+  const age = daysBetween(newest.date, dayKey(timeZone, now));
+  const lines = [
+    ...backups.map((b) => `${b.name}  ${b.date}  ${size(b.bytes)}`),
+    `to restore one: stop the app, then \`npm run restore -- ${newest.name}\` (the current database is copied aside first)`,
+  ];
+  if (age > BACKUP_STALE_DAYS) {
+    return {
+      name: "backups",
+      status: "info",
+      detail: `${backups.length} in ${paths.backups}, newest ${newest.date}, ${age} days old (the app makes one a day while it runs)`,
+      lines,
+    };
+  }
+  return { name: "backups", status: "ok", detail: `${backups.length} in ${paths.backups}, newest ${newest.date}`, lines };
+}
+
+function checkService(ctx: ServiceContext, logs: string): Check {
+  const name = "service";
+  const s = serviceStatus(ctx);
+  const lastExit = s.lastExit ?? "none";
+  if (!s.installed && !s.loaded) {
+    return { name, status: "info", detail: "auto-start: not installed (`npm run service:install` starts the app at login)" };
+  }
+  if (!s.installed) {
+    return {
+      name,
+      status: "problem",
+      detail: "auto-start: launchd has the job loaded but its plist is gone",
+      fix: "run `npm run service:uninstall`, then `npm run service:install`",
+    };
+  }
+  if (!s.loaded) {
+    return {
+      name,
+      status: "problem",
+      detail: "auto-start: installed but not loaded, so it will not start",
+      fix: "run `npm run service:install`",
+    };
+  }
+  if (s.pid !== null) {
+    return { name, status: "ok", detail: `auto-start: installed, loaded, running (pid ${s.pid}), last exit: ${lastExit}` };
+  }
+  const errLog = join(logs, "service.err.log");
+  return {
+    name,
+    status: "problem",
+    detail: `auto-start: installed and loaded but not running, last exit: ${lastExit}`,
+    fix: `read ${errLog}; \`npm run service:restart\` starts it again (launchd also retries a crash every 30 seconds)`,
+    ...(existsSync(errLog) && statSync(errLog).size > 0
+      ? { lines: ["service.err.log:", ...tail(errLog, SERVICE_ERR_LINES)] }
+      : {}),
+  };
 }
 
 export function runDoctor(options: DoctorOptions): DoctorReport {
@@ -235,7 +323,12 @@ export function runDoctor(options: DoctorOptions): DoctorReport {
     checkChrome(options.chromeApp ?? CHROME_APP),
     checkDataDir(options.paths),
     ...checkDatabase(options.paths.db, options.migrationsDir ?? MIGRATIONS_DIR),
-    { name: "service", status: "info", detail: "auto-start: not installed (arrives in milestone 4)" },
+    checkBackups(
+      options.paths,
+      options.now ?? new Date(),
+      options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    ),
+    checkService(options.service ?? defaultServiceContext(), options.paths.logs),
     checkLogs(options.paths.logs),
   ];
   const problems = checks.filter((c) => c.status === "problem").length;
