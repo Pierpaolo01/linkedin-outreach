@@ -104,6 +104,26 @@ describe("write locators in real Chrome, offline", { timeout: 60_000 }, () => {
     expect(await write.count({ roles: ["button", "link"], name: en.withdraw, within: sentRowOf("person-9") })).toBe(0);
   });
 
+  it("run a click's last-moment check after the hover and pause, and click nothing when it refuses", async (ctx) => {
+    if (context === undefined) ctx.skip();
+    const { page } = await show('<html><body><button type="button" onclick="window.clicked = (window.clicked ?? 0) + 1">Send</button></body></html>');
+    const steps: string[] = [];
+    const write = writePageFor(page, { sleep: async () => void steps.push("pause") });
+    const send: Target = { roles: ["button"], name: /^send$/i };
+
+    const refused = await write.clickUnless(send, async () => {
+      steps.push("check");
+      return "expired" as const;
+    });
+    expect(refused).toBe("expired");
+    expect(steps).toEqual(["pause", "check"]);
+    expect(await page.evaluate(() => (window as { clicked?: number }).clicked ?? 0)).toBe(0);
+
+    await expect(write.clickUnless(send, async () => undefined)).resolves.toBeUndefined();
+    expect(await page.evaluate(() => (window as { clicked?: number }).clicked ?? 0)).toBe(1);
+    expect(page.url()).toBe("about:blank");
+  });
+
   it("aborts every request a page makes", async (ctx) => {
     if (context === undefined) ctx.skip();
     const { page } = await show('<html><body><img src="https://blocked.invalid/probe.png"></body></html>');

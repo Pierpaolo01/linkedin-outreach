@@ -34,6 +34,11 @@ export function pastDeadline(page: WritePage, guard: SendGuard): boolean {
   return page.now().getTime() > guard.notAfter.getTime();
 }
 
+/** For `clickUnless`: "expired" past the deadline, read at the last moment before the click. Not verified on the live site. */
+export function expiryOf(page: WritePage, guard: SendGuard): () => Promise<"expired" | undefined> {
+  return async () => (pastDeadline(page, guard) ? "expired" : undefined);
+}
+
 /** Paces, loads and health-checks one page (a login wall or checkpoint throws its typed error); returns its HTML. Not verified on the live site. */
 export async function openPage(deps: WriteDeps, url: string): Promise<string> {
   await deps.pace();

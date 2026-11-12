@@ -17,12 +17,14 @@ const SHOWN = 6;
 const EXPECTED = { notAfter: NOT_AFTER, messageCount: SHOWN };
 
 type React = (event: ScriptedEvent, controls: ScriptedControls) => void;
+type Hover = NonNullable<Parameters<typeof scriptedPage>[0]["hover"]>;
 
-function run({ html = fixture(COMPOSE_EXISTING), react, landOn }: { html?: string; react?: React; landOn?: string } = {}) {
+function run({ html = fixture(COMPOSE_EXISTING), react, hover, landOn }: { html?: string; react?: React; hover?: Hover; landOn?: string } = {}) {
   const controls = scriptedPage({
     now: NOW,
     route: (url) => ({ url: landOn ?? url, html }),
     ...(react === undefined ? {} : { react }),
+    ...(hover === undefined ? {} : { hover }),
   });
   const deps = {
     page: controls.page,
@@ -95,6 +97,20 @@ describe("sendMessage and the message count", () => {
     await expect(sendMessage(deps, COMPOSE_PERSON, TEXT, EXPECTED)).resolves.toBe("thread_changed");
     expect(kinds(events)).toEqual(["load", "type", "clear"]);
   });
+
+  it("compares again after the hover over Send, immediately before the click: a reply that landed in the pause stops it", async () => {
+    const html = fixture(COMPOSE_EXISTING);
+    const { deps, events } = run({
+      html,
+      react: linkedIn(html),
+      hover: ({ name }, c) => {
+        if (name === "Send") c.show(withMessage(html, "participant", "TEST REPLY"));
+      },
+    });
+
+    await expect(sendMessage(deps, COMPOSE_PERSON, TEXT, EXPECTED)).resolves.toBe("thread_changed");
+    expect(kinds(events)).toEqual(["load", "type", "clear"]);
+  });
 });
 
 describe("sendMessage and the deadline", () => {
@@ -121,6 +137,20 @@ describe("sendMessage and the deadline", () => {
 
   it("is checked right before Send: past it, the typed text is cleared and nothing is sent", async () => {
     const { deps, events } = run({ react: expiringAfter("type") });
+
+    await expect(sendMessage(deps, COMPOSE_PERSON, TEXT, EXPECTED)).resolves.toBe("expired");
+    expect(kinds(events)).toEqual(["load", "type", "clear"]);
+  });
+
+  it("is read again after the hover over Send, immediately before the click: past it, nothing is sent", async () => {
+    const html = fixture(COMPOSE_EXISTING);
+    const { deps, events } = run({
+      html,
+      react: linkedIn(html),
+      hover: ({ name }, c) => {
+        if (name === "Send") c.advance(NOT_AFTER.getTime() - NOW.getTime() + 1);
+      },
+    });
 
     await expect(sendMessage(deps, COMPOSE_PERSON, TEXT, EXPECTED)).resolves.toBe("expired");
     expect(kinds(events)).toEqual(["load", "type", "clear"]);
@@ -191,6 +221,20 @@ describe("sendMessage refusals", () => {
     });
 
     await expectSavedUnexpected(sendMessage(deps, COMPOSE_PERSON, TEXT, EXPECTED));
+  });
+
+  it("clears and throws, sending nothing, when another conversation is shown during the hover over Send", async () => {
+    const html = fixture(COMPOSE_EXISTING);
+    const { deps, events } = run({
+      html,
+      react: linkedIn(html),
+      hover: ({ name }, c) => {
+        if (name === "Send") c.show(html.replaceAll("/in/person-1", "/in/person-9"));
+      },
+    });
+
+    await expectSavedUnexpected(sendMessage(deps, COMPOSE_PERSON, TEXT, EXPECTED));
+    expect(kinds(events)).toEqual(["load", "type", "clear"]);
   });
 
   it("throws the login wall, not Unexpected, and types nothing", async () => {

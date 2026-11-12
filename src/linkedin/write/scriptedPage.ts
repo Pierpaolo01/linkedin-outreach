@@ -4,8 +4,10 @@
  * Test stand-in for the dedicated window: a `WritePage` that shows saved HTML and records every
  * action. Clicks and typing are resolved against the HTML shown at that moment (with the same
  * role-and-name rules as `markup.ts`), so a click on a control the page does not have fails as it
- * would in the browser. What a click does is up to the test (`react`); a wait that finds nothing
- * moves the clock on by its timeout, as a real wait would.
+ * would in the browser. What a click does is up to the test (`react`); what happens during the
+ * hover and pause before a click is up to it too (`hover`: the clock can move on, the page can
+ * change, or the action can throw); a wait that finds nothing moves the clock on by its timeout, as
+ * a real wait would.
  *
  * Used by the tests only. Never touches a browser or the network.
  */
@@ -46,6 +48,8 @@ export interface ScriptedOptions {
   readonly route: (url: string) => Shown;
   /** Called after every action, to make the page respond. */
   readonly react?: (event: ScriptedEvent, controls: ScriptedControls) => void;
+  /** Called during the hover and pause before every click (`name`: the accessible name of the element hovered). A throw fails the click. */
+  readonly hover?: (hovered: { readonly target: Target; readonly name: string }, controls: ScriptedControls) => void;
 }
 
 /** A key that identifies a target, regexes included. Not verified on the live site. */
@@ -54,7 +58,7 @@ function keyOf(target: Target): string {
 }
 
 /** Not verified on the live site. */
-export function scriptedPage({ now, route, react }: ScriptedOptions): ScriptedControls {
+export function scriptedPage({ now, route, react, hover }: ScriptedOptions): ScriptedControls {
   let clock = now.getTime();
   let current: Shown = { url: "about:blank", html: "<html></html>" };
   const values = new Map<string, string>();
@@ -82,7 +86,15 @@ export function scriptedPage({ now, route, react }: ScriptedOptions): ScriptedCo
       return findAll(parseHtml(current.html), target).length;
     },
     async click(target) {
+      hover?.({ target, name: first(target).name }, controls);
       record({ kind: "click", target, name: first(target).name });
+    },
+    async clickUnless(target, refuse) {
+      hover?.({ target, name: first(target).name }, controls);
+      const reason = await refuse();
+      if (reason !== undefined) return reason;
+      record({ kind: "click", target, name: first(target).name });
+      return undefined;
     },
     async type(target, text) {
       const key = keyOf(target);

@@ -13,12 +13,14 @@ const GUARD = { notAfter: new Date("2026-11-12T17:00:00Z") };
 const PERSON = { publicId: "person-1", memberId: "ACoA00000000000000000000000000000000001" };
 
 type React = (event: ScriptedEvent, controls: ScriptedControls) => void;
+type Hover = NonNullable<Parameters<typeof scriptedPage>[0]["hover"]>;
 
-function run({ html = fixture(SENT_PAGE), react, landOn }: { html?: string; react?: React; landOn?: string } = {}) {
+function run({ html = fixture(SENT_PAGE), react, hover, landOn }: { html?: string; react?: React; hover?: Hover; landOn?: string } = {}) {
   const controls = scriptedPage({
     now: NOW,
     route: (url) => ({ url: landOn ?? url, html }),
     ...(react === undefined ? {} : { react }),
+    ...(hover === undefined ? {} : { hover }),
   });
   const deps = {
     page: controls.page,
@@ -103,6 +105,19 @@ describe("withdrawInvite and the deadline", () => {
 
     await expect(withdrawInvite(deps, PERSON, GUARD)).resolves.toBe("expired");
     expect(events.slice(n).filter((e) => e.kind === "click")).toEqual([]);
+  });
+  it("is read again after the hover over the confirmation, immediately before the click: past it, nothing is withdrawn", async () => {
+    const html = fixture(SENT_PAGE);
+    const { deps, events } = run({
+      html,
+      react: linkedIn(html),
+      hover: ({ name }, c) => {
+        if (name === "Withdraw") c.advance(GUARD.notAfter.getTime() - NOW.getTime() + 1);
+      },
+    });
+
+    await expect(withdrawInvite(deps, PERSON, GUARD)).resolves.toBe("expired");
+    expect(kinds(events)).toEqual(["load", "click Withdraw invitation sent to Person 1", "dismiss"]);
   });
 });
 

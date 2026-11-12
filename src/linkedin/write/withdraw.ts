@@ -8,7 +8,7 @@
  */
 import type { PersonRef, SendGuard, WithdrawResult } from "../driver";
 import { parseSentInvitations } from "../parse/sentInvitations";
-import { closeDialog, giveUp, hasOpenDialog, openPage, pastDeadline, readPage, timeoutOf, wordingOf, type WriteDeps } from "./common";
+import { closeDialog, expiryOf, giveUp, hasOpenDialog, openPage, pastDeadline, readPage, timeoutOf, wordingOf, type WriteDeps } from "./common";
 import { findAll, normalisedText, openDialogs, parseHtml } from "./markup";
 import type { Target } from "./page";
 import { sentRowOf, writeStructure } from "./selectors.write";
@@ -18,8 +18,9 @@ const SENT_URL = "https://www.linkedin.com/mynetwork/invitation-manager/sent/";
 /**
  * NOT VERIFIED ON THE LIVE SITE. Withdraws the pending invitation to this person.
  *
- * Reads the clock before the page load, the click on Withdraw and the click that confirms, and
- * returns "expired" past `guard.notAfter` (closing the confirmation if it is open). "not_pending"
+ * Reads the clock before the page load, the click on Withdraw and the click that confirms (that
+ * one after the hover and pause, immediately before the click itself), and returns "expired" past
+ * `guard.notAfter` (closing the confirmation if it is open). "not_pending"
  * when the list shows no invitation to the person; only the rows the page has loaded are seen.
  * "withdrawn" only once the person's row is gone. Throws `Unexpected`, with the page saved, on
  * anything it does not recognise; after the confirming click a throw means the result is not known.
@@ -49,11 +50,11 @@ export async function withdrawInvite(deps: WriteDeps, person: PersonRef, guard: 
     return wording.withdrawPhrases.some((phrase) => text.includes(phrase)) && findAll(root, confirm).length > 0 ? true : undefined;
   }, timeoutOf(deps));
   if (asked === undefined) return giveUp(deps, "no confirmation appeared after Withdraw");
-  if (pastDeadline(page, guard)) {
+  // The clock is read after the hover and pause, immediately before the click itself.
+  if ((await page.clickUnless(confirm, expiryOf(page, guard))) !== undefined) {
     await closeDialog(deps);
     return "expired";
   }
-  await page.click(confirm);
 
   const gone = await page.waitFor(
     (shown) => (!hasOpenDialog(shown) && shown.includes(writeStructure.sentScreen) && findAll(parseHtml(shown), { roles: ["link"], within: row }).length === 0 ? true : undefined),

@@ -15,6 +15,7 @@ import { parseProfile } from "../parse/profile";
 import { sameText } from "../../engine/threadCheck";
 import {
   closeDialog,
+  expiryOf,
   giveUp,
   openPage,
   pastDeadline,
@@ -34,8 +35,10 @@ type InviteScreen = "limit" | "email_required" | "note_quota" | "choose" | "note
 /**
  * NOT VERIFIED ON THE LIVE SITE. Sends one invitation, with `note` or (null or blank) without one.
  *
- * Reads the clock before every step (the page load, opening More, Connect, Add a note, typing, Send)
- * and returns "expired" past `guard.notAfter`, closing any dialog it opened. Clicks nothing unless
+ * Reads the clock before every step (the page load, opening More, Connect, Add a note, typing, Send;
+ * for the clicks that can send, Connect, Send and Send without a note, after the hover and pause,
+ * immediately before the click itself) and returns "expired" past `guard.notAfter`, closing any
+ * dialog it opened. Clicks nothing unless
  * the profile is the person asked for (public id, and member id when the page shows one).
  * Throws `LimitHit` on LinkedIn's invitation limit (nothing was sent), and `Unexpected`, with the
  * page saved, on anything it does not recognise; after the click on Send a throw means the result
@@ -82,8 +85,7 @@ export async function sendInvite(deps: WriteDeps, person: PersonRef, note: strin
     }
   }
 
-  if (pastDeadline(page, guard)) return closeAnd(deps, "expired");
-  await page.click(connect);
+  if ((await page.clickUnless(connect, expiryOf(page, guard))) !== undefined) return closeAnd(deps, "expired");
   const screen = await page.waitFor((shown) => inviteScreen(shown, wording), timeoutOf(deps));
   switch (screen) {
     case undefined:
@@ -110,8 +112,7 @@ export async function sendInvite(deps: WriteDeps, person: PersonRef, note: strin
         if (next === "note_quota") return refuse(deps, "LinkedIn offers no personalised note now; nothing was sent");
         return withNote(deps, text, wording, guard);
       }
-      if (pastDeadline(page, guard)) return closeAnd(deps, "expired");
-      await page.click(inDialog(wording.sendWithoutNote));
+      if ((await page.clickUnless(inDialog(wording.sendWithoutNote), expiryOf(page, guard))) !== undefined) return closeAnd(deps, "expired");
       return confirmSent(deps, wording);
     default: {
       const _exhaustive: never = screen;
@@ -128,8 +129,7 @@ async function withNote(deps: WriteDeps, text: string, wording: WriteWording, gu
   await page.type(box, text);
   // A box with a shorter limit than ours cuts the note silently.
   if (!sameText(await page.value(box), text)) return refuse(deps, "the note box does not hold the note as typed; nothing was sent");
-  if (pastDeadline(page, guard)) return closeAnd(deps, "expired");
-  await page.click(inDialog(wording.sendInvitation));
+  if ((await page.clickUnless(inDialog(wording.sendInvitation), expiryOf(page, guard))) !== undefined) return closeAnd(deps, "expired");
   return confirmSent(deps, wording);
 }
 

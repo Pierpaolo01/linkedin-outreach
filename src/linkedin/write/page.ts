@@ -39,6 +39,12 @@ export interface WritePage extends InspectablePage {
   count(target: Target): Promise<number>;
   /** Clicks the first visible match, as a person would. Throws when there is none. */
   click(target: Target): Promise<void>;
+  /**
+   * `click`, for a click that acts on LinkedIn: `refuse` runs after the hover and pause, immediately
+   * before the click itself. When it returns a reason, nothing is clicked and the reason is returned;
+   * undefined once clicked. The deadline, or a conversation that changed, during the pause still stops the click.
+   */
+  clickUnless<R>(target: Target, refuse: () => Promise<R | undefined>): Promise<R | undefined>;
   /** Types into the first visible match with human timing. A line break is Shift+Enter; Enter is never pressed. */
   type(target: Target, text: string): Promise<void>;
   /** Empties the first visible match (a text box). */
@@ -99,6 +105,14 @@ export function writePageFor(page: Page, { random = Math.random, sleep = realSle
     return found.first();
   }
 
+  /** Finds the first visible match, hovers it and pauses like a person before a click. */
+  async function hovered(target: Target): Promise<Locator> {
+    const control = await only(target);
+    await control.hover({ timeout: CLICK_TIMEOUT_MS });
+    await pause(250, 800);
+    return control;
+  }
+
   return {
     async load(url) {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
@@ -107,10 +121,16 @@ export function writePageFor(page: Page, { random = Math.random, sleep = realSle
     },
     count: (target) => locate(target).count(),
     async click(target) {
-      const control = await only(target);
-      await control.hover({ timeout: CLICK_TIMEOUT_MS });
-      await pause(250, 800);
+      const control = await hovered(target);
       await control.click({ delay: randomInt({ min: 40, max: 120, random }), timeout: CLICK_TIMEOUT_MS });
+    },
+    async clickUnless(target, refuse) {
+      const control = await hovered(target);
+      // Last, after the pause: the laptop can sleep, or a reply land, while it lasts.
+      const reason = await refuse();
+      if (reason !== undefined) return reason;
+      await control.click({ delay: randomInt({ min: 40, max: 120, random }), timeout: CLICK_TIMEOUT_MS });
+      return undefined;
     },
     async type(target, text) {
       const box = await only(target);

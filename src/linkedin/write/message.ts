@@ -43,7 +43,8 @@ export function isConversationWith(person: PersonRef, thread: Thread, pageUrl: s
  * NOT VERIFIED ON THE LIVE SITE. Sends `text` to a 1st-degree connection.
  *
  * Order: deadline, open, confirm the person, clear any draft, compare the count, deadline, type,
- * check the box holds the text, compare the count and the deadline again, click Send, wait for the
+ * check the box holds the text, hover over Send and pause, then, immediately before the click,
+ * confirm the person and compare the count and the deadline again, click Send, wait for the
  * conversation to end with the user's message of that text. A changed count returns
  * "thread_changed" and a passed deadline "expired", the box cleared in both. Types and clicks
  * nothing when the conversation is not with the person asked for. Throws `Unexpected`, with the
@@ -80,16 +81,25 @@ export async function sendMessage(
     return giveUp(deps, "the message box does not hold the text as typed; nothing was sent");
   }
 
-  // Immediately before Send: the conversation as it is now, and the clock.
+  // After typing: the conversation as it is now (what the check after Send compares against).
   const now = await readPage(deps, await page.content(), parseThread);
   if (!isConversationWith(person, now, page.url())) {
     await page.clear(MESSAGE_BOX);
     return giveUp(deps, "the conversation changed to another person while typing");
   }
-  if (now.messages.length !== expected.messageCount) return clearAnd(deps, "thread_changed");
-  if (pastDeadline(page, expected)) return clearAnd(deps, "expired");
-
-  await page.click(send);
+  // The person, the count and the clock, after the hover and pause, immediately before the click itself:
+  // a reply can land, or the laptop sleep, in the pause.
+  const refused = await page.clickUnless(send, async (): Promise<"thread_changed" | "expired" | "other_conversation" | undefined> => {
+    const latest = tryParse(await page.content(), parseThread);
+    if (latest === undefined || !isConversationWith(person, latest, page.url())) return "other_conversation";
+    if (latest.messages.length !== expected.messageCount) return "thread_changed";
+    return pastDeadline(page, expected) ? "expired" : undefined;
+  });
+  if (refused === "other_conversation") {
+    await page.clear(MESSAGE_BOX);
+    return giveUp(deps, "the conversation changed, or could not be read, right before Send");
+  }
+  if (refused !== undefined) return clearAnd(deps, refused);
   const lastBefore = now.messages.at(-1);
   const sameAsBefore = lastBefore !== undefined && lastBefore.sender === "user" && sameText(lastBefore.text, text);
   const appeared = await page.waitFor((shown) => {

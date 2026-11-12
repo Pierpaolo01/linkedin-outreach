@@ -24,12 +24,14 @@ const GUARD = { notAfter: new Date("2026-11-12T17:00:00Z") };
 const NOTE = "TEST NOTE - not a real invitation";
 
 type React = (event: ScriptedEvent, controls: ScriptedControls) => void;
+type Hover = NonNullable<Parameters<typeof scriptedPage>[0]["hover"]>;
 
-function run({ profile = fixture(CONNECT_PROFILE), react, url }: { profile?: string; react?: React; url?: string } = {}) {
+function run({ profile = fixture(CONNECT_PROFILE), react, hover, url }: { profile?: string; react?: React; hover?: Hover; url?: string } = {}) {
   const controls = scriptedPage({
     now: NOW,
     route: (asked) => ({ url: url ?? asked, html: profile }),
     ...(react === undefined ? {} : { react }),
+    ...(hover === undefined ? {} : { hover }),
   });
   const deps = {
     page: controls.page,
@@ -276,6 +278,24 @@ describe("sendInvite and the deadline", () => {
 
     expect(result).toBe("expired");
     expect(acted(after)).toEqual([]);
+  });
+
+  // The clicks that act on LinkedIn: the deadline is read again after the hover and pause, immediately before the click itself.
+  it.each([
+    ["Connect", /to connect$/, NOTE],
+    ["Send", /^Send$/, NOTE],
+    ["Send without a note", /^Send without a note$/, null],
+  ] as const)("is read again after the hover before %s, and nothing is clicked past it", async (_step, hovered, note) => {
+    const { deps, events } = run({
+      react: linkedIn(),
+      hover: ({ name }, c) => {
+        if (hovered.test(name)) c.advance(GUARD.notAfter.getTime() - NOW.getTime() + 1);
+      },
+    });
+
+    await expect(sendInvite(deps, PROFILE_PERSON, note, GUARD)).resolves.toBe("expired");
+    expect(clicks(events).filter((name) => hovered.test(name))).toEqual([]);
+    expect(events.at(-1)).toEqual({ kind: "dismiss" });
   });
 
   it("is checked before opening More and before Connect in the menu", async () => {
