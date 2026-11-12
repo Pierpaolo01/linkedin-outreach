@@ -212,7 +212,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                     />
                     {open === p.id && (
                       <tr role="row" className="@max-people:block">
-                        <td role="cell" colSpan={7} className="bg-base-200/60 p-4 @max-people:block">
+                        <td role="cell" colSpan={7} className="animate-appear bg-base-200/60 p-4 @max-people:block">
                           <ProspectDetail prospect={p} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
                         </td>
                       </tr>
@@ -262,7 +262,9 @@ function ProspectRow(props: {
           onClick={props.onToggle}
         >
           {p.person.fullName}
-          <IconChevron className={`size-3.5 shrink-0 text-muted ${props.open ? "rotate-90" : ""}`} />
+          <IconChevron
+            className={`size-3.5 shrink-0 text-muted transition-transform duration-(--duration-appear) ease-settle ${props.open ? "rotate-90" : ""}`}
+          />
         </button>
         {p.person.headline !== null && <p className="text-base-content">{p.person.headline}</p>}
         {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/15 text-error">Do not contact</span>}

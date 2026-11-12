@@ -85,6 +85,34 @@
   /* Amber as a dot: dark enough to read as a shape (3:1 and over) beside its words. Amber means "waits for you". */
   --color-warning-strong: #a8700f;
 
+  /*
+   * Motion, for state changes only: nothing moves on page load or for decoration. One deceleration (quartic
+   * ease-out) and two lengths. Every one is off under reduced motion (the rule at the end of this file).
+   * leave: a decided approval row folds away, so the rows below close the gap instead of jumping (150ms).
+   * appear: what a click opened (a person's detail, the next wizard step) fades in, and the row's chevron turns (120ms).
+   */
+  --ease-settle: cubic-bezier(0.25, 1, 0.5, 1);
+  --duration-leave: 150ms;
+  --duration-appear: 120ms;
+  --animate-row-leave: row-leave var(--duration-leave) var(--ease-settle) forwards;
+  --animate-appear: appear var(--duration-appear) var(--ease-settle);
+
+  @keyframes row-leave {
+    from {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+    to {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+  }
+  @keyframes appear {
+    from {
+      opacity: 0;
+    }
+  }
+
   --color-score-high: #d5e8dc;
   --color-score-mid: #f6e3bb;
   --color-score-mid-content: #5c3f07;

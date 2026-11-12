@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { approveAll, approveProspect, listApprovals, rejectProspect, toApiError } from "../api";
 import type { ApprovalItem, Evidence, Person, PreviewText } from "../apiSchemas";
 import { useAppData } from "../appData";
@@ -13,6 +13,8 @@ const SCORE_STEPS = [0, 5, 6, 7, 8] as const;
 const COLUMNS = "lg:grid-cols-[3.25rem_minmax(12rem,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_8.75rem]";
 
 type Decision = "approve" | "reject";
+/** A decided row folding away, and the row it sat above when it was decided (none when it was last). */
+type Leaving = { readonly item: ApprovalItem; readonly before: number | undefined };
 
 /** The approval queue: one row per prospect waiting, decided with the buttons or the A and R keys. */
 export function Approvals() {
@@ -25,6 +27,11 @@ export function Approvals() {
   );
   /** Rows decided (or being decided) on this visit: they leave the list at once. */
   const [gone, setGone] = useState<ReadonlySet<number>>(new Set());
+  /**
+   * Decided rows still folding away, each drawn above the row that followed it (or last): inert, and out of the
+   * count, the keyboard order and the tests' rows. Kept apart from the loaded list, which may load again meanwhile.
+   */
+  const [leaving, setLeaving] = useState<ReadonlyMap<number, Leaving>>(new Map());
   const [rowErrors, setRowErrors] = useState<ReadonlyMap<number, string>>(new Map());
   const [decided, setDecided] = useState(0);
   const [notice, setNotice] = useState<string | undefined>(undefined);
@@ -76,6 +83,7 @@ export function Approvals() {
   const campaignName = campaigns.find((c) => c.id === campaignId)?.name;
 
   const without = (id: number) => (set: ReadonlySet<number>) => new Set([...set].filter((x) => x !== id));
+  const notLeaving = (id: number) => (map: ReadonlyMap<number, Leaving>) => new Map([...map].filter(([x]) => x !== id));
   const withoutError = (id: number) => (map: ReadonlyMap<number, string>) => new Map([...map].filter(([x]) => x !== id));
 
   const focusRow = (id: number | undefined) => {
@@ -86,6 +94,7 @@ export function Approvals() {
     const index = items.findIndex((i) => i.id === item.id);
     focusRow((items[index + 1] ?? items[index - 1])?.id);
     setGone((set) => new Set(set).add(item.id));
+    setLeaving((map) => new Map(map).set(item.id, { item, before: items[index + 1]?.id }));
     setRowErrors(withoutError(item.id));
     setNotice(undefined);
     setDeciding((n) => n + 1);
@@ -106,6 +115,7 @@ export function Approvals() {
           return;
         }
         setGone(without(item.id));
+        setLeaving(notLeaving(item.id));
         setRowErrors((map) => new Map(map).set(item.id, `Could not ${decision} ${item.person.fullName}: ${error.message}`));
       })
       .finally(() => setDeciding((n) => n - 1));
@@ -158,6 +168,28 @@ export function Approvals() {
   };
 
   const filtered = minScore > 0 || campaignId !== null;
+
+  // The decided row folds to nothing, so the rows below slide up instead of jumping. The focus has already moved on.
+  const ghost = (item: ApprovalItem) => (
+    <div
+      key={`leaving-${item.id}`}
+      className="grid animate-row-leave"
+      inert
+      aria-hidden="true"
+      onAnimationEnd={(event) => {
+        if (event.target === event.currentTarget) setLeaving(notLeaving(item.id));
+      }}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <Row item={item} showCampaign={campaignId === null} error={undefined} leaving />
+      </div>
+    </div>
+  );
+  /** The folding rows that sat just above this row (itself possibly folding), in order. */
+  const ghostsBefore = (id: number): ReactNode[] =>
+    [...leaving.values()].filter((g) => g.before === id).flatMap((g) => [...ghostsBefore(g.item.id), ghost(g.item)]);
+  /** Rows a folding row can be drawn above; the rest are drawn last. */
+  const placed = new Set<number | undefined>([...items.map((i) => i.id), ...leaving.keys()]);
 
   return (
     <>
@@ -256,19 +288,22 @@ export function Approvals() {
           </div>
           <div role="rowgroup">
             {items.map((item) => (
-              <Row
-                key={item.id}
-                item={item}
-                showCampaign={campaignId === null}
-                error={rowErrors.get(item.id)}
-                onDecide={(decision) => decide(item, decision)}
-                onKeyDown={onRowKey(item)}
-                register={(element) => {
-                  if (element === null) rows.current.delete(item.id);
-                  else rows.current.set(item.id, element);
-                }}
-              />
+              <Fragment key={item.id}>
+                {ghostsBefore(item.id)}
+                <Row
+                  item={item}
+                  showCampaign={campaignId === null}
+                  error={rowErrors.get(item.id)}
+                  onDecide={(decision) => decide(item, decision)}
+                  onKeyDown={onRowKey(item)}
+                  register={(element) => {
+                    if (element === null) rows.current.delete(item.id);
+                    else rows.current.set(item.id, element);
+                  }}
+                />
+              </Fragment>
             ))}
+            {[...leaving.values()].filter((g) => !placed.has(g.before)).flatMap((g) => [...ghostsBefore(g.item.id), ghost(g.item)])}
           </div>
         </div>
       )}
@@ -311,24 +346,27 @@ function Row({
   onDecide,
   onKeyDown,
   register,
+  leaving = false,
 }: {
   readonly item: ApprovalItem;
   readonly showCampaign: boolean;
   readonly error: string | undefined;
-  readonly onDecide: (decision: Decision) => void;
-  readonly onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
-  readonly register: (element: HTMLDivElement | null) => void;
+  readonly onDecide?: (decision: Decision) => void;
+  readonly onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
+  readonly register?: (element: HTMLDivElement | null) => void;
+  /** A decided row folding away: a picture of the row, not a row of the table. */
+  readonly leaving?: boolean;
 }) {
   const { person } = item;
   const place = [person.company, person.location].filter((part): part is string => part !== null && part !== "").join(", ");
   return (
     <div
       ref={register}
-      role="row"
-      tabIndex={0}
-      aria-label={`${person.fullName}${item.score === null ? "" : `, score ${formatScore(item.score)}`}`}
+      role={leaving ? undefined : "row"}
+      tabIndex={leaving ? undefined : 0}
+      aria-label={leaving ? undefined : `${person.fullName}${item.score === null ? "" : `, score ${formatScore(item.score)}`}`}
       onKeyDown={onKeyDown}
-      data-testid="approval-row"
+      data-testid={leaving ? undefined : "approval-row"}
       className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-3 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-visible:ring-2 focus-visible:ring-neutral focus-visible:ring-inset lg:gap-x-4 ${COLUMNS}`}
     >
       <ScoreChip score={item.score} size="lg" role="cell" />
@@ -358,14 +396,14 @@ function Row({
         <FollowUp text={item.followUpPreview} person={person} />
       </div>
       <div role="cell" className="col-span-2 flex items-start gap-2 lg:col-span-1 lg:flex-col lg:items-stretch">
-        <button type="button" className="btn btn-sm btn-outline flex-1 border-primary/50 text-primary lg:flex-none" onClick={() => onDecide("approve")}>
+        <button type="button" className="btn btn-sm btn-outline flex-1 border-primary/50 text-primary lg:flex-none" onClick={() => onDecide?.("approve")}>
           <IconCheck />
           Approve
           <kbd className="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">
             A
           </kbd>
         </button>
-        <button type="button" className={`${SECONDARY_BUTTON} btn-sm flex-1 lg:flex-none`} onClick={() => onDecide("reject")}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm flex-1 lg:flex-none`} onClick={() => onDecide?.("reject")}>
           <IconX />
           Reject
           <kbd className="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">

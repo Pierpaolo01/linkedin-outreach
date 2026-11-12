@@ -213,6 +213,8 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
   const queue = useRef<SaveQueue>({ tail: Promise.resolve(), waiting: null, campaignId: id, lastSaved: null });
   const [status, setStatus] = useState<Campaign["status"]>("draft");
   const [step, setStep] = useState(0);
+  /** Whether the user has moved between steps: only then does the new step fade in (never on page load). */
+  const [stepMoved, setStepMoved] = useState(false);
   /** The furthest step the user has reached: the steps before it are done unless they show a problem. */
   const [furthest, setFurthest] = useState(0);
   if (step > furthest) setFurthest(step);
@@ -369,6 +371,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       // Going back never waits on a problem; going on does.
       if (!ok && next > step) return;
     }
+    setStepMoved(true);
     setStep(next);
     window.scrollTo(0, 0);
   };
@@ -425,21 +428,23 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
 
         <div className="min-w-0">
           <ActionError message={saveError} className="mb-group" />
-          {step === 0 && <NameStep form={form} set={set} errors={errors} onEnter={() => void goTo(1)} />}
-          {step === 1 && <SourceStep form={form} set={set} errors={errors} />}
-          {step === 2 && <WhoFitsStep form={form} set={set} errors={errors} />}
-          {step === 3 && <ApprovalStep form={form} set={set} errors={errors} />}
-          {step === 4 && campaignId !== null && (
-            <StepFrame title="Messages" lead="Write what each person receives. Every word is yours; the variables fill in each person's details.">
-              <MessageFields campaignId={campaignId} form={form} set={set} errors={errors} />
-            </StepFrame>
-          )}
-          {step === 5 && (
-            <StepFrame title="Timings" lead="How long the app waits between the steps, and when it gives up on an invite.">
-              <TimingFields form={form} set={set} errors={errors} />
-            </StepFrame>
-          )}
-          {step === REVIEW && <Review form={form} errors={errors} startError={startError} onChange={(s) => void goTo(s)} />}
+          <div key={step} className={stepMoved ? "animate-appear" : undefined}>
+            {step === 0 && <NameStep form={form} set={set} errors={errors} onEnter={() => void goTo(1)} />}
+            {step === 1 && <SourceStep form={form} set={set} errors={errors} />}
+            {step === 2 && <WhoFitsStep form={form} set={set} errors={errors} />}
+            {step === 3 && <ApprovalStep form={form} set={set} errors={errors} />}
+            {step === 4 && campaignId !== null && (
+              <StepFrame title="Messages" lead="Write what each person receives. Every word is yours; the variables fill in each person's details.">
+                <MessageFields campaignId={campaignId} form={form} set={set} errors={errors} />
+              </StepFrame>
+            )}
+            {step === 5 && (
+              <StepFrame title="Timings" lead="How long the app waits between the steps, and when it gives up on an invite.">
+                <TimingFields form={form} set={set} errors={errors} />
+              </StepFrame>
+            )}
+            {step === REVIEW && <Review form={form} errors={errors} startError={startError} onChange={(s) => void goTo(s)} />}
+          </div>
 
           <div className="mt-section flex flex-wrap items-center gap-3 border-t border-base-300 pt-block">
             {step > 0 && (
