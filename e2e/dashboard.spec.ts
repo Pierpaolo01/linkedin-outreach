@@ -1,6 +1,12 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { appUrl } from "./apps";
 
+// A route handler that re-fetches a response can still be running when its test ends (the dashboard
+// polls). Let such a handler finish or fail quietly instead of failing a test that already passed.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 // The apps run on the fake driver with the engine off (see playwright.config.ts). Nothing here
 // touches LinkedIn. "demo" and "stop" are seeded with invented people by scripts/seed-demo.ts.
 // Tests on the demo app change its data, so each one reads the counts it starts from.

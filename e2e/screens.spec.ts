@@ -1,5 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// A route handler that re-fetches a response can still be running when its test ends (the dashboard
+// polls). Let such a handler finish or fail quietly instead of failing a test that already passed.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 // Campaigns, the wizard, campaign detail, activity log, stats and settings, on the seeded demo app
 // (fake driver, engine off; see playwright.config.ts). Nothing here touches LinkedIn or a real AI:
 // the AI test route is always answered by the browser test itself (page.route).
