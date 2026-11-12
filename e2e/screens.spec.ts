@@ -316,7 +316,7 @@ test("activity log: warnings and errors only, and one campaign", async ({ page }
   for (const level of await lines.evaluateAll((els) => els.map((el) => el.getAttribute("data-level")))) expect(["warning", "error"]).toContain(level);
 
   await page.getByLabel("Campaign").selectOption({ label: "Local trades, Milan" });
-  await expect(lines.filter({ hasText: "Discovery paused" })).toHaveCount(1);
+  await expect(lines.filter({ hasText: "Discovery waits" })).toHaveCount(1);
   await expect(lines.filter({ hasText: "Hotel owners, Rome" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Everything" }).click();

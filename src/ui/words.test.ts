@@ -20,4 +20,21 @@ describe("plainMessage", () => {
     );
     expect(plainMessage("Test Person 1 needs review: reply_unclear")).toBe("Test Person 1 needs review: reply unclear");
   });
+
+  it("names an edited campaign's steps as the wizard does, in its order, never its field keys", () => {
+    expect(
+      plainMessage('Campaign "Hotel owners, Rome" edited: acceptToMessageMinHours, followUpDelayMinHours, aiPersonalise, firstMessage'),
+    ).toBe('Campaign "Hotel owners, Rome" edited: Messages, Timings.');
+    expect(plainMessage('Campaign "Dentists" edited: name, scoringBrief, sourceUrls')).toBe('Campaign "Dentists" edited: Name, Where people come from, Who fits.');
+    expect(plainMessage('Campaign "Dentists" edited: nothing')).toBe('Campaign "Dentists" edited: nothing.');
+    // A field the dashboard does not know reads as words, not as a camelCase key.
+    expect(plainMessage('Campaign "Dentists" edited: replyCheckEveryHours')).toBe('Campaign "Dentists" edited: reply check every hours.');
+  });
+
+  it("says a reached daily or weekly limit as a spent budget", () => {
+    expect(plainMessage("Discovery paused: the daily limit of 10 discovery pages is reached. It resumes on the next working day.")).toBe(
+      "Discovery waits: today's budget of 10 discovery pages is spent. It resumes on the next working day.",
+    );
+    expect(plainMessage("Invites wait: the weekly limit of 80 invites is reached.")).toBe("Invites wait: this week's budget of 80 invites is spent.");
+  });
 });

@@ -322,7 +322,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 hint="A ceiling for the calendar week, so several full days do not add up to too many."
                 error={errorOf("limits.invitesPerWeek")}
               />
-              <LimitRow path="limits.messagesPerDay" control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow-ups together." error={errorOf("limits.messagesPerDay")} />
+              <LimitRow path="limits.messagesPerDay" control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow‑ups together." /* a non-breaking hyphen: never "follow-" / "ups" */ error={errorOf("limits.messagesPerDay")} />
               <LimitRow
                 path="limits.profileViewsPerDay"
                 control={num("limits.profileViewsPerDay", "Profile views per day")}
@@ -758,13 +758,23 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
       {ops.status === "error" && ops.data === undefined ? (
         <LoadError what="whether it is set up" message={ops.error.message} onRetry={ops.reload} />
       ) : service !== undefined && !service.installed ? (
-        <Notice tone="waits">
+        // Plain information, not amber: starting at login is optional, and nothing waits on the user without it.
+        <Notice tone="note">
           <span data-testid="service-state">{state}</span>
         </Notice>
       ) : (
         <p data-testid="service-state">{state}</p>
       )}
-      {service?.note != null && service.note !== "" && <p className="mt-1 text-sm text-base-content">{asSentence(service.note.replace(/`/g, ""))}</p>}
+      {service?.note != null && service.note !== "" && (
+        // The note names Terminal commands, so it is folded with them, as Backups does.
+        <ForYourAiTool>
+          <p>
+            {asSentence(service.note)
+              .split("`")
+              .map((part, i) => (i % 2 === 1 ? <code key={i} className="font-mono">{part}</code> : part))}
+          </p>
+        </ForYourAiTool>
+      )}
       {service !== undefined && !(service.installed && service.loaded) && (service.note == null || service.note === "") && (
         <ForYourAiTool>
           <p>To set it up, run this in Terminal, in the app&rsquo;s folder:</p>

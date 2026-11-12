@@ -17,20 +17,11 @@ type Stage = (typeof PROSPECT_STAGES)[number];
 
 /*
  * The People table needs a box of 58rem (`--container-people`) for its seven columns. In a narrower box each
- * person is one block: the cells stack, each value under or beside its column's name. The explicit roles keep
- * the table's semantics when its parts are displayed as blocks; the visible names are for the eye only.
+ * person is one block of four lines: name (with score and Profile at the right); headline and company; stage,
+ * and the next action when there is one; the reason. The column names are not shown there: the explicit roles
+ * keep the table's semantics when its parts are laid out as a grid, so every cell keeps its column's name.
  */
 const STACK_CELL = "@max-people:min-w-0 @max-people:border-0 @max-people:p-0";
-const STACK_PAIR = `${STACK_CELL} @max-people:grid @max-people:grid-cols-[6rem_minmax(0,1fr)] @max-people:items-baseline @max-people:gap-x-3`;
-const STACK_LABEL = "hidden text-caption text-muted @max-people:block";
-
-function StackLabel({ children }: { readonly children: string }) {
-  return (
-    <span className={STACK_LABEL} aria-hidden="true">
-      {children}
-    </span>
-  );
-}
 
 /** One campaign: its funnel and status, its people with stage and score, and its messages and timings. */
 export function CampaignDetail({ id }: { readonly id: string }) {
@@ -248,13 +239,16 @@ function ProspectRow(props: {
   const { prospect: p, campaign, timeZone, now } = props;
   const next = nextStepWords(p.stage, campaign);
   const stopped = p.stopReason === "replied" ? " (they replied)" : p.stopReason === "manual_takeover" ? " (you messaged them yourself)" : "";
+  const { headline, company } = p.person;
+  /** The block prints the company after the headline unless the headline already says it. */
+  const companyAfter = company !== null && company !== "" && !(headline ?? "").includes(company);
   return (
     <tr
       role="row"
       data-testid="prospect-row"
-      className={`@max-people:flex @max-people:flex-col @max-people:gap-2 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-300 ${props.open ? "bg-base-200/60" : ""}`}
+      className={`@max-people:grid @max-people:grid-cols-[auto_minmax(0,1fr)_auto_auto] @max-people:items-start @max-people:gap-x-3 @max-people:gap-y-1.5 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-300 ${props.open ? "bg-base-200/60" : ""}`}
     >
-      <th role="rowheader" scope="row" className={`min-w-40 text-left font-normal ${STACK_CELL}`}>
+      <th role="rowheader" scope="row" className={`min-w-52 text-left font-normal ${STACK_CELL} @max-people:col-span-2 @max-people:col-start-1 @max-people:row-start-1`}>
         <button
           type="button"
           className="inline-flex min-h-6 items-center gap-1 text-left font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11"
@@ -266,45 +260,65 @@ function ProspectRow(props: {
             className={`size-3.5 shrink-0 text-muted transition-transform duration-(--duration-appear) ease-settle ${props.open ? "rotate-90" : ""}`}
           />
         </button>
-        {p.person.headline !== null && <p className="text-base-content">{p.person.headline}</p>}
+        {headline !== null && (
+          <p className="text-base-content">
+            {headline}
+            {companyAfter && (
+              <span className="hidden text-muted @max-people:inline" aria-hidden="true">
+                {" "}
+                · {company}
+              </span>
+            )}
+          </p>
+        )}
+        {headline === null && company !== null && (
+          <p className="hidden @max-people:block" aria-hidden="true">
+            {company}
+          </p>
+        )}
         {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/10 text-caption text-error">Do not contact</span>}
       </th>
-      <td role="cell" className={STACK_PAIR}>
-        <StackLabel>Company</StackLabel>
-        <span>{p.person.company ?? <span className="text-muted">Unknown</span>}</span>
+      {/* In the block the company follows the headline (once, when the headline does not already name it). */}
+      <td role="cell" className={`${STACK_CELL} @max-people:sr-only`}>
+        {company ?? <span className="text-muted">Unknown</span>}
       </td>
-      <td role="cell" className={`whitespace-nowrap ${STACK_PAIR} @max-people:whitespace-normal`}>
-        <StackLabel>Stage</StackLabel>
+      <td role="cell" className={`whitespace-nowrap ${STACK_CELL} @max-people:col-start-1 @max-people:row-start-2`}>
         <span data-testid="prospect-stage">
           <StageWords stage={p.stage} extra={stopped} />
         </span>
       </td>
-      <td role="cell" className={`${STACK_PAIR} @max-people:items-center`}>
-        <StackLabel>Score</StackLabel>
-        <span>
-          <ScoreChip score={p.score} size="sm" />
-        </span>
+      <td role="cell" className={`${STACK_CELL} @max-people:col-start-3 @max-people:row-start-1 @max-people:self-start`}>
+        <ScoreChip score={p.score} size="sm" />
       </td>
-      <td role="cell" className={`text-base-content ${STACK_CELL}`}>
-        <StackLabel>Why the AI scored them so</StackLabel>
-        <span>{p.scoreReason ?? <span className="text-muted">Not scored yet</span>}</span>
+      <td role="cell" className={`text-base-content ${STACK_CELL} @max-people:col-span-4 @max-people:col-start-1 @max-people:row-start-3`}>
+        {p.scoreReason ?? <span className="text-muted">Not scored yet</span>}
       </td>
-      <td role="cell" className={`min-w-36 ${STACK_PAIR}`}>
-        <StackLabel>Next action</StackLabel>
+      <td
+        role="cell"
+        className={`${STACK_CELL} @max-people:col-span-3 @max-people:col-start-2 @max-people:row-start-2 ${p.nextActionAt === null ? "@max-people:sr-only" : ""}`}
+      >
         {p.nextActionAt === null ? (
           <span className="text-muted">
             <span aria-hidden="true">–</span>
             <span className="sr-only">Nothing planned</span>
           </span>
         ) : (
-          <div>
+          <div className="@max-people:flex @max-people:flex-wrap @max-people:gap-x-1.5">
+            <span className="hidden text-muted @max-people:inline" aria-hidden="true">
+              Next:
+            </span>
             {next !== undefined && <p>{next}</p>}
-            <p className="text-muted">{formatNext(p.nextActionAt, timeZone, now)}</p>
+            <p className="whitespace-nowrap text-muted">{formatNext(p.nextActionAt, timeZone, now)}</p>
           </div>
         )}
       </td>
-      <td role="cell" className={STACK_CELL}>
-        <a href={p.person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-6 items-center gap-1 whitespace-nowrap text-base-content link-hover">
+      <td role="cell" className={`${STACK_CELL} @max-people:col-start-4 @max-people:row-start-1 @max-people:self-start`}>
+        <a
+          href={p.person.profileUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="link inline-flex min-h-6 items-center gap-1 whitespace-nowrap text-base-content link-hover max-lg:-my-2.5 max-lg:min-h-11"
+        >
           Profile
           <IconExternal />
           <span className="sr-only">of {p.person.fullName} on LinkedIn (opens in your browser)</span>

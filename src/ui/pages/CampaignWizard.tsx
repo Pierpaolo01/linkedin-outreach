@@ -47,6 +47,8 @@ function StepStrip(props: {
   readonly step: number;
   readonly furthest: number;
   readonly problems: ReadonlySet<number>;
+  /** Steps still missing something Start needs: they never show the check, which means "nothing to fix here". */
+  readonly unfinished: ReadonlySet<number>;
   readonly created: boolean;
   readonly onGo: (step: number) => void;
 }) {
@@ -92,7 +94,7 @@ function StepStrip(props: {
         {STEP_TITLES.map((title, index) => {
           const here = index === step;
           const problem = props.problems.has(index);
-          const done = !here && !problem && index < props.furthest;
+          const done = !here && !problem && !props.unfinished.has(index) && index < props.furthest;
           return (
             <li key={title} className="shrink-0">
               <button
@@ -415,6 +417,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
   };
 
   const stepsWithProblems = new Set(Object.keys(errors).map(stepOf));
+  const stepsUnfinished = unfinishedSteps(form);
   const created = campaignId !== null;
 
   return (
@@ -424,7 +427,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         aside={saving ? "Saving…" : savedAt !== null ? `Draft saved at ${formatClock(savedAt.toISOString(), timeZone)}` : created ? "Draft" : undefined}
       />
       <div className="grid gap-section lg:grid-cols-[13rem_minmax(0,1fr)]">
-        <StepStrip step={step} furthest={furthest} problems={stepsWithProblems} created={created} onGo={(index) => void goTo(index)} />
+        <StepStrip step={step} furthest={furthest} problems={stepsWithProblems} unfinished={stepsUnfinished} created={created} onGo={(index) => void goTo(index)} />
 
         <div className="min-w-0">
           <ActionError message={saveError} className="mb-group" />
@@ -501,6 +504,18 @@ interface StepProps {
   readonly form: CampaignForm;
   readonly set: SetField;
   readonly errors: FieldErrors;
+}
+
+/** The steps still missing what Start requires (a name, a search when the source is searches, who fits, the first message). */
+function unfinishedSteps(form: CampaignForm): ReadonlySet<number> {
+  const empty = (value: string) => value.trim() === "";
+  const missing: readonly (readonly [number, boolean])[] = [
+    [0, empty(form.name)],
+    [1, form.discoverySource === "search" && sentUrls(form.sourceUrls).length === 0],
+    [2, empty(form.scoringBrief)],
+    [4, empty(form.firstMessage)],
+  ];
+  return new Set(missing.flatMap(([step, gap]) => (gap ? [step] : [])));
 }
 
 function StepFrame({ title, lead, children }: { readonly title: string; readonly lead: string; readonly children: ReactNode }) {
@@ -747,6 +762,7 @@ function Review({
   readonly onChange: (step: number) => void;
 }) {
   const urls = sentUrls(form.sourceUrls);
+  const unfinished = unfinishedSteps(form);
   const problems = (step: number) =>
     Object.entries(errors)
       .filter(([path]) => stepOf(path) === step)
@@ -813,7 +829,13 @@ function Review({
             <div key={step} className="px-4 py-4" data-testid={`review-step-${step + 1}`}>
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="flex items-center gap-2 font-semibold">
-                  {list.length === 0 ? <IconCheck className="size-4 text-primary" /> : <span className="status status-error" aria-hidden="true" />}
+                  {list.length > 0 ? (
+                    <span className="status status-error" aria-hidden="true" />
+                  ) : unfinished.has(step) ? (
+                    <span className="size-4" aria-hidden="true" />
+                  ) : (
+                    <IconCheck className="size-4 text-primary" />
+                  )}
                   {STEPS[step]?.title}
                 </h3>
                 <button type="button" className="link inline-flex min-h-6 shrink-0 items-center text-sm link-hover max-lg:min-h-11" onClick={() => onChange(step)}>

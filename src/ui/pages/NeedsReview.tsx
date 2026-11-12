@@ -310,8 +310,9 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
         What the app saw. Open at full size.
       </figcaption>
       <dialog ref={ref} className="modal" aria-labelledby={titleId} onClose={() => setOpen(false)}>
-        <div className="modal-box w-11/12 max-w-6xl">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        {/* The box stays 16px clear of the window's edges; a tall screenshot scrolls under the fixed title row. */}
+        <div className="modal-box flex max-h-viewer w-11/12 max-w-6xl flex-col overflow-hidden">
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
             <h3 id={titleId} className="font-semibold">
               Screenshot: {name}
             </h3>
@@ -319,7 +320,9 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
               Close
             </button>
           </div>
-          <img src={url} alt={alt} className="h-auto w-full" />
+          <div className="min-h-0 overflow-y-auto">
+            <img src={url} alt={alt} className="h-auto w-full" />
+          </div>
         </div>
         {/* As in the confirm dialog: a click outside closes it; the keyboard has Escape and Close, so this is no tab stop. */}
         <form method="dialog" className="modal-backdrop">

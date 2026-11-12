@@ -133,29 +133,31 @@ function CampaignTable(props: {
 }) {
   const { timeZone } = useAppData();
   return (
+    // Below the funnel width each campaign is one block: its name, status and counts, then its actions in one row
+    // under them, so every name starts at the same height. The explicit roles keep the table's semantics there.
     <div className="@container overflow-x-auto rounded-box border border-base-300">
-      <table className="table table-sm" data-testid="campaigns-table" aria-labelledby={props.labelledBy}>
-        <thead>
-          <tr className="text-muted">
-            <th scope="col" className="font-medium">Campaign</th>
+      <table role="table" className="table table-sm @max-funnel:block" data-testid="campaigns-table" aria-labelledby={props.labelledBy}>
+        <thead role="rowgroup" className="@max-funnel:sr-only">
+          <tr role="row" className="text-muted">
+            <th role="columnheader" scope="col" className="font-medium">Campaign</th>
             {FUNNEL.map((step) => (
-              <th key={step} scope="col" className="hidden text-right font-medium @funnel:table-cell">
+              <th key={step} role="columnheader" scope="col" className="hidden text-right font-medium @funnel:table-cell">
                 {FUNNEL_LABEL[step]}
               </th>
             ))}
-            <th scope="col">
+            <th role="columnheader" scope="col">
               <span className="sr-only">Change the campaign</span>
             </th>
           </tr>
         </thead>
-        <tbody className="nums">
+        <tbody role="rowgroup" className="nums @max-funnel:block">
           {props.campaigns.map((c) => {
             const halted = haltedBy(c.status, props.stopped);
             const wait = props.waits.get(c.id) ?? null;
             const busy = props.busyId === c.id;
             return (
-              <tr key={c.id} data-testid="campaign-row">
-                <th scope="row" className="text-left font-normal @funnel:min-w-42">
+              <tr key={c.id} role="row" data-testid="campaign-row" className="@max-funnel:block">
+                <th role="rowheader" scope="row" className="text-left font-normal @funnel:min-w-42 @max-funnel:block @max-funnel:border-b-0">
                   <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
@@ -166,12 +168,12 @@ function CampaignTable(props: {
                   </p>
                 </th>
                 {FUNNEL.map((step) => (
-                  <td key={step} className="hidden text-right @funnel:table-cell">
+                  <td key={step} role="cell" className="hidden text-right @funnel:table-cell">
                     {c.funnel[step]}
                   </td>
                 ))}
-                <td className="text-right">
-                  <div className="flex flex-wrap justify-end gap-1.5">
+                <td role="cell" className="text-right @max-funnel:block @max-funnel:pt-0">
+                  <div className="flex flex-wrap justify-end gap-1.5 @max-funnel:justify-start">
                     {c.status === "draft" && (
                       <Link to={`/campaigns/${c.id}/edit`} className={`${SECONDARY_BUTTON} btn-xs`}>
                         Continue setting up

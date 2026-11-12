@@ -60,6 +60,8 @@
   --container-funnel: 45rem;
   --container-people: 58rem;
   --container-stats: 50rem;
+  /* The approval queue's five columns (score, person, reason, texts, buttons); below it the phone's stacked row. */
+  --container-queue: 56rem;
   /* The box width from which the Messages fields show their preview beside the form (19rem) instead of below it. */
   --container-preview: 44rem;
 
@@ -74,6 +76,8 @@
   --spacing-block: 1.5rem;
   --spacing-group: 0.75rem;
   --spacing-card: 1.25rem;
+  /* The tallest a viewer dialog grows (the Needs review screenshot): the window less 16px above and below. */
+  --spacing-viewer: calc(100dvh - 2rem);
 
   /*
    * Text has two tones: Ink (base-content) and Muted. Muted is solid, not an opacity, so it measures the same

@@ -10,7 +10,12 @@ import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
 
 const SCORE_STEPS = [0, 5, 6, 7, 8] as const;
-const COLUMNS = "lg:grid-cols-[3.25rem_minmax(12rem,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_8.75rem]";
+/*
+ * The five columns need a list box of 56rem (`--container-queue`); in a narrower box (a phone, or a laptop at
+ * 1024 with the sidebar docked) each prospect is the stacked row: score and person, then the reason, the texts
+ * and the buttons at full width.
+ */
+const COLUMNS = "@queue:grid-cols-[3.25rem_minmax(12rem,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_8.75rem]";
 
 type Decision = "approve" | "reject";
 /** A decided row folding away, and the row it sat above when it was decided (none when it was last). */
@@ -170,6 +175,8 @@ export function Approvals() {
   const filtered = minScore > 0 || campaignId !== null;
   /** Until the list has loaded there is no count to show: the bar says nothing rather than "0". */
   const counted = loaded.status === "ok";
+  /** Nobody waits and no filter hides anyone: the page is the empty state alone, with no filters or button to press. */
+  const empty = counted && items.length === 0 && !filtered;
 
   // The decided row folds to nothing, so the rows below slide up instead of jumping. The focus has already moved on.
   const ghost = (item: ApprovalItem) => (
@@ -195,9 +202,10 @@ export function Approvals() {
 
   return (
     <>
-      <PageHeader title="Approval queue" aside={waiting === undefined ? undefined : `${waiting} waiting, ${decided} decided`} />
+      <PageHeader title="Approval queue" aside={waiting === undefined || (waiting === 0 && decided === 0) ? undefined : `${waiting} waiting, ${decided} decided`} />
 
       <div className="flex flex-col gap-group">
+      {!empty && (
       <div className={TOOLBAR}>
         <span className="text-sm" id="min-score-label">
           Minimum score
@@ -238,6 +246,7 @@ export function Approvals() {
           {counted ? `Approve all ${shownCount} shown` : "Approve all shown"}
         </button>
       </div>
+      )}
 
       {/* While it loads the hint stays, so the list does not move; with nobody to decide there is nothing to press. */}
       {!(counted && items.length === 0) && (
@@ -277,8 +286,8 @@ export function Approvals() {
           </EmptyState>
         )
       ) : (
-        <div className="rounded-box border border-base-300" role="table" aria-label="Prospects waiting for approval">
-          <div role="rowgroup" className="sr-only lg:not-sr-only">
+        <div className="@container rounded-box border border-base-300" role="table" aria-label="Prospects waiting for approval">
+          <div role="rowgroup" className="sr-only @queue:not-sr-only">
             <div role="row" className={`grid gap-4 border-b border-base-300 px-4 py-2 text-sm text-muted ${COLUMNS}`}>
               <span role="columnheader">Score</span>
               <span role="columnheader">Person</span>
@@ -370,7 +379,7 @@ function Row({
       aria-label={leaving ? undefined : `${person.fullName}${item.score === null ? "" : `, score ${formatScore(item.score)}`}`}
       onKeyDown={onKeyDown}
       data-testid={leaving ? undefined : "approval-row"}
-      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-3 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-visible:ring-2 focus-visible:ring-neutral focus-visible:ring-inset lg:gap-x-4 ${COLUMNS}`}
+      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-3 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-visible:ring-2 focus-visible:ring-neutral focus-visible:ring-inset @queue:gap-x-4 ${COLUMNS}`}
     >
       <ScoreChip score={item.score} size="lg" role="cell" />
       <div role="cell" className="min-w-0">
@@ -389,24 +398,24 @@ function Row({
           <span className="sr-only">(opens in your browser)</span>
         </a>
       </div>
-      <div role="cell" className="col-span-2 flex flex-col gap-1.5 text-sm lg:col-span-1">
+      <div role="cell" className="col-span-2 flex flex-col gap-1.5 text-sm @queue:col-span-1">
         <p>{item.scoreReason ?? "The AI gave no reason."}</p>
         <EvidenceLines industry={person.industryEvidence} size={person.sizeEvidence} aiLine={item.aiLineEvidence ?? null} />
       </div>
-      <div role="cell" className="col-span-2 flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm text-base-content lg:col-span-1">
+      <div role="cell" className="col-span-2 flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm text-base-content @queue:col-span-1">
         {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} person={person} />}
         <Text label="First message, after they accept" text={item.preview.firstMessage} person={person} />
         <FollowUp text={item.followUpPreview} person={person} />
       </div>
-      <div role="cell" className="col-span-2 flex items-start gap-2 lg:col-span-1 lg:flex-col lg:items-stretch">
-        <button type="button" className="btn btn-sm flex-1 border-primary/50 bg-base-100 text-primary hover:not-disabled:bg-base-200 lg:flex-none" onClick={() => onDecide?.("approve")}>
+      <div role="cell" className="col-span-2 flex items-start gap-2 @queue:col-span-1 @queue:flex-col @queue:items-stretch">
+        <button type="button" className="btn btn-sm flex-1 border-primary/50 bg-base-100 text-primary hover:not-disabled:bg-base-200 @queue:flex-none" onClick={() => onDecide?.("approve")}>
           <IconCheck />
           Approve
           <kbd className="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">
             A
           </kbd>
         </button>
-        <button type="button" className={`${SECONDARY_BUTTON} btn-sm flex-1 lg:flex-none`} onClick={() => onDecide?.("reject")}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm flex-1 @queue:flex-none`} onClick={() => onDecide?.("reject")}>
           <IconX />
           Reject
           <kbd className="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">
@@ -414,7 +423,7 @@ function Row({
           </kbd>
         </button>
       </div>
-      <ActionError message={error} className="col-span-2 lg:col-span-5" />
+      <ActionError message={error} className="col-span-2 @queue:col-span-5" />
     </div>
   );
 }

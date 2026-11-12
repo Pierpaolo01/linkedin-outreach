@@ -204,26 +204,27 @@ function Campaigns({ home }: { readonly home: HomeData }) {
         </EmptyState>
       ) : (
         <div className="@container overflow-x-auto rounded-box border border-base-300">
-          <table className="table table-sm" aria-labelledby="home-campaigns">
-            <thead>
-              <tr className="text-muted">
-                <th scope="col" className="font-medium">Campaign</th>
+          {/* Below the funnel width the rows are one column: the lone "Campaign" header is for screen readers only. */}
+          <table role="table" className="table table-sm" aria-labelledby="home-campaigns">
+            <thead role="rowgroup" className="@max-funnel:sr-only">
+              <tr role="row" className="text-muted">
+                <th role="columnheader" scope="col" className="font-medium">Campaign</th>
                 {FUNNEL.map((step) => (
-                  <th key={step} scope="col" className="hidden text-right font-medium @funnel:table-cell">
+                  <th key={step} role="columnheader" scope="col" className="hidden text-right font-medium @funnel:table-cell">
                     {FUNNEL_LABEL[step]}
                   </th>
                 ))}
-                <th scope="col">
+                <th role="columnheader" scope="col">
                   <span className="sr-only">Pause or resume</span>
                 </th>
               </tr>
             </thead>
-            <tbody className="nums">
+            <tbody role="rowgroup" className="nums">
               {campaigns.map((c) => {
                 const halted = haltedBy(c.status, stopped);
                 return (
-                  <tr key={c.id}>
-                    <th scope="row" className="text-left font-normal @funnel:min-w-42">
+                  <tr key={c.id} role="row">
+                    <th role="rowheader" scope="row" className="text-left font-normal @funnel:min-w-42">
                       <Link to={`/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                         {c.name}
                       </Link>
@@ -233,11 +234,11 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                       </p>
                     </th>
                     {FUNNEL.map((step) => (
-                      <td key={step} className="hidden text-right @funnel:table-cell">
+                      <td key={step} role="cell" className="hidden text-right @funnel:table-cell">
                         {c.funnel[step]}
                       </td>
                     ))}
-                    <td className="text-right">
+                    <td role="cell" className="text-right">
                       {(PAUSABLE.has(c.status) || c.status === "paused") && (
                         <button
                           type="button"

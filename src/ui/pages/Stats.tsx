@@ -122,7 +122,8 @@ function StatsRow({ row, replyLabel }: { readonly row: Row; readonly replyLabel:
           <p className="nums text-lg font-semibold">{formatHours(row.medianHoursToAccept)}</p>
         )}
       </td>
-      <td role="cell" className={`nums text-right text-lg font-semibold ${STACK_MEASURE}`}>
+      {/* A count, not a rate: at the row's own weight, so a "0" is not the loudest thing beside "Not enough data yet". */}
+      <td role="cell" className={`nums text-right ${row.invitesWithdrawn === 0 ? "text-muted" : ""} ${STACK_MEASURE}`}>
         <StackLabel>Invites withdrawn</StackLabel>
         {row.invitesWithdrawn}
       </td>

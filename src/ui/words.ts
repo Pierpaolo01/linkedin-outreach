@@ -1,5 +1,6 @@
 import type { CampaignStatus, ProspectStage } from "../db/schema";
 import type { Campaign, DiscoveryWait } from "./apiSchemas";
+import { STEPS } from "./campaignForm";
 import { formatClock, formatWhen, STAGE_LABEL } from "./format";
 
 /** More words and dates for the campaign, activity, stats and settings pages. Times are in the app's time zone. */
@@ -110,14 +111,36 @@ const SESSION_WORDS: Readonly<Record<string, string>> = {
 };
 const sessionWords = (status: string) => SESSION_WORDS[status] ?? status.replace(/_/g, " ");
 
+/** "acceptToMessageMinHours" as "accept to message min hours": a field the dashboard has no step for. */
+const keyWords = (key: string) => key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ").toLowerCase();
+
+/** The campaign's fields an edit changed, as the wizard's step names in the wizard's order ("Messages, Timings"). */
+function editedWords(keys: string): string {
+  const names = keys.split(",").map((key) => key.trim()).filter((key) => key !== "");
+  if (names.length === 1 && names[0] === "nothing") return "nothing";
+  const steps = STEPS.filter((step) => names.some((key) => (step.keys as readonly string[]).includes(key))).map((step) => step.title);
+  const known = new Set<string>(STEPS.flatMap((step) => step.keys));
+  const other = names.filter((key) => !known.has(key)).map(keyWords);
+  return [...new Set([...steps, ...other])].join(", ");
+}
+
 /**
- * A message from the engine as the activity log and Home show it: without underscores, and with the two
- * server lines that read as log keys put in the app's words ("LinkedIn session: ok" is "Checked LinkedIn:
- * logged in."). The server's own strings stay as they are (backlog D-10).
+ * A message from the engine as the activity log and Home show it: without underscores, and with the server
+ * lines that read as log keys put in the app's words ("LinkedIn session: ok" is "Checked LinkedIn: logged in.";
+ * a campaign edit names the wizard's steps, not field keys; a reached daily limit is a spent budget, as Home
+ * says it). The server's own strings stay as they are (backlog D-10).
  */
 export function plainMessage(text: string): string {
   const session = /^LinkedIn session: (\w+)$/.exec(text);
   if (session?.[1] !== undefined) return `Checked LinkedIn: ${sessionWords(session[1])}.`;
+  const edited = /^(Campaign ".*" edited): ([\w, ]+)$/.exec(text);
+  if (edited?.[1] !== undefined && edited[2] !== undefined) return `${edited[1]}: ${editedWords(edited[2])}.`;
+  const limit = /the (daily|weekly) limit of (\d+) (.+?) is reached/.exec(text);
+  if (limit !== null) {
+    const [phrase, period, count, what] = limit;
+    const spent = `${period === "daily" ? "today's" : "this week's"} budget of ${count} ${what} is spent`;
+    return text.replace(phrase, spent).replace(/^Discovery paused:/, "Discovery waits:").replace(/_/g, " ");
+  }
   const outside = /^Outside working hours: (.*)$/.exec(text);
   if (outside?.[1] !== undefined) {
     const rest = outside[1].replace(/last known: (\w+)/, (_, status: string) => `last known: ${sessionWords(status)}`);

@@ -449,12 +449,17 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
     expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
   }
 
-  // A campaign's people: one block per person with each value named, nothing hidden sideways in the box,
-  // and an opened person's texts inside the screen.
+  // A campaign's people: one short block per person (name with score and Profile, headline, stage, reason) that
+  // keeps every cell of the table's row, nothing hidden sideways in the box, and an opened person's texts inside the screen.
   await page.goto("/campaigns/1");
   const person = page.getByTestId("prospect-row").first();
-  await expect(person.getByText("Company", { exact: true })).toBeVisible();
-  await expect(person.getByText("Next action", { exact: true })).toBeVisible();
+  await expect(person.getByRole("rowheader")).toHaveCount(1);
+  await expect(person.getByRole("cell")).toHaveCount(6);
+  await expect(person.getByTestId("prospect-stage")).toBeVisible();
+  const profile = await person.getByRole("link", { name: /^Profile/ }).boundingBox();
+  expect((profile?.x ?? Infinity) + (profile?.width ?? 0), "the Profile link runs past the screen").toBeLessThanOrEqual(390);
+  const block = await person.boundingBox();
+  expect(block?.height ?? Infinity, "a person's block is a stack of labelled rows again").toBeLessThanOrEqual(200);
   const hidden = await page.getByTestId("people-table").evaluate((table) => (table.parentElement === null ? 0 : table.parentElement.scrollWidth - table.parentElement.clientWidth));
   expect(hidden, "the People box scrolls sideways").toBeLessThanOrEqual(0);
   await person.getByRole("button").first().click();
@@ -635,7 +640,9 @@ test("Re-check updates the session, and an empty app shows its empty states", as
 
   await sidebar(page).getByRole("link", { name: "Approval queue" }).click();
   await expect(page.getByText("The approval queue is empty.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve all 0 shown" })).toBeDisabled();
+  // Nobody waits and no filter is set: the empty state alone, with no filters and no dead button.
+  await expect(page.getByRole("button", { name: /^Approve all/ })).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Minimum score" })).toHaveCount(0);
 });
 
 test("a checkpoint shows the red banner with what to do", async ({ page }) => {
