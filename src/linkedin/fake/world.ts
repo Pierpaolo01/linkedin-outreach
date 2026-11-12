@@ -16,7 +16,7 @@ import type { InviteResult, MessageResult, ReadThreadResult, SearchQuery, Withdr
 import { Checkpoint, LimitHit, LoggedOut, Restricted, Unexpected, type LinkedInError } from "../errors";
 import { profileUrlFor, type Card } from "../parse/card";
 import type { ConnectionCard } from "../parse/connections";
-import type { ConnectionState, Profile } from "../parse/profile";
+import { ProfileUnavailableError, type ConnectionState, type Profile } from "../parse/profile";
 import type { RecommendationCard, RecommendationsResult } from "../parse/recommendations";
 import type { SearchAction, SearchCard, SearchResults } from "../parse/search";
 import type { SentInvitationCard } from "../parse/sentInvitations";
@@ -391,12 +391,13 @@ export class FakeWorld {
     this.#record({ kind: "page_load", page, at: now, ...(member === undefined ? {} : ids(member)) });
   }
 
-  /** The member a profile URL opens; an unknown one is LinkedIn's "profile not available" page. */
+  /** The member a profile URL opens; an unknown one is LinkedIn's "profile not available" page (an `Unexpected` caused by `ProfileUnavailableError`). */
   #profileTarget(publicId: string, now: Date): Member {
     const member = this.#members.get(publicId);
     if (member === undefined) {
       this.#record({ kind: "page_load", page: "profile", publicId, at: now });
-      throw new Unexpected(`fake world: no profile ${publicId}`);
+      // As the live driver reports LinkedIn's "profile not available" page.
+      throw new Unexpected(`fake world: no profile ${publicId}`, { cause: new ProfileUnavailableError() });
     }
     return member;
   }

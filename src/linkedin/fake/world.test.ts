@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LimitHit, Unexpected } from "../errors";
+import { ProfileUnavailableError } from "../parse/profile";
 import { FakeWorld, type MemberSpec, type WorldOptions } from "./world";
 
 /** Monday 2026-11-16, 09:00 UTC. */
@@ -81,9 +82,11 @@ describe("viewProfile", () => {
     ]);
   });
 
-  it("throws Unexpected for a profile that does not exist", async () => {
+  it("throws Unexpected for a profile that does not exist, caused by the parser's 'profile not available', as the live driver does", async () => {
     const { driver } = setup();
-    await expect(driver.viewProfile("nobody-here")).rejects.toBeInstanceOf(Unexpected);
+    const error: unknown = await driver.viewProfile("nobody-here").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Unexpected);
+    expect(error instanceof Error ? error.cause : null).toBeInstanceOf(ProfileUnavailableError);
   });
 
   it("logs a profile view at the world time it happened", async () => {

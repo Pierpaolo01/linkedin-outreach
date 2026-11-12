@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDb, type OpenedDb } from "../db/index";
 import { eventLog } from "../db/schema";
 import { createFakeSessionPort, type SessionPort } from "./sessionPort";
-import { createSessionCheck, readSession } from "./sessionStore";
+import { setSettings } from "../config/settings";
+import { createSessionCheck, readSession, runStartupCheck } from "./sessionStore";
 
 let dir: string;
 let opened: OpenedDb;
@@ -138,5 +139,66 @@ describe("createSessionCheck", () => {
     opened = openDb(join(dir, "app.db"));
 
     expect(readSession(opened.db)).toMatchObject({ status: "logged_out", lastCheckedAt: at });
+  });
+});
+
+describe("runStartupCheck", () => {
+  /** A port that counts its checks: each one would load LinkedIn's feed. */
+  function countingPort(): SessionPort & { loads: number } {
+    const states = createFakeSessionPort(["ok"]);
+    const port = {
+      loads: 0,
+      check: async () => {
+        port.loads += 1;
+        return states.check();
+      },
+      close: async () => undefined,
+    };
+    return port;
+  }
+
+  it("checks the session inside the working window", async () => {
+    const port = countingPort();
+    const session = createSessionCheck({ db: opened.db, port, now: () => at });
+
+    const outcome = await runStartupCheck({ db: opened.db, session, now: () => at, onlyInWorkingWindow: true });
+
+    expect(outcome.kind).toBe("checked");
+    expect(port.loads).toBe(1);
+  });
+
+  it("loads nothing outside the working window and leaves the stored state as it was", async () => {
+    const port = countingPort();
+    const session = createSessionCheck({ db: opened.db, port: createFakeSessionPort(["logged_out"]), now: () => at });
+    await session.run();
+    const night = new Date("2026-11-11T22:00:00Z");
+    const atNight = createSessionCheck({ db: opened.db, port, now: () => night });
+
+    const outcome = await runStartupCheck({ db: opened.db, session: atNight, now: () => night, onlyInWorkingWindow: true });
+
+    expect(outcome).toEqual({ kind: "outside_working_window", session: readSession(opened.db) });
+    expect(port.loads).toBe(0);
+    expect(readSession(opened.db)).toMatchObject({ status: "logged_out", lastCheckedAt: at });
+  });
+
+  it("follows the working window from the settings", async () => {
+    const port = countingPort();
+    const night = new Date("2026-11-11T22:00:00Z");
+    setSettings(opened.db, { workingHours: { start: "08:00", end: "23:30" } }, at);
+    const session = createSessionCheck({ db: opened.db, port, now: () => night });
+
+    await runStartupCheck({ db: opened.db, session, now: () => night, onlyInWorkingWindow: true });
+
+    expect(port.loads).toBe(1);
+  });
+
+  it("checks at any hour when the port loads no LinkedIn page (the fake driver)", async () => {
+    const port = countingPort();
+    const night = new Date("2026-11-11T22:00:00Z");
+    const session = createSessionCheck({ db: opened.db, port, now: () => night });
+
+    await runStartupCheck({ db: opened.db, session, now: () => night, onlyInWorkingWindow: false });
+
+    expect(port.loads).toBe(1);
   });
 });

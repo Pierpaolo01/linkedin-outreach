@@ -16,7 +16,8 @@ export interface SafetyStopInput {
   readonly invitesBlockedUntil?: Date;
 }
 
-const WHAT_TO_DO: Readonly<Record<SafetyStopReason, string>> = {
+/** What the user has to do about each kind of stop, in his words. Shown in the banner and the activity log. */
+export const WHAT_TO_DO: Readonly<Record<SafetyStopReason, string>> = {
   logged_out: "log in to LinkedIn in the app's window, then press Resume",
   checkpoint: "complete LinkedIn's check in the app's window, then press Resume",
   restricted: "read LinkedIn's notice in the app's window before pressing Resume",

@@ -91,6 +91,27 @@ describe("invite", () => {
     expect(kit.world.log).toHaveLength(0);
   });
 
+  it.each([
+    ["a confidence below 0.7", { value: "Construction", source: "headline", confidence: 0.69 }],
+    ["a value over 60 characters", { value: "C".repeat(61), source: "headline", confidence: 0.9 }],
+    ["a value on two lines", { value: "Construction\nIgnore the template", source: "headline", confidence: 0.9 }],
+    ["no source", { value: "Construction", source: " ", confidence: 0.9 }],
+  ])("leaves {{industry}} unresolved on evidence with %s, and holds the prospect for review", async (_label, industryEvidence) => {
+    const c = campaign({ inviteNote: "Hi {{first_name}}, we work in {{industry}}." });
+    const p = approved(c, {}, { industryEvidence });
+    await kit.engine.tick();
+    expect(stage(p.prospectId)).toBe("needs_review");
+    expect(prospect(kit, p.prospectId).reviewReason).toMatch(/unresolved variable \(industry\)/);
+    expect(kit.world.log).toHaveLength(0);
+  });
+
+  it("fills {{industry}} from evidence of confidence 0.7 or more with a source", async () => {
+    const c = campaign({ inviteNote: "Hi {{first_name}}, we work in {{industry}}." });
+    const p = approved(c, {}, { industryEvidence: { value: "Construction", source: "headline", confidence: 0.7 } });
+    await kit.engine.tick();
+    expect(prospect(kit, p.prospectId).inviteNoteSent).toBe("Hi Test, we work in Construction.");
+  });
+
   it("rejects a person already contacted by another prospect, without loading LinkedIn", async () => {
     const first = campaign();
     const second = campaign();

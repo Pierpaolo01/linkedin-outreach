@@ -11,13 +11,21 @@
  * prospect, lowers a limit or clears a template, a send fails) and suspends calls the laptop sleeps
  * through (`world.suspendNext`): reads, and sends that start a few minutes before the window closes.
  *
+ * Discovery (`DiscoveryPlan`): at each recommendations load it sets what LinkedIn suggests, it
+ * shows LinkedIn's search cap on a planned search page, it opens a closed URL for a profile LinkedIn
+ * shows as not available, and it records each discovery load with its campaign's waiting line then.
+ * Every engine gets the fake AI (`src/ai/fakeAi.ts`), recorded call by call and out during the
+ * plan's AI outages; a tick that calls it and the driver is recorded too.
+ *
  * It is generic over the engine: tests pass deliberately broken stubs, the real run passes
  * `createEngine`. Nothing here uses a real timer; a seed replays exactly.
  */
-import { isNull } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { createFakeAi } from "../../ai/fakeAi";
+import { AiUnavailable, type Ai, type CardForScoring } from "../../ai/types";
 import { DEFAULT_SETTINGS, type Settings } from "../../config/settings";
 import { openDb, type Db, type OpenedDb } from "../../db/index";
-import { safetyStops, type StopReason } from "../../db/schema";
+import { actions, campaigns, prospects, safetyStops, type DiscoverySource, type SafetyStopReason, type StopReason } from "../../db/schema";
 import {
   FakeWorld,
   HandleRevoked,
@@ -26,6 +34,7 @@ import {
   type FaultKind,
   type KillPhase,
   type KillPoint,
+  type RecommendationGroupSpec,
   type WorldOptions,
 } from "../../linkedin/fake/world";
 import type { SessionBreak } from "../../linkedin/fake/world";
@@ -88,7 +97,48 @@ export interface CampaignFact {
   readonly inviteNote: string | null;
   readonly firstMessage: string;
   readonly followUp: string;
+  /** For a campaign that discovers its own prospects (it starts in `finding`). */
+  readonly discovery?: DiscoveryCampaignFact;
 }
+
+/** What a discovery campaign was created with, for the verdicts. Neither changes during a run. */
+export interface DiscoveryCampaignFact {
+  readonly source: DiscoverySource;
+  readonly brief: string;
+  readonly openProfileThreshold: number;
+  readonly scoreThreshold: number;
+  readonly batchSize: number;
+}
+
+/**
+ * Why a discovered member may never be invited by a discovery campaign, or `regular` when they may.
+ * `active_elsewhere`: an active prospect of another campaign; `contacted_before`: contacted by an
+ * earlier campaign, now closed; `unavailable`: LinkedIn shows their profile as not available.
+ */
+export type DiscoveredKind = "regular" | "first_degree" | "pending_invite" | "do_not_contact" | "active_elsewhere" | "contacted_before" | "unavailable";
+
+/** A member a discovery source shows, with the card LinkedIn shows for them. */
+export interface DiscoveredFact {
+  readonly kind: DiscoveredKind;
+  /** The keys of the discovery campaigns whose source shows them. */
+  readonly campaigns: readonly string[];
+  readonly card: CardForScoring;
+  /** The fake AI's score of the card under each of those campaigns' briefs, filled by the harness before the run. */
+  readonly cardScores: Map<string, number>;
+}
+
+/** What the simulated user saw and did in the approval queue (`ScenarioFacts.discoveryLog`). */
+export type DiscoveryUserEvent =
+  | { readonly kind: "awaiting_seen"; readonly at: Date; readonly campaign: string }
+  | {
+      readonly kind: "approved";
+      readonly at: Date;
+      readonly campaign: string;
+      readonly approved: number;
+      /** Found plus waiting for approval, right before the approval. */
+      readonly lineBefore: number;
+      readonly batchSize: number;
+    };
 
 export interface ProspectFact {
   readonly campaign: string;
@@ -149,6 +199,8 @@ export interface MemberFact {
    */
   readonly scripted: boolean;
   readonly expect: Expectation | null;
+  /** Shown by a discovery source. */
+  readonly discovered?: DiscoveredFact;
 }
 
 /** The settings in force from `at` on, until the next change. */
@@ -164,6 +216,8 @@ export interface ScenarioFacts {
   readonly settingsHistory: SettingsChange[];
   readonly campaigns: Map<string, CampaignFact>;
   readonly members: Map<string, MemberFact>;
+  /** The simulated user's approval queue, oldest first. */
+  readonly discoveryLog: DiscoveryUserEvent[];
 }
 
 /** The settings in force at `at`: the last change at or before it; before any change, the defaults (a new database stores none). */
@@ -202,14 +256,17 @@ export interface InterventionContext extends SimContext {
 
 /**
  * Something the user or a member does while a tick is running: fired from the driver hook at the
- * `before` kill point of a call of `op` about `target` (a world public id), when no kill landed
- * there and `when` (if given) holds. It fires on the first such call, or on every one with `every`.
+ * `before` kill point of a call of `op` about `target` (a world public id; null for a call about
+ * nobody, such as a discovery page), when no kill landed there and `when` (if given) holds. It fires
+ * on the first such call, or on every one with `every`.
  */
 export interface Intervention {
   readonly label: string;
   readonly op: DriverOp;
-  readonly target: string;
+  readonly target: string | null;
   readonly every?: boolean;
+  /** No random kill or scripted fault lands on the call it fires on, so what it sets up is reached in every seed. */
+  readonly shield?: boolean;
   /** Counted by the verdicts as `settingsChangedMidRead` (a limit or a template changed while a read loads). */
   readonly tag?: "settings_mid_read";
   when?(context: SimContext): boolean;
@@ -318,6 +375,45 @@ export interface KillPlan {
 
 export const NO_KILLS: KillPlan = { sendPoint: 0, readPoint: 0, betweenTicks: 0, reconcileRead: 0, quickRekill: 0, ensureAfter: null };
 
+/**
+ * The AI does not answer (`AiUnavailable`) from `from` until `until`: a fixed instant, or `ms` after
+ * the first safety stop for `reason` raised at or after `from` (and by `latest` at the latest).
+ */
+export interface AiOutage {
+  readonly from: Date;
+  readonly until:
+    | { readonly kind: "at"; readonly at: Date }
+    | { readonly kind: "after_safety_stop"; readonly reason: SafetyStopReason; readonly ms: number; readonly latest: Date };
+}
+
+/** What LinkedIn's discovery surfaces show, and what goes wrong around them. */
+export interface DiscoveryPlan {
+  /**
+   * What My Network → Grow shows at `now` when `load` recommendations pages have loaded so far in the
+   * run (a load that failed before its page loaded does not count); set on the world as each load starts.
+   */
+  recommendations(load: number, now: Date): readonly RecommendationGroupSpec[];
+  /**
+   * Members whose profile LinkedIn shows as not available (closed since their card was shown): the
+   * harness opens a profile URL the world does not know in their place, so the world logs a profile
+   * page load and answers as LinkedIn's "profile not available" page does.
+   */
+  readonly unavailableProfiles?: readonly string[];
+  /** LinkedIn's monthly search cap shows on the first load of each of these search pages. */
+  readonly searchCaps?: readonly { readonly page: number }[];
+  readonly aiOutages?: readonly AiOutage[];
+}
+
+/** The profile URL the harness opens for a member in `DiscoveryPlan.unavailableProfiles`. */
+export function closedProfileId(publicId: string): string {
+  return `${publicId}-closed`;
+}
+
+/** The member a profile URL opened by the harness belongs to (undoes `closedProfileId`). */
+export function openedFor(publicId: string): string {
+  return publicId.endsWith("-closed") ? publicId.slice(0, -"-closed".length) : publicId;
+}
+
 export const MINIMUM_KEYS = [
   "invites",
   "acceptancesObserved",
@@ -346,6 +442,18 @@ export const MINIMUM_KEYS = [
   "killsInBurst",
   "weeksStoppedByWeeklyLimit",
   "fullDaysAfterDowntimeAtLimit",
+  "peopleDiscovered",
+  "cardsScored",
+  "profilesOpenedForScoring",
+  "daysAtProfileViewLimit",
+  "daysAtDiscoveryLimit",
+  "searchCaps",
+  "killsOnDiscovery",
+  "awaitingApprovalReached",
+  "discoveryResumedAfterApproval",
+  "discoveredInvited",
+  "aiCallsAtNight",
+  "aiCallsDuringSafetyStop",
 ] as const;
 export type MinimumKey = (typeof MINIMUM_KEYS)[number];
 export type Minimums = Readonly<Record<MinimumKey, number>>;
@@ -372,6 +480,8 @@ export interface Scenario {
   readonly suspensions?: SuspensionPlan;
   /** Spans with no random kill, fault or suspension and no burst (say, the short openings planned send sleeps use). */
   readonly quietSpans?: readonly { readonly from: Date; readonly to: Date }[];
+  /** Recommendations, unavailable profiles, search caps and AI outages. Absent: LinkedIn recommends nobody and the AI always answers. */
+  readonly discovery?: DiscoveryPlan;
   readonly minimums: Minimums;
   /** Longest wait between two ticks while the process runs, like a runner that polls for new work. */
   readonly pollMs: number;
@@ -436,7 +546,7 @@ export interface Suspension {
 
 export interface InterventionRecord {
   readonly label: string;
-  readonly target: string;
+  readonly target: string | null;
   readonly at: Date;
   /** `fired`: the intervention itself, inside a tick; `later`: a change it scheduled, between ticks. */
   readonly phase: "fired" | "later";
@@ -448,6 +558,37 @@ export interface SendCall {
   readonly op: DriverOp;
   readonly target: string;
   readonly at: Date;
+}
+
+/** One call of the AI the engine was given. */
+export interface AiCall {
+  readonly at: Date;
+  readonly method: keyof Ai;
+  /** False: the AI was out (`AiOutage`) and the call threw `AiUnavailable`. */
+  readonly answered: boolean;
+  /** A safety stop was active in the app's database when the call was made. */
+  readonly duringSafetyStop: boolean;
+}
+
+/** A tick that called the AI and also called the driver: AI work must never load a LinkedIn page. */
+export interface AiTickWithLinkedIn {
+  readonly at: Date;
+  readonly aiCalls: number;
+  readonly driverCalls: readonly DriverOp[];
+}
+
+/**
+ * A discovery page load as it started (its `before` kill point, no kill there): the campaign of the
+ * read row the app had just claimed, with that campaign's waiting line (found plus waiting for
+ * approval) and batch size then. Null campaign: no claimed discovery row was found.
+ */
+export interface DiscoveryLoad {
+  readonly at: Date;
+  readonly op: "listRecommendations" | "searchPeople";
+  readonly page: number | null;
+  readonly campaignId: number | null;
+  readonly line: number;
+  readonly batchSize: number;
 }
 
 export interface UserResume {
@@ -471,6 +612,11 @@ export interface SimRun {
   readonly interventions: readonly InterventionRecord[];
   readonly suspensions: readonly Suspension[];
   readonly sendCalls: readonly SendCall[];
+  readonly aiCalls: readonly AiCall[];
+  readonly aiTicksWithLinkedIn: readonly AiTickWithLinkedIn[];
+  readonly discoveryLoads: readonly DiscoveryLoad[];
+  /** When LinkedIn's search cap was shown (`DiscoveryPlan.searchCaps`), handed to the world right before the capped load. */
+  readonly searchCapsShown: readonly { readonly at: Date; readonly page: number }[];
   /** When each process (engine and driver handle) started: at the start, after each kill or downtime, and after each Resume. */
   readonly processStarts: readonly Date[];
   readonly ticks: number;
@@ -503,6 +649,10 @@ const MIN_LEAD_IN_MS = 30_000;
 interface Call {
   readonly op: DriverOp;
   readonly target: string | null;
+  /** For `searchPeople`: the page asked for. */
+  readonly page?: number;
+  /** An intervention fired on this call asked that no random kill land later in it. */
+  shielded: boolean;
 }
 
 /** Whether a restarted process is killed again at its first kill point, and why. */
@@ -519,6 +669,9 @@ class Process {
   suspended: Suspension | null = null;
   /** A planned send sleep whose lead-in read is running or just returned: the next call, if it is that write, sleeps. */
   armedSleep: number | null = null;
+  /** AI calls and driver calls in the tick now running. */
+  aiCalls = 0;
+  driverCalls: DriverOp[] = [];
   readonly touched = new Set<string>();
   readonly handle: DriverHandle;
   readonly engine: Engine;
@@ -547,6 +700,30 @@ function scriptedTimeout(error: unknown): "before" | "after" | null {
   return null;
 }
 
+/**
+ * Fills each discovered member's `cardScores`: a fake AI of the harness's own scores the card
+ * LinkedIn shows for them under the brief of each discovery campaign that can see them. Returns
+ * the members it could not score (a campaign missing from the facts).
+ */
+export async function scoreDiscoveredCards(facts: ScenarioFacts): Promise<string[]> {
+  const ai = createFakeAi();
+  const problems: string[] = [];
+  for (const member of facts.members.values()) {
+    const discovered = member.discovered;
+    if (discovered === undefined) continue;
+    for (const key of discovered.campaigns) {
+      const brief = facts.campaigns.get(key)?.discovery?.brief;
+      if (brief === undefined) {
+        problems.push(`${member.publicId} is shown to discovery campaign ${key}, which the facts do not hold`);
+        continue;
+      }
+      const [scored] = (await ai.scoreCards(brief, [discovered.card])).value;
+      if (scored !== undefined) discovered.cardScores.set(key, scored.score);
+    }
+  }
+  return problems;
+}
+
 export interface RunOptions {
   readonly scenario: Scenario;
   readonly engine: EngineModule;
@@ -571,6 +748,15 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
   const interventionRecords: InterventionRecord[] = [];
   const suspensions: Suspension[] = [];
   const sendCalls: SendCall[] = [];
+  const aiCalls: AiCall[] = [];
+  const aiTicksWithLinkedIn: AiTickWithLinkedIn[] = [];
+  const discoveryLoads: DiscoveryLoad[] = [];
+  const searchCapsShown: { at: Date; page: number }[] = [];
+  /** Indexes into the discovery plan's search caps already shown. */
+  const usedCaps = new Set<number>();
+  /** Recommendations pages loaded so far (`DiscoveryPlan.recommendations`). */
+  let recommendationLoads = 0;
+  const unavailableProfiles = new Set(scenario.discovery?.unavailableProfiles ?? []);
   const processStarts: Date[] = [];
   /** Indexes into `scenario.interventions` that have fired. */
   const firedInterventions = new Set<number>();
@@ -630,8 +816,9 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
   }
 
   function instrument(driver: Driver, proc: Process): Driver {
-    async function call<T>(op: DriverOp, target: string | null, run: () => Promise<T>): Promise<T> {
-      proc.current = { op, target };
+    async function call<T>(op: DriverOp, target: string | null, run: () => Promise<T>, page?: number): Promise<T> {
+      proc.current = { op, target, shielded: false, ...(page === undefined ? {} : { page }) };
+      proc.driverCalls.push(op);
       if (target !== null) proc.touched.add(target);
       try {
         return await run();
@@ -654,9 +841,9 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
     }
     return {
       ensureSession: () => call("ensureSession", null, () => driver.ensureSession()),
-      searchPeople: (query) => call("searchPeople", null, () => driver.searchPeople(query)),
+      searchPeople: (query) => call("searchPeople", null, () => driver.searchPeople(query), query.page ?? 1),
       listRecommendations: () => call("listRecommendations", null, () => driver.listRecommendations()),
-      viewProfile: (publicId) => call("viewProfile", publicId, () => driver.viewProfile(publicId)),
+      viewProfile: (publicId) => call("viewProfile", publicId, () => driver.viewProfile(unavailableProfiles.has(publicId) ? closedProfileId(publicId) : publicId)),
       listRecentConnections: () => call("listRecentConnections", null, () => driver.listRecentConnections()),
       listSentInvitations: () => call("listSentInvitations", null, () => driver.listSentInvitations()),
       readThread: (person) => call("readThread", publicIdOf(person.memberId) ?? person.publicId ?? null, () => driver.readThread(person)),
@@ -666,14 +853,92 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
     };
   }
 
+  /** Whether an outage keeps the AI from answering at `at`. Reads the safety stops from the process's open database. */
+  function aiOut(proc: Process, at: Date): boolean {
+    return (scenario.discovery?.aiOutages ?? []).some((outage) => {
+      if (at < outage.from) return false;
+      const { until } = outage;
+      if (until.kind === "at") return at < until.at;
+      if (at >= until.latest) return false;
+      const stop = proc.opened.db
+        .select({ raisedAt: safetyStops.raisedAt })
+        .from(safetyStops)
+        .where(and(eq(safetyStops.reason, until.reason), gte(safetyStops.raisedAt, outage.from)))
+        .orderBy(safetyStops.raisedAt)
+        .get();
+      return stop === undefined || at.getTime() < stop.raisedAt.getTime() + until.ms;
+    });
+  }
+
+  /** The fake AI, recorded call by call; it answers `AiUnavailable` during an outage. */
+  function instrumentAi(proc: Process): Ai {
+    const fake = createFakeAi();
+    async function ask<T>(method: keyof Ai, run: () => Promise<T>): Promise<T> {
+      if (proc.dead) throw new Error("simulation: the AI was called by a killed process");
+      const at = clock.now();
+      const duringSafetyStop = proc.opened.db.select({ id: safetyStops.id }).from(safetyStops).where(isNull(safetyStops.resumedAt)).get() !== undefined;
+      proc.aiCalls += 1;
+      if (aiOut(proc, at)) {
+        aiCalls.push({ at, method, answered: false, duringSafetyStop });
+        throw new AiUnavailable("simulation: the AI is out");
+      }
+      const answer = await run();
+      aiCalls.push({ at, method, answered: true, duringSafetyStop });
+      return answer;
+    }
+    return {
+      scoreCards: (brief, cards) => ask("scoreCards", () => fake.scoreCards(brief, cards)),
+      scoreProfile: (brief, profile) => ask("scoreProfile", () => fake.scoreProfile(brief, profile)),
+      cleanVariables: (input) => ask("cleanVariables", () => fake.cleanVariables(input)),
+      personalise: (input) => ask("personalise", () => fake.personalise(input)),
+    };
+  }
+
+  /**
+   * At a discovery page's `before` kill point (no kill there): what the world will show, LinkedIn's
+   * search cap when one is planned for this page, and the load's campaign and waiting line, read
+   * from the read row the app has just claimed. Returns true when a search cap was handed to the world.
+   */
+  function discoveryLoad(proc: Process, op: "listRecommendations" | "searchPeople"): boolean {
+    const plan = scenario.discovery;
+    const now = clock.now();
+    const page = op === "searchPeople" ? (proc.current?.page ?? 1) : null;
+    if (op === "listRecommendations" && plan !== undefined) world.setRecommendations(plan.recommendations(recommendationLoads, now));
+    const db = proc.opened.db;
+    const row = db
+      .select({ campaignId: actions.campaignId })
+      .from(actions)
+      .where(and(inArray(actions.type, ["recommendation_page", "search_page"]), eq(actions.status, "in_progress")))
+      .orderBy(desc(actions.id))
+      .get();
+    const campaignId = row?.campaignId ?? null;
+    const campaign = campaignId === null ? undefined : db.select({ batchSize: campaigns.batchSize }).from(campaigns).where(eq(campaigns.id, campaignId)).get();
+    const line =
+      campaignId === null
+        ? 0
+        : (db
+            .select({ n: count() })
+            .from(prospects)
+            .where(and(eq(prospects.campaignId, campaignId), inArray(prospects.stage, ["found", "pending_approval"])))
+            .get()?.n ?? 0);
+    discoveryLoads.push({ at: now, op, page, campaignId, line, batchSize: campaign?.batchSize ?? 0 });
+    if (op !== "searchPeople" || plan === undefined) return false;
+    const capIndex = (plan.searchCaps ?? []).findIndex((cap, index) => !usedCaps.has(index) && cap.page === page);
+    if (capIndex === -1 || page === null) return false;
+    usedCaps.add(capIndex);
+    world.failNext("searchPeople", "search_capped");
+    searchCapsShown.push({ at: now, page });
+    return true;
+  }
+
   /** Fires the scenario's interventions due at this call (see `Intervention`). */
-  function intervene(op: DriverOp, target: string | null): void {
-    if (target === null) return;
+  function intervene(proc: Process, op: DriverOp, target: string | null): void {
     (scenario.interventions ?? []).forEach((intervention, index) => {
       if (intervention.op !== op || intervention.target !== target) return;
       if (intervention.every !== true && firedInterventions.has(index)) return;
       if (intervention.when !== undefined && !intervention.when(context())) return;
       firedInterventions.add(index);
+      if (intervention.shield === true && proc.current !== null) proc.current.shielded = true;
       const at = clock.now();
       interventionRecords.push({ label: intervention.label, target, at, phase: "fired", ...(intervention.tag === undefined ? {} : { tag: intervention.tag }) });
       intervention.apply({
@@ -795,7 +1060,7 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
     const nth = (pointCounts.get(key) ?? 0) + 1;
     pointCounts.set(key, nth);
     if (quiet()) return null;
-    const shielded = scripted(target);
+    const shielded = scripted(target) || proc.current?.shielded === true;
     const reconcileRead = target !== null && pendingReconcile.has(target) && RECONCILE_READS.has(point.op);
     // A rekill lands at the restarted process's first kill point, whenever that comes (idle ticks before it do not count).
     if (proc.points === 1 && proc.ticksDone === 0 && (proc.rekill === "forced" || (proc.rekill === "random" && !shielded))) return "rekill";
@@ -852,12 +1117,16 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
           if (proc.dead) return;
           proc.points += 1;
           const target = proc.current?.target ?? null;
+          // The page has loaded (whatever happens to the call now): LinkedIn moves on to its next suggestions.
+          if (point.op === "listRecommendations" && point.phase === "after") recommendationLoads += 1;
           if (point.phase === "before" && target !== null && SEND_OPS.has(point.op)) sendCalls.push({ op: point.op, target, at: clock.now() });
           const cause = decideKill(proc, point, target);
           if (cause === null) {
             if (point.phase === "before") {
-              injectFault(point.op, target);
-              intervene(point.op, target);
+              const capped = (point.op === "listRecommendations" || point.op === "searchPeople") && discoveryLoad(proc, point.op);
+              // Interventions first: one that shields its call keeps scripted faults off it too.
+              intervene(proc, point.op, target);
+              if (!capped && proc.current?.shielded !== true) injectFault(point.op, target);
               suspend(proc, point.op, target);
             }
             return;
@@ -888,6 +1157,7 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
         driver: instrument(handle.driver, proc),
         clock,
         random: mulberry32(seedFor()),
+        ai: instrumentAi(proc),
       });
       return { handle, engine };
     });
@@ -1025,11 +1295,20 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
 
     let result: TickResult;
     const pointsBefore = proc.points;
+    proc.aiCalls = 0;
+    proc.driverCalls = [];
+    const ticking = proc;
+    /** AI work and LinkedIn in one tick: recorded whether the tick resolves or rejects. */
+    const checkAiTick = (): void => {
+      if (ticking.aiCalls > 0 && ticking.driverCalls.length > 0) aiTicksWithLinkedIn.push({ at: now, aiCalls: ticking.aiCalls, driverCalls: [...ticking.driverCalls] });
+    };
     try {
       result = await proc.engine.tick();
       ticks += 1;
+      checkAiTick();
     } catch (error) {
       ticks += 1;
+      checkAiTick();
       if (proc.killed !== null) {
         proc.killed.verified = "rejected";
       } else {
@@ -1091,6 +1370,7 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
     if (kill.verified === "pending") harnessFailures.push(`${kill.at.toISOString()}: a kill at ${kill.op ?? "between"}/${kill.phase} was never seen to land`);
   }
   if (!proc.dead) die(proc);
+  harnessFailures.push(...(await scoreDiscoveredCards(facts)));
 
   return {
     seed,
@@ -1105,6 +1385,10 @@ export async function runSimulation({ scenario, engine: module, dbFile, seed, ma
     interventions: interventionRecords,
     suspensions,
     sendCalls,
+    aiCalls,
+    aiTicksWithLinkedIn,
+    discoveryLoads,
+    searchCapsShown,
     processStarts,
     ticks,
     ticksWithWork,

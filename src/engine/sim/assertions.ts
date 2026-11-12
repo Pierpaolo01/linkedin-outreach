@@ -3,7 +3,9 @@
  * append-only log and its conversations, which are what LinkedIn received. Assertion 7 counts what
  * ran, checks the scripted members' paths and "nothing silently stuck"; it may read the app's
  * database for what only the app knows (acceptances observed, stops, holds, ledger rows).
- * Assertion 8 compares the ledger with the world.
+ * Assertion 8 compares the ledger with the world. Assertion 9 judges discovery and scoring (see
+ * `discoveryAndScoring`), assertion 10 that AI work never loads LinkedIn and that nothing loads
+ * during a safety stop.
  *
  * Limits are recomputed here from the world's log, not asked of the engine: the warm-up allowance
  * included (the engine's `inviteAllowance` appears only as a cross-check in violation details).
@@ -15,11 +17,11 @@
 import { and, eq, gte, inArray, lt } from "drizzle-orm";
 import type { Settings } from "../../config/settings";
 import { openDb, type Db } from "../../db/index";
-import { actions, campaigns, people, prospects, safetyStops } from "../../db/schema";
+import { actions, campaigns, discoveryRuns, people, prospects, safetyStops, type ProspectStage } from "../../db/schema";
 import type { LogEntry, LogKind, WorldMessage } from "../../linkedin/fake/world";
 import { inviteAllowance } from "../budget";
-import type { CampaignFact, Expectation, MemberFact, MinimumKey, ProspectFact, SimRun, Suspension, WriteOp } from "./harness";
-import { isWriteOp, MINIMUM_KEYS, settingsAt } from "./harness";
+import type { CampaignFact, DiscoveredKind, Expectation, MemberFact, MinimumKey, ProspectFact, SimRun, Suspension, WriteOp } from "./harness";
+import { isWriteOp, MINIMUM_KEYS, openedFor, settingsAt } from "./harness";
 import {
   addDays,
   firstWorkingDayFrom,
@@ -76,6 +78,8 @@ export const EXTRA_COUNT_KEYS = [
   "suspendedReadsRandom",
   "suspendedSendsRandom",
   "longestRunWithoutBreak",
+  "aiCalls",
+  "aiCallsRefused",
 ] as const;
 export type CountKey = MinimumKey | (typeof EXTRA_COUNT_KEYS)[number];
 
@@ -96,6 +100,30 @@ export interface DayAfterDowntime extends DayUsage {
   /** The app's claims that day (as its budgets count them) reached the day's invite allowance or message limit. */
   readonly atLimit: boolean;
 }
+
+/** The counts assertion 9 (discovery and scoring) contributes. */
+type DiscoveryCounts = Pick<
+  Record<CountKey, number>,
+  | "peopleDiscovered"
+  | "cardsScored"
+  | "profilesOpenedForScoring"
+  | "daysAtProfileViewLimit"
+  | "daysAtDiscoveryLimit"
+  | "searchCaps"
+  | "killsOnDiscovery"
+  | "awaitingApprovalReached"
+  | "discoveryResumedAfterApproval"
+  | "discoveredInvited"
+>;
+
+/** The counts assertion 10 (AI work is not LinkedIn) contributes. */
+type AiCounts = Pick<Record<CountKey, number>, "aiCallsAtNight" | "aiCallsDuringSafetyStop" | "aiCalls" | "aiCallsRefused">;
+
+/** Discovered members a discovery campaign must never invite, nor put in the approval queue. */
+const EXCLUDED: ReadonlySet<DiscoveredKind> = new Set(["first_degree", "pending_invite", "do_not_contact", "active_elsewhere", "contacted_before", "unavailable"]);
+
+/** Stages a prospect reaches only once the user may approve it or has. */
+const QUEUED_OR_LATER: ReadonlySet<ProspectStage> = new Set(["pending_approval", "approved", "invited", "accepted", "message_sent", "follow_up_sent", "completed", "withdrawn", "stopped"]);
 
 /** Starts the note of assertion 6 that says what a "normal day" is checked as. */
 export const NORMAL_DAY_NOTE = "a normal day is checked as: ";
@@ -187,9 +215,11 @@ export function judge(run: SimRun): Verdict {
   const onDay = (key: string): Settings => at(new Date(windowOn(settings, key).end.getTime() - 1));
   world.settle(run.finishedAt);
   const log = world.log;
+  const byMemberId = new Map([...facts.members.values()].map((member) => [member.memberId, member]));
+  // A profile LinkedIn showed as not available was opened under a URL of the harness's (`closedProfileId`).
   const memberFor = (entry: LogEntry): MemberFact | undefined =>
-    (entry.publicId === undefined ? undefined : facts.members.get(entry.publicId)) ??
-    [...facts.members.values()].find((member) => member.memberId === entry.memberId);
+    (entry.publicId === undefined ? undefined : facts.members.get(openedFor(entry.publicId))) ??
+    (entry.memberId === undefined ? undefined : byMemberId.get(entry.memberId));
 
   // ---- usage per local day and week, from the world's log
   type Used = Record<Counted, number>;
@@ -289,8 +319,10 @@ export function judge(run: SimRun): Verdict {
       nobodyInSecondCampaign(),
       noBacklogAfterDowntime(afterDowntime),
     ];
-    const ran = itActuallyRan(db, afterDowntime);
-    results.push(ran.result, ledgerAgreesWithLinkedIn(db));
+    const discovery = discoveryAndScoring(db);
+    const ai = aiIsNotLinkedIn(db);
+    const ran = itActuallyRan(db, afterDowntime, { ...discovery.counts, ...ai.counts });
+    results.push(ran.result, ledgerAgreesWithLinkedIn(db), discovery.result, ai.result);
     return { seed: run.seed, results, counts: ran.counts, daysAfterDowntime: afterDowntime, wallMs: run.wallMs };
   } finally {
     opened.close();
@@ -404,10 +436,13 @@ export function judge(run: SimRun): Verdict {
       const over = weekOver.get(week);
       if (over !== undefined) violations.push({ message: `week of ${week}: invites ${count} > ${over.limit}`, detail: { firstOverAt: iso(over.firstOverAt) } });
     }
-    const busiest = [...usage.keys()].sort().map((key) => usageOn(key)).filter((used) => used.invites + used.messages > 0);
+    const busiest = [...usage.keys()].sort().map((key) => usageOn(key)).filter((used) => used.invites + used.messages + used.profileViews + used.discoveryPages > 0);
     const notes = busiest.map((used) => {
       const { limits } = onDay(used.day);
-      return `${used.day}: invites ${used.invites}/${used.allowance}, messages ${used.messages}/${limits.messagesPerDay}, views ${used.profileViews}/${limits.profileViewsPerDay}, withdrawals ${used.withdrawals}/${limits.withdrawalsPerDay}`;
+      return (
+        `${used.day}: invites ${used.invites}/${used.allowance}, messages ${used.messages}/${limits.messagesPerDay}, views ${used.profileViews}/${limits.profileViewsPerDay},` +
+        ` withdrawals ${used.withdrawals}/${limits.withdrawalsPerDay}, discovery pages ${used.discoveryPages}/${limits.discoveryPagesPerDay}`
+      );
     });
     notes.push(...[...weekInvites].sort().map(([week, count]) => `week of ${week}: invites ${count}/${onDay(addDays(week, 6)).limits.invitesPerWeek}`));
     const changes = facts.settingsHistory.filter((change) => change.at > scenario.start);
@@ -503,7 +538,9 @@ export function judge(run: SimRun): Verdict {
         });
       });
     }
-    const midSend = run.interventions.filter((record) => record.phase === "fired" && facts.members.get(record.target)?.expect?.kind === "replies_mid_send").length;
+    const midSend = run.interventions.filter(
+      (record) => record.phase === "fired" && record.target !== null && facts.members.get(record.target)?.expect?.kind === "replies_mid_send",
+    ).length;
     return {
       id: 4,
       title: "Nothing after a reply or a manual message (whatever the timing)",
@@ -650,7 +687,11 @@ export function judge(run: SimRun): Verdict {
 
   // ---------------------------------------------------------------- 7. it actually ran, and nothing is stuck
 
-  function itActuallyRan(db: Db, afterDowntime: readonly DayAfterDowntime[]): { result: AssertionResult; counts: Verdict["counts"] } {
+  function itActuallyRan(
+    db: Db,
+    afterDowntime: readonly DayAfterDowntime[],
+    discoveryCounts: DiscoveryCounts & AiCounts,
+  ): { result: AssertionResult; counts: Verdict["counts"] } {
     const violations: Violation[] = [];
     const start = scenario.start;
     const appMessages = new Map<string, number>();
@@ -728,6 +769,7 @@ export function judge(run: SimRun): Verdict {
       suspendedReadsRandom: run.suspensions.filter((one) => one.cause === "random" && !isWriteOp(one.op)).length,
       suspendedSendsRandom: run.suspensions.filter((one) => one.cause === "random" && isWriteOp(one.op)).length,
       longestRunWithoutBreak: longestRun,
+      ...discoveryCounts,
     };
     for (const key of MINIMUM_KEYS) {
       const need = scenario.minimums[key];
@@ -1133,6 +1175,306 @@ export function judge(run: SimRun): Verdict {
         { count: rows.length, what: "ledger rows" },
         { count: log.filter((entry) => SEND_KINDS.has(entry.kind)).length, what: "sends" },
       ],
+    };
+  }
+
+  // ---------------------------------------------------------------- 9. discovery and scoring
+
+  /**
+   * Discovery and scoring, from the world's log (what LinkedIn showed and received), the harness's
+   * records (discovery loads with the waiting line then, search caps, kills), the fake AI's own
+   * scores of each card, and the app's database for what only it knows (prospects, scores, the
+   * ledger's claims, safety stops):
+   * - no profile is opened for a person whose card scored below the campaign's open-profile threshold;
+   * - every stored card score is the fake AI's score of the card LinkedIn showed;
+   * - nobody 1st degree, with a pending invitation, do-not-contact, active elsewhere, contacted before
+   *   or with a profile not available reaches the approval queue or gets an invitation from a
+   *   discovery campaign (1st degree: is never stored at all);
+   * - no prospect waits for approval or is approved without a score and a reason;
+   * - no discovery page loads while the campaign's waiting line holds its batch;
+   * - after LinkedIn's search cap, no search page until next month, while recommendations and
+   *   outreach carry on and no safety stop is raised for it;
+   * - no person is stored twice.
+   */
+  function discoveryAndScoring(db: Db): { result: AssertionResult; counts: DiscoveryCounts } {
+    const violations: Violation[] = [];
+    const notes: string[] = [];
+    const discoveryCampaigns = [...facts.campaigns.values()].filter((campaign) => campaign.discovery !== undefined);
+    const keyOf = new Map(discoveryCampaigns.map((campaign) => [campaign.id, campaign.key]));
+    const prospectRows = db.select().from(prospects).all();
+    const personRows = db.select().from(people).all();
+    const personById = new Map(personRows.map((person) => [person.id, person]));
+    const found = prospectRows.filter((row) => keyOf.has(row.campaignId));
+    const ledger = db.select().from(actions).all();
+    const discovered = [...facts.members.values()].filter((member) => member.discovered !== undefined);
+    const personOf = (row: (typeof prospectRows)[number]) => personById.get(row.personId);
+    const memberOfPerson = (personId: number): MemberFact | undefined => {
+      const person = personById.get(personId);
+      return person === undefined ? undefined : (facts.members.get(person.publicId) ?? (person.memberId === null ? undefined : byMemberId.get(person.memberId)));
+    };
+    /** When each member's discovery prospect was first approved: profile loads before it were for scoring. */
+    const approvedAt = new Map<string, Date>();
+    for (const row of found) {
+      const member = memberOfPerson(row.personId);
+      if (member === undefined || row.approvedAt === null) continue;
+      const earlier = approvedAt.get(member.publicId);
+      if (earlier === undefined || row.approvedAt < earlier) approvedAt.set(member.publicId, row.approvedAt);
+    }
+
+    // ---- profiles opened, against the card's score
+    const profileLoads = new Map<string, LogEntry[]>();
+    for (const entry of log) {
+      if (countedAs(entry) !== "profileViews") continue;
+      const member = memberFor(entry);
+      if (member?.discovered === undefined) continue;
+      profileLoads.set(member.publicId, [...(profileLoads.get(member.publicId) ?? []), entry]);
+    }
+    let openedForScoring = 0;
+    let belowThreshold = 0;
+    for (const member of discovered) {
+      const info = member.discovered;
+      if (info === undefined) continue;
+      const loads = profileLoads.get(member.publicId) ?? [];
+      const approval = approvedAt.get(member.publicId);
+      if (info.kind !== "active_elsewhere") openedForScoring += loads.filter((entry) => approval === undefined || entry.at < approval).length;
+      const scores = info.campaigns.flatMap((key) => {
+        const campaign = facts.campaigns.get(key);
+        const score = info.cardScores.get(key);
+        return campaign?.discovery === undefined || score === undefined ? [] : [{ key, score, threshold: campaign.discovery.openProfileThreshold }];
+      });
+      if (scores.length === 0 || scores.some((one) => one.score >= one.threshold)) continue;
+      belowThreshold += 1;
+      if (loads.length === 0) continue;
+      violations.push({
+        message: `${member.publicId}: profile opened although the card scored below the open-profile threshold (${scores.map((one) => `${one.score} < ${one.threshold} in ${one.key}`).join(", ")})`,
+        detail: { opened: loads.map(entryLabel) },
+      });
+    }
+
+    // ---- stored card scores are the fake AI's scores of the cards LinkedIn showed
+    let cardsScored = 0;
+    for (const row of found) {
+      if (row.cardScore === null) continue;
+      cardsScored += 1;
+      const key = keyOf.get(row.campaignId) ?? "?";
+      const member = memberOfPerson(row.personId);
+      const expected = member?.discovered?.cardScores.get(key);
+      if (expected === undefined) {
+        violations.push({ message: `prospect ${row.id} of ${key} (${personOf(row)?.publicId ?? "?"}): a card scored that ${key}'s source never showed` });
+      } else if (expected !== row.cardScore) {
+        violations.push({ message: `prospect ${row.id} of ${key} (${member?.publicId ?? "?"}): card score ${row.cardScore}, the fake AI gives the card LinkedIn showed ${expected}` });
+      }
+    }
+
+    // ---- people a discovery campaign must leave alone
+    const inviteRowsByProspect = new Map<number, (typeof ledger)[number][]>();
+    for (const row of ledger) {
+      if (row.type !== "invite" || row.prospectId === null) continue;
+      inviteRowsByProspect.set(row.prospectId, [...(inviteRowsByProspect.get(row.prospectId) ?? []), row]);
+    }
+    const excludedCounts = new Map<DiscoveredKind, number>();
+    for (const member of discovered) {
+      const kind = member.discovered?.kind;
+      if (kind === undefined || !EXCLUDED.has(kind)) continue;
+      excludedCounts.set(kind, (excludedCounts.get(kind) ?? 0) + 1);
+      const who = `${member.publicId} (${kind.replace(/_/g, " ")})`;
+      const mine = prospectRows.filter((row) => memberOfPerson(row.personId) === member);
+      const inDiscovery = mine.filter((row) => keyOf.has(row.campaignId));
+      if (kind === "first_degree" && inDiscovery.length > 0) {
+        violations.push({ message: `${who}: a 1st-degree connection was stored as a prospect of ${inDiscovery.map((row) => keyOf.get(row.campaignId)).join(", ")}` });
+      }
+      for (const row of inDiscovery) {
+        const campaign = keyOf.get(row.campaignId) ?? "?";
+        if (QUEUED_OR_LATER.has(row.stage) || row.approvedAt !== null) {
+          violations.push({ message: `${who}: reached ${row.stage} in discovery campaign ${campaign}`, detail: { prospect: row.id, approvedAt: row.approvedAt === null ? null : iso(row.approvedAt) } });
+        }
+        const claims = inviteRowsByProspect.get(row.id) ?? [];
+        if (claims.length > 0) violations.push({ message: `${who}: invited by discovery campaign ${campaign}`, detail: { rows: claims.map((claim) => `${claim.idempotencyKey}=${claim.status}`) } });
+      }
+      // LinkedIn's side: only the active prospect elsewhere may have invited them, once per claimed row of its own.
+      const ownClaims = mine.filter((row) => !keyOf.has(row.campaignId)).flatMap((row) => inviteRowsByProspect.get(row.id) ?? []).length;
+      const received = log.filter((entry) => entry.kind === "invite" && memberFor(entry) === member);
+      if (received.length > (kind === "active_elsewhere" ? ownClaims : 0)) {
+        violations.push({ message: `${who}: LinkedIn received ${received.length} invitation(s), ${kind === "active_elsewhere" ? `${ownClaims} claimed by their own campaign` : "none allowed"}`, detail: { at: received.map((entry) => iso(entry.at)) } });
+      }
+    }
+    notes.push(`excluded people shown by discovery: ${[...excludedCounts].map(([kind, n]) => `${n} ${kind.replace(/_/g, " ")}`).join(", ") || "none"}`);
+    notes.push(`${belowThreshold} discovered people whose card scored below the open-profile threshold; ${openedForScoring} profile page loads for scoring`);
+
+    // ---- a score and a reason before the queue
+    for (const row of prospectRows) {
+      const queued = row.stage === "pending_approval" || row.stage === "approved" || (keyOf.has(row.campaignId) && row.approvedAt !== null);
+      if (!queued || (row.score !== null && row.scoreReason !== null && row.scoreReason.trim() !== "")) continue;
+      violations.push({ message: `prospect ${row.id} (${personOf(row)?.publicId ?? "?"}) is ${row.stage}${row.approvedAt === null ? "" : ", approved,"} without a score and a reason`, detail: { score: row.score, reason: row.scoreReason } });
+    }
+
+    // ---- the waiting line
+    for (const load of run.discoveryLoads) {
+      if (load.campaignId === null || load.line < load.batchSize) continue;
+      violations.push({
+        message: `campaign ${keyOf.get(load.campaignId) ?? load.campaignId} loaded a discovery page while its waiting line held ${load.line} of a batch of ${load.batchSize}`,
+        detail: { at: iso(load.at), op: load.op },
+      });
+    }
+    const unattributed = run.discoveryLoads.filter((load) => load.campaignId === null).length;
+    if (unattributed > 0) notes.push(`${unattributed} discovery page load(s) with no claimed ledger row to attribute them to`);
+    const approvals = facts.discoveryLog.flatMap((event) => (event.kind === "approved" ? [event] : []));
+    let resumed = 0;
+    for (const approval of approvals) {
+      if (approval.lineBefore < approval.batchSize) continue;
+      const id = facts.campaigns.get(approval.campaign)?.id;
+      if (run.discoveryLoads.some((load) => load.campaignId === id && load.at > approval.at)) resumed += 1;
+    }
+    const awaiting = new Set(facts.discoveryLog.flatMap((event) => (event.kind === "awaiting_seen" ? [event.campaign] : [])));
+    for (const campaign of discoveryCampaigns) {
+      const firstApproval = approvals.find((approval) => approval.campaign === campaign.key);
+      const firstAwaiting = facts.discoveryLog.find((event) => event.kind === "awaiting_seen" && event.campaign === campaign.key);
+      if (firstApproval !== undefined && (firstAwaiting === undefined || firstAwaiting.at > firstApproval.at)) {
+        violations.push({ message: `campaign ${campaign.key}: the user approved prospects before the campaign was awaiting approval` });
+      }
+    }
+    notes.push(
+      `approvals: ${approvals.map((approval) => `${approval.campaign} ${iso(approval.at)} ${approval.approved} (line ${approval.lineBefore}/${approval.batchSize})`).join("; ") || "none"}`,
+    );
+
+    // ---- LinkedIn's search cap
+    const capRows = ledger.filter((row) => row.type === "search_page" && row.errorKind === "search_capped");
+    const stops = db.select().from(safetyStops).all();
+    const hasRecommendations = discoveryCampaigns.some((campaign) => campaign.discovery?.source === "recommendations");
+    const recommendationRuns = db.select().from(discoveryRuns).where(eq(discoveryRuns.source, "recommendations")).all();
+    /** Every recommendations source the app worked from had nothing more to show by `at` (it was exhausted then). */
+    const recommendationsDone = (at: Date): boolean => recommendationRuns.length > 0 && recommendationRuns.every((one) => one.exhausted && one.updatedAt <= at);
+    // Outreach to carry on: prospects the scenario enrolled in campaigns that do not discover.
+    const outreachCampaigns = new Set([...facts.campaigns.values()].filter((campaign) => campaign.discovery === undefined).map((campaign) => campaign.key));
+    const hasOutreach = [...facts.members.values()].some((member) => member.prospects.some((prospect) => outreachCampaigns.has(prospect.campaign)));
+    for (const row of capRows) {
+      const at = row.finishedAt ?? row.startedAt;
+      if (at === null) continue;
+      const until = startOfNextMonth(at);
+      const between = (entry: LogEntry) => entry.at > at && entry.at < until;
+      const searches = log.filter((entry) => entry.kind === "page_load" && entry.page === "search" && between(entry));
+      if (searches.length > 0) violations.push({ message: `LinkedIn capped searches at ${iso(at)}, and ${searches.length} search page(s) loaded before ${iso(until)}`, detail: { loads: searches.map(entryLabel) } });
+      if (hasRecommendations && !recommendationsDone(at) && !log.some((entry) => entry.kind === "page_load" && entry.page === "recommendations" && between(entry))) {
+        violations.push({ message: `after LinkedIn capped searches at ${iso(at)}, no recommendations page loaded before ${iso(until)}` });
+      }
+      if (hasOutreach && !log.some((entry) => SEND_KINDS.has(entry.kind) && between(entry))) violations.push({ message: `after LinkedIn capped searches at ${iso(at)}, no invite, message or withdrawal went out before ${iso(until)}` });
+      const raised = stops.filter((stop) => row.startedAt !== null && stop.raisedAt >= row.startedAt && stop.raisedAt.getTime() <= at.getTime() + 1_000);
+      if (raised.length > 0) violations.push({ message: `LinkedIn's search cap at ${iso(at)} raised a safety stop (${raised.map((stop) => stop.reason).join(", ")})` });
+    }
+    if (run.searchCapsShown.length > capRows.length) {
+      violations.push({ message: `LinkedIn showed its search cap ${run.searchCapsShown.length} time(s); the ledger records ${capRows.length}`, detail: { shown: run.searchCapsShown.map((cap) => iso(cap.at)) } });
+    }
+
+    // ---- nobody stored twice
+    for (const member of discovered) {
+      const rows = personRows.filter((person) => person.publicId === member.publicId || person.memberId === member.memberId);
+      if (rows.length > 1) violations.push({ message: `${member.publicId}: stored as ${rows.length} people rows`, detail: { rows: rows.map((person) => person.publicId) } });
+    }
+
+    // ---- days at the limits, from the app's claims (what its budgets count)
+    const claimsPerDay = (types: readonly string[]): Map<string, number> => {
+      const perDay = new Map<string, number>();
+      for (const row of ledger) {
+        if (!types.includes(row.type) || row.startedAt === null) continue;
+        const key = localDay(tz, row.startedAt);
+        perDay.set(key, (perDay.get(key) ?? 0) + 1);
+      }
+      return perDay;
+    };
+    const atLimit = (perDay: Map<string, number>, limit: (settings: Settings) => number): string[] =>
+      [...perDay].filter(([key, n]) => n >= limit(onDay(key))).map(([key]) => key).sort();
+    const viewDays = atLimit(claimsPerDay(["profile_view"]), (then) => then.limits.profileViewsPerDay);
+    const pageDays = atLimit(claimsPerDay(["recommendation_page", "search_page"]), (then) => then.limits.discoveryPagesPerDay);
+    notes.push(`days at the profile-view limit: ${viewDays.join(", ") || "none"}; at the discovery-page limit: ${pageDays.join(", ") || "none"}`);
+
+    const discoveryKills = run.kills.filter((kill) => {
+      if (kill.op === "listRecommendations" || kill.op === "searchPeople") return true;
+      if (kill.op !== "viewProfile" || kill.target === null) return false;
+      const member = facts.members.get(kill.target);
+      const approval = approvedAt.get(kill.target);
+      return member?.discovered !== undefined && member.discovered.kind !== "active_elsewhere" && (approval === undefined || kill.at < approval);
+    }).length;
+
+    const regulars = new Set(discovered.filter((member) => member.discovered?.kind === "regular"));
+    const counts: DiscoveryCounts = {
+      peopleDiscovered: new Set(found.map((row) => row.personId)).size,
+      cardsScored,
+      profilesOpenedForScoring: openedForScoring,
+      daysAtProfileViewLimit: viewDays.length,
+      daysAtDiscoveryLimit: pageDays.length,
+      searchCaps: capRows.length,
+      killsOnDiscovery: discoveryKills,
+      awaitingApprovalReached: awaiting.size,
+      discoveryResumedAfterApproval: resumed,
+      discoveredInvited: log.filter((entry) => {
+        const member = entry.kind === "invite" ? memberFor(entry) : undefined;
+        return member !== undefined && regulars.has(member);
+      }).length,
+    };
+    return {
+      result: {
+        id: 9,
+        title: "Discovery and scoring: thresholds, people left alone, the waiting line, the search cap, nobody stored twice",
+        violations: dedupe(violations),
+        notes,
+        checked: [
+          { count: run.discoveryLoads.length, what: "discovery page loads" },
+          { count: found.length, what: "discovered prospects" },
+          { count: discovered.length, what: "people the sources show" },
+        ],
+      },
+      counts,
+    };
+  }
+
+  /** The first instant of the next calendar month, local. */
+  function startOfNextMonth(at: Date): Date {
+    const [year, month] = localDay(tz, at).split("-").map(Number);
+    if (year === undefined || month === undefined) throw new RangeError(`no local day for ${iso(at)}`);
+    const next = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, "0")}-01`;
+    return localDayStart(next);
+  }
+
+  // ---------------------------------------------------------------- 10. AI work is not LinkedIn
+
+  /**
+   * The AI scores at any hour and during a safety stop, and a tick that calls it touches no
+   * LinkedIn page; nothing at all loads while a safety stop is active.
+   */
+  function aiIsNotLinkedIn(db: Db): { result: AssertionResult; counts: AiCounts } {
+    const violations: Violation[] = [];
+    for (const tick of run.aiTicksWithLinkedIn) {
+      violations.push({ message: `a tick at ${iso(tick.at)} called the AI ${tick.aiCalls} time(s) and also the driver (${tick.driverCalls.join(", ")})` });
+    }
+    const stops = db.select().from(safetyStops).all();
+    for (const entry of log) {
+      const stop = stops.find((one) => entry.at > one.raisedAt && entry.at < (one.resumedAt ?? run.finishedAt));
+      if (stop !== undefined) violations.push({ message: `LinkedIn loaded during a safety stop (${stop.reason}, raised ${iso(stop.raisedAt)}): ${entryLabel(entry)}` });
+    }
+    const answered = run.aiCalls.filter((call) => call.answered);
+    const atNight = answered.filter((call) => !inWorkingWindow(settings, call.at));
+    const duringStop = answered.filter((call) => call.duringSafetyStop);
+    const counts: AiCounts = {
+      aiCalls: answered.length,
+      aiCallsRefused: run.aiCalls.length - answered.length,
+      aiCallsAtNight: atNight.length,
+      aiCallsDuringSafetyStop: duringStop.length,
+    };
+    return {
+      result: {
+        id: 10,
+        title: "AI work is not LinkedIn: it may run at night and during a safety stop, and loads no page; nothing loads during a safety stop",
+        violations: dedupe(violations),
+        notes: [
+          `${answered.length} AI calls answered (${atNight.length} outside the working window, ${duringStop.length} during a safety stop), ${counts.aiCallsRefused} refused while the AI was out`,
+          `first at night: ${atNight[0] === undefined ? "none" : iso(atNight[0].at)}; first during a safety stop: ${duringStop[0] === undefined ? "none" : iso(duringStop[0].at)}`,
+        ],
+        checked: [
+          { count: run.aiCalls.length, what: "AI calls" },
+          { count: stops.length, what: "safety stops" },
+        ],
+      },
+      counts,
     };
   }
 

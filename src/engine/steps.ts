@@ -8,7 +8,7 @@ import { getSettings, type Settings } from "../config/settings";
 import type { Db } from "../db/index";
 import { actions, campaigns, people, prospects, type ProspectStage } from "../db/schema";
 import { LinkedInError, type LinkedInErrorKind } from "../linkedin/errors";
-import type { Profile } from "../linkedin/parse/profile";
+import { ProfileUnavailableError, type Profile } from "../linkedin/parse/profile";
 import { assertMove } from "./lifecycle";
 import {
   claimRead,
@@ -62,7 +62,7 @@ export interface StepOutcome {
   readonly touchedLinkedIn: boolean;
 }
 
-type ProspectChanges = Partial<Omit<typeof prospects.$inferInsert, "id" | "stage">>;
+export type ProspectChanges = Partial<Omit<typeof prospects.$inferInsert, "id" | "stage">>;
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
@@ -74,7 +74,7 @@ const RETRY_AFTER_MS = 30 * MINUTE_MS;
 const MAX_RECONCILE_FAILURES = 3;
 /** Unexpected pages in a row that raise a safety stop. */
 const UNEXPECTED_STREAK = 3;
-const INVITE_NOTE_MAX = 300;
+export const INVITE_NOTE_MAX = 300;
 
 const SAFETY_KINDS: ReadonlySet<LinkedInErrorKind> = new Set(["logged_out", "checkpoint", "restricted", "limit_hit"]);
 
@@ -149,20 +149,45 @@ function checkUnexpectedStreak(db: Conn, at: Date): void {
 /** What happens to the prospect when a read fails for a reason other than a safety stop or an unexpected page. */
 type OtherReadFailure = { readonly kind: "retry_later" } | { readonly kind: "reconcile"; readonly row: ActionRow };
 
-type ReadResult<T> = { readonly ok: true; readonly value: T } | { readonly ok: false };
+/** The error kind a profile LinkedIn shows as not available ends with, when the caller handles that page itself. */
+export const PROFILE_UNAVAILABLE = "profile_unavailable";
+
+export interface ReadOptions {
+  /** What a failure other than a safety stop or an unexpected page does to the target. Default: retry later. */
+  readonly other?: OtherReadFailure;
+  /** The campaign the ledger row is for, when there is no target (a discovery page). */
+  readonly campaignId?: number;
+  /**
+   * Called, in the transaction that finishes the row, when LinkedIn shows its "profile not available"
+   * page. The row then fails with kind `profile_unavailable`, which is a page the app recognised: it
+   * is not an unexpected page and the target is not held for review. Without it, that page is
+   * handled as an unexpected one.
+   */
+  readonly unavailable?: (tx: Conn, at: Date) => void;
+}
+
+export type ReadResult<T> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly kind: ErrorFacts["kind"] | typeof PROFILE_UNAVAILABLE };
+
+/** LinkedIn's "profile not available" page, as the driver reports it: an unexpected page caused by the parser's own error. */
+function isUnavailableProfile(error: unknown): boolean {
+  return error instanceof LinkedInError && error.kind === "unexpected" && error.cause instanceof ProfileUnavailableError;
+}
 
 /** A read: a claimed ledger row, the driver call, then the row finished. Failures are handled here. */
-async function read<T>(
+export async function read<T>(
   ctx: StepContext,
   type: ReadRequest["type"],
   target: Target | null,
   call: () => Promise<T>,
-  other: OtherReadFailure = { kind: "retry_later" },
+  options: ReadOptions = {},
 ): Promise<ReadResult<T>> {
   const { db, clock } = ctx;
+  const other = options.other ?? { kind: "retry_later" };
   const actionId = claimRead(
     db,
-    { type, prospectId: target?.prospect.id ?? null, campaignId: target?.campaign.id ?? null },
+    { type, prospectId: target?.prospect.id ?? null, campaignId: target?.campaign.id ?? options.campaignId ?? null },
     clock.now(),
   );
   const result = await settle(call);
@@ -170,6 +195,14 @@ async function read<T>(
   if (result.ok) {
     finishAction(db, actionId, { status: "done" }, at);
     return { ok: true, value: result.value };
+  }
+  const { unavailable } = options;
+  if (unavailable !== undefined && isUnavailableProfile(result.error)) {
+    db.transaction((tx) => {
+      finishAction(tx, actionId, { status: "failed", errorKind: PROFILE_UNAVAILABLE, error: "LinkedIn shows the profile as not available" }, at);
+      unavailable(tx, at);
+    });
+    return { ok: false, kind: PROFILE_UNAVAILABLE };
   }
   const facts = factsOf(result.error);
   db.transaction((tx) => {
@@ -202,7 +235,7 @@ async function read<T>(
       .where(eq(prospects.id, target.prospect.id))
       .run();
   });
-  return { ok: false };
+  return { ok: false, kind: facts.kind };
 }
 
 function reconcileFailures(row: ActionRow): number {
@@ -267,15 +300,15 @@ async function send<T>(ctx: StepContext, target: Target, step: Step, claim: Clai
  * Moves the prospect through the lifecycle; throws on a move it forbids. When the stored stage is no
  * longer the one the prospect had when the work was picked, the user changed it while the app was
  * working on it (paused, moved, rejected or closed it in the app): the move is skipped with a warning
- * and the user's stage stands. The caller still finishes its ledger row as usual.
+ * and the user's stage stands. The caller still finishes its ledger row as usual. Returns whether it moved.
  */
-function move(db: Conn, target: Target, to: ProspectStage, changes: ProspectChanges, at: Date, message: string | null, level: "info" | "warning" = "info"): void {
+export function move(db: Conn, target: Target, to: ProspectStage, changes: ProspectChanges, at: Date, message: string | null, level: "info" | "warning" = "info"): boolean {
   const current = db.select({ stage: prospects.stage }).from(prospects).where(eq(prospects.id, target.prospect.id)).get();
   if (current === undefined) throw new Error(`prospect ${target.prospect.id} is gone`);
   if (current.stage !== target.prospect.stage) {
     const would = message ?? `it would have moved to ${to.replace(/_/g, " ")}`;
     logEvent(db, { level: "warning", campaignId: target.campaign.id, prospectId: target.prospect.id, message: `${changedMeanwhile(target)} (${would})` }, at);
-    return;
+    return false;
   }
   assertMove(current.stage, to);
   db.update(prospects)
@@ -285,13 +318,14 @@ function move(db: Conn, target: Target, to: ProspectStage, changes: ProspectChan
   if (message !== null) {
     logEvent(db, { level, campaignId: target.campaign.id, prospectId: target.prospect.id, message }, at);
   }
+  return true;
 }
 
 function changedMeanwhile(target: Target): string {
   return `${target.person.fullName} was changed while the app was working on it; left as it is`;
 }
 
-function needsReview(db: Conn, target: Target, reason: string, at: Date): void {
+export function needsReview(db: Conn, target: Target, reason: string, at: Date): void {
   move(db, target, "needs_review", { reviewReason: reason }, at, `${target.person.fullName} needs review: ${reason}`, "warning");
 }
 
@@ -316,7 +350,7 @@ function accept(ctx: StepContext, db: Conn, target: Target, at: Date, how: strin
 
 // ---------------------------------------------------------------- identity and texts
 
-type Check = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+export type Check = { readonly ok: true } | { readonly ok: false; readonly reason: string };
 
 /**
  * The member id a page showed must match the person's, and no other person may have it
@@ -326,7 +360,7 @@ type Check = { readonly ok: true } | { readonly ok: false; readonly reason: stri
  * the id from the top card's Message link, so this depends on that link being on the page: a
  * profile LinkedIn draws without it holds every such prospect, whatever else the page shows.
  */
-function checkMemberId(db: Conn, target: Target, shown: string | null): Check {
+export function checkMemberId(db: Conn, target: Target, shown: string | null): Check {
   if (shown === null) return { ok: false, reason: "the page shows no member id" };
   const stored = db.select({ memberId: people.memberId }).from(people).where(eq(people.id, target.person.id)).get();
   if (stored?.memberId != null && stored.memberId !== shown) {
@@ -342,16 +376,28 @@ function checkMemberId(db: Conn, target: Target, shown: string | null): Check {
   return { ok: true };
 }
 
-function templateValues({ person, prospect }: Target): TemplateValues {
+export function templateValues({ person, prospect }: Pick<Target, "person" | "prospect">): TemplateValues {
   // Only the stored first name: the full name's first word may be a title ("Dott."). Without one,
   // `{{first_name}}` stays unresolved and the prospect is held for review rather than greeted wrongly.
   const firstName = person.firstName?.trim() || null;
+  // The AI's industry only when it is sure, says where it read it, and wrote a short single line.
+  // Otherwise `{{industry}}` stays unresolved and the prospect is held for review rather than sent a guess.
+  const evidence = person.industryEvidence;
+  const industry =
+    evidence !== null &&
+    evidence.confidence >= 0.7 &&
+    evidence.source.trim() !== "" &&
+    evidence.value.trim() !== "" &&
+    evidence.value.length <= 60 &&
+    !/[\r\n\u2028\u2029]/.test(evidence.value)
+      ? evidence.value
+      : null;
   return {
     first_name: firstName,
     company: person.company,
     title: person.title,
     location: person.location,
-    industry: person.industryEvidence?.value ?? null,
+    industry,
     ai_line: prospect.aiLine,
   };
 }
@@ -388,8 +434,8 @@ function personRef(target: Target, memberId: string): PersonRef {
   return { publicId: target.person.publicId, memberId };
 }
 
-const idle = (did: string): StepOutcome => ({ did, touchedLinkedIn: false });
-const loaded = (did: string): StepOutcome => ({ did, touchedLinkedIn: true });
+export const idle = (did: string): StepOutcome => ({ did, touchedLinkedIn: false });
+export const loaded = (did: string): StepOutcome => ({ did, touchedLinkedIn: true });
 
 /**
  * What a handler does with a refused claim (an invite first turns a suppression into a rejection).
@@ -822,7 +868,7 @@ export async function reconcileStep(ctx: StepContext, target: Target, row: Actio
   const policy: OtherReadFailure = { kind: "reconcile", row };
 
   if (step === "invite" || step === "withdraw") {
-    const viewed = await read(ctx, "profile_view", target, () => driver.viewProfile(person.publicId), policy);
+    const viewed = await read(ctx, "profile_view", target, () => driver.viewProfile(person.publicId), { other: policy });
     if (!viewed.ok) return loaded(`reconcile ${step}: profile of ${name} not read`);
     const profile = viewed.value;
     db.transaction((tx) => {
@@ -864,7 +910,7 @@ export async function reconcileStep(ctx: StepContext, target: Target, row: Actio
     db.transaction((tx) => needsReview(tx, target, `the ${step === "message1" ? "first message" : "follow-up"} result is unknown and cannot be checked`, at));
     return idle(`reconcile ${step}: ${name} needs review`);
   }
-  const thread = await read(ctx, "thread_check", target, () => driver.readThread({ memberId, publicId: person.publicId }), policy);
+  const thread = await read(ctx, "thread_check", target, () => driver.readThread({ memberId, publicId: person.publicId }), { other: policy });
   if (!thread.ok) return loaded(`reconcile ${step}: thread of ${name} not read`);
   const verdict = judgeSend(thread.value, frozen, before);
   db.transaction((tx) => {

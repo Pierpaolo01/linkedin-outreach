@@ -187,7 +187,7 @@ export function claimStep(db: Conn, request: ClaimRequest, now: Date): ClaimResu
 }
 
 export interface ReadRequest {
-  readonly type: Extract<ActionType, "profile_view" | "thread_check" | "connections_check">;
+  readonly type: Extract<ActionType, "profile_view" | "thread_check" | "connections_check" | "recommendation_page" | "search_page">;
   readonly prospectId: number | null;
   readonly campaignId: number | null;
 }

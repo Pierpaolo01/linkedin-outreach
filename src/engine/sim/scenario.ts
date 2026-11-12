@@ -10,23 +10,36 @@
  * (`WEEKLY_INVITE_LIMIT`) ends invites on 03-30; LinkedIn shows a checkpoint on 03-31; the laptop
  * sleeps through the night to 04-02 10:30, the quiet last day.
  *
- * Rows are inserted directly with Drizzle, as the approval queue would leave them. Every member is
- * synthetic: "<invented first name> Sample<NNN>" at "Example Works <NNN>", or "Dott. Sample <NNN>"
- * with no first name for the two members no template can greet.
+ * Discovery (`DISCOVERY_DAY`): from 03-17 campaigns G (recommendations) and H (a two-page search)
+ * start in finding and are scored by the fake AI; 03-18 reaches the profile-view and discovery-page
+ * limits; H's second page meets LinkedIn's search cap; from 03-30 campaign K takes new suggestions
+ * while the AI is out until the checkpoint's safety stop. The simulated user approves each queue
+ * three hours after he first sees it waiting (`approvalQueueUser`), through the app's `approveAll`.
+ *
+ * Rows of the outreach campaigns are inserted directly with Drizzle, as the approval queue would
+ * leave them; the discovery campaigns' prospects are the engine's own. Every member is synthetic:
+ * "<invented first name> Sample<NNN>" at "Example Works <NNN>", or "Dott. Sample <NNN>" with no
+ * first name for the two members no template can greet.
  *
  * The helpers at the top are also what the tests' small scenarios are built from.
  */
-import { eq, inArray, notInArray } from "drizzle-orm";
+import { and, count, eq, inArray, notInArray } from "drizzle-orm";
+import { pauseCampaign, resumeCampaign } from "../../campaigns/campaigns";
+import { approveAll } from "../../campaigns/prospects";
 import { DEFAULT_SETTINGS, setSettings, type SettingsPatch } from "../../config/settings";
 import type { Db } from "../../db/index";
-import { campaigns, CLOSED_STAGES, people, prospects, type DelayPolicy, type ProspectStage } from "../../db/schema";
-import type { DriverOp, FaultKind, MemberSpec } from "../../linkedin/fake/world";
+import { actions, campaigns, CLOSED_STAGES, people, prospects, type CampaignStatus, type DelayPolicy, type ProspectStage } from "../../db/schema";
+import type { DriverOp, FaultKind, MemberSpec, RecommendationGroupSpec } from "../../linkedin/fake/world";
 import { profileUrlFor } from "../../linkedin/parse/card";
 import type { RandomSource } from "../ports";
 import {
   mulberry32,
   randomBetween,
   type CampaignFact,
+  type DiscoveredFact,
+  type DiscoveredKind,
+  type DiscoveryCampaignFact,
+  type DiscoveryPlan,
   type Downtime,
   type Expectation,
   type ForcedKill,
@@ -60,12 +73,14 @@ export interface CampaignSpec {
   readonly followUp: string;
   readonly delayPolicy?: DelayPolicy;
   readonly withdrawAfterDays?: number;
-  /** Default running. */
+  /** Default running; a discovery campaign always starts in finding. */
   readonly status?: "running" | "paused";
+  /** The campaign finds its own prospects from this source (a search needs `searchUrl`). */
+  readonly discovery?: DiscoveryCampaignFact & { readonly searchUrl?: string };
 }
 
 export function emptyFacts(): ScenarioFacts {
-  return { settings: DEFAULT_SETTINGS, settingsHistory: [], campaigns: new Map(), members: new Map() };
+  return { settings: DEFAULT_SETTINGS, settingsHistory: [], campaigns: new Map(), members: new Map(), discoveryLog: [] };
 }
 
 /** The user changes settings: stored in the app, and remembered with the time for the verdicts. */
@@ -76,13 +91,18 @@ export function applySettings(context: SimContext, patch: SettingsPatch): void {
 }
 
 export function createCampaign({ db, now, facts }: SimContext, spec: CampaignSpec): CampaignFact {
+  const discovery = spec.discovery;
   const row = db
     .insert(campaigns)
     .values({
       name: `Campaign ${spec.key}`,
-      status: spec.status ?? "running",
-      discoverySource: "search",
-      scoringBrief: "Simulated campaign",
+      status: discovery === undefined ? (spec.status ?? "running") : "finding",
+      discoverySource: discovery?.source ?? "search",
+      sourceUrls: discovery?.searchUrl === undefined ? [] : [discovery.searchUrl],
+      scoringBrief: discovery?.brief ?? "Simulated campaign",
+      ...(discovery === undefined
+        ? {}
+        : { openProfileThreshold: discovery.openProfileThreshold, scoreThreshold: discovery.scoreThreshold, batchSize: discovery.batchSize }),
       inviteNote: spec.inviteNote,
       firstMessage: spec.firstMessage,
       followUp: spec.followUp,
@@ -93,7 +113,24 @@ export function createCampaign({ db, now, facts }: SimContext, spec: CampaignSpe
     })
     .returning({ id: campaigns.id })
     .get();
-  const fact: CampaignFact = { key: spec.key, id: row.id, inviteNote: spec.inviteNote, firstMessage: spec.firstMessage, followUp: spec.followUp };
+  const fact: CampaignFact = {
+    key: spec.key,
+    id: row.id,
+    inviteNote: spec.inviteNote,
+    firstMessage: spec.firstMessage,
+    followUp: spec.followUp,
+    ...(discovery === undefined
+      ? {}
+      : {
+          discovery: {
+            source: discovery.source,
+            brief: discovery.brief,
+            openProfileThreshold: discovery.openProfileThreshold,
+            scoreThreshold: discovery.scoreThreshold,
+            batchSize: discovery.batchSize,
+          },
+        }),
+  };
   facts.campaigns.set(spec.key, fact);
   return fact;
 }
@@ -211,6 +248,10 @@ export interface PersonRow {
   readonly company: string | null;
   readonly degree?: 1 | 2 | 3;
   readonly doNotContact?: boolean;
+  /** As an earlier discovery stored them; default an operations lead in Milan. */
+  readonly headline?: string;
+  readonly location?: string;
+  readonly title?: string;
 }
 
 export function insertPerson(db: Db, row: PersonRow, now: Date): number {
@@ -222,10 +263,10 @@ export function insertPerson(db: Db, row: PersonRow, now: Date): number {
       profileUrl: profileUrlFor(row.publicId),
       fullName: row.fullName,
       firstName: row.firstName,
-      headline: "Operations lead",
-      title: "Head of Operations",
+      headline: row.headline ?? "Operations lead",
+      title: row.title ?? "Head of Operations",
       company: row.company,
-      location: "Milan, Italy",
+      location: row.location ?? "Milan, Italy",
       connectionDegree: row.degree ?? 2,
       discoverySource: "search",
       firstSeenAt: now,
@@ -254,10 +295,21 @@ export function insertApprovedProspect(db: Db, campaignId: number, personId: num
     .get().id;
 }
 
-function memberFact(facts: ScenarioFacts, spec: MemberSpec, role: string, scripted: boolean, expect: Expectation | null): MemberFact {
+function memberFact(facts: ScenarioFacts, spec: MemberSpec, role: string, scripted: boolean, expect: Expectation | null, discovered?: DiscoveredFact): MemberFact {
   let fact = facts.members.get(spec.publicId);
   if (fact === undefined) {
-    fact = { publicId: spec.publicId, memberId: spec.memberId, role, prospects: [], preRunInvites: 0, trapSince: null, doNotContact: false, scripted, expect };
+    fact = {
+      publicId: spec.publicId,
+      memberId: spec.memberId,
+      role,
+      prospects: [],
+      preRunInvites: 0,
+      trapSince: null,
+      doNotContact: false,
+      scripted,
+      expect,
+      ...(discovered === undefined ? {} : { discovered }),
+    };
     facts.members.set(spec.publicId, fact);
   }
   return fact;
@@ -276,6 +328,8 @@ export interface Enrolment {
   /** Shielded from random kills and faults (see `MemberFact.scripted`). */
   readonly scripted?: boolean;
   readonly expect?: Expectation;
+  /** A discovery source also shows them. */
+  readonly discovered?: DiscoveredFact;
 }
 
 /** Adds a member to the world, a person row and an approved prospect, and remembers it all in the facts. */
@@ -300,7 +354,7 @@ export function enrol(context: SimContext, enrolment: Enrolment): number {
     now,
   );
   const prospectId = insertApprovedProspect(db, campaign.id, personId, now);
-  const fact = memberFact(facts, enrolment.member, enrolment.role, enrolment.scripted ?? false, enrolment.expect ?? null);
+  const fact = memberFact(facts, enrolment.member, enrolment.role, enrolment.scripted ?? false, enrolment.expect ?? null, enrolment.discovered);
   fact.doNotContact ||= doNotContact;
   fact.prospects.push({ campaign: enrolment.campaign, prospectId, personPublicId, firstName: enrolment.firstName, company: enrolment.company, addedAt: now });
   return prospectId;
@@ -361,6 +415,215 @@ function regularBehaviour(random: RandomSource): { role: string; extra: Partial<
   if (pick < 0.36) return { role: "user_writes", extra: { acceptsAfterHours, userWritesAfterHours: randomBetween(random, 1, 40) } };
   if (pick < 0.41) return { role: "user_resends", extra: { acceptsAfterHours, userResendsAfterHours: randomBetween(random, 2, 30) } };
   return { role: "silent", extra: { acceptsAfterHours } };
+}
+
+// ---------------------------------------------------------------- discovery building blocks
+
+/**
+ * The scoring brief of every discovery campaign here. The fake AI (`src/ai/fakeAi.ts`) gives 3
+ * points for each of its words of four letters or more found in the person's text, capped at 10:
+ * here "head", "operations", "logistics", "firm" and "turin".
+ */
+export const DISCOVERY_BRIEF = "Head of operations at a logistics firm in Turin";
+export const OPEN_PROFILE_THRESHOLD = 6;
+export const SCORE_THRESHOLD = 7;
+
+/**
+ * What a discovered member's card and profile say, named by where the fake AI puts them under
+ * `DISCOVERY_BRIEF` (card = headline, location, company; profile = those, the title and the job):
+ * - `low`: card 0, below the open-profile threshold; `low3`: card 3 (Turin only), below it too;
+ * - `mid`: card 6, between the thresholds, so the profile is opened; profile 6, rejected;
+ * - `mid_up`: card 6, profile 10 (the title adds "head" and "logistics"): waits for approval;
+ * - `high`: card 9, above the score threshold; profile 9: waits for approval.
+ */
+export type CardKind = "low" | "low3" | "mid" | "mid_up" | "high";
+
+const CARD_TEXT: Readonly<Record<CardKind, { readonly headline: string; readonly location: string; readonly title: string }>> = {
+  low: { headline: "Graphic designer", location: "Naples, Italy", title: "Graphic designer" },
+  low3: { headline: "Graphic designer", location: "Turin, Italy", title: "Graphic designer" },
+  mid: { headline: "Operations coordinator", location: "Turin, Italy", title: "Operations coordinator" },
+  mid_up: { headline: "Operations coordinator", location: "Turin, Italy", title: "Head of logistics" },
+  high: { headline: "Head of operations", location: "Turin, Italy", title: "Head of operations" },
+};
+
+export interface DiscoveredSpec {
+  readonly n: number;
+  readonly card: CardKind;
+  readonly kind: DiscoveredKind;
+  /** The discovery campaigns whose source shows them. */
+  readonly campaigns: readonly string[];
+  /** What they do once invited (a regular member's script); `kind` adds its own. */
+  readonly extra?: Partial<MemberSpec>;
+  /** For `active_elsewhere`: the campaign holding their active prospect (default A). For `contacted_before`: where they were contacted (default A). */
+  readonly elsewhere?: string;
+  /** Shielded from random kills and scripted faults (`MemberFact.scripted`): a forced kill's target. */
+  readonly scripted?: boolean;
+}
+
+/**
+ * Adds a member a discovery source shows, as `kind` says: in the world (with a card that scores as
+ * `card` says), and for the excluded kinds the row or prospect that excludes them. Returns the fact.
+ */
+export function addDiscovered(context: SimContext, spec: DiscoveredSpec): MemberFact {
+  const { db, world, now, facts } = context;
+  const text = CARD_TEXT[spec.card];
+  const longAgo = (days: number) => new Date(now.getTime() - days * DAY_MS);
+  const byKind: Partial<MemberSpec> =
+    spec.kind === "first_degree"
+      ? { degree: 1, connectedAt: longAgo(40), acceptsAfterHours: null }
+      : spec.kind === "pending_invite"
+        ? // Sent more than a week before the run: LinkedIn's weekly cap no longer counts it (`HAND_SENT` fills that).
+          { invitedOutsideApp: true, invitedAt: longAgo(10), acceptsAfterHours: null }
+        : {};
+  const member = synthetic(spec.n, { headline: text.headline, location: text.location, currentTitle: text.title, ...spec.extra, ...byKind });
+  const discovered: DiscoveredFact = {
+    kind: spec.kind,
+    campaigns: spec.campaigns,
+    card: { publicId: member.spec.publicId, fullName: member.spec.fullName, headline: text.headline, location: text.location, company: member.company },
+    cardScores: new Map(),
+  };
+  const role = `discovered_${spec.kind === "regular" ? spec.card : spec.kind}`;
+  // A row stored before discovery shows the person as their card does: an app scoring it scores the card.
+  const asShown = { headline: text.headline, location: text.location, title: text.title };
+  if (spec.kind === "active_elsewhere") {
+    enrol(context, { campaign: spec.elsewhere ?? "A", member: member.spec, role, firstName: member.firstName, company: member.company, discovered, person: asShown });
+    return facts.members.get(member.spec.publicId) ?? memberFact(facts, member.spec, role, false, null, discovered);
+  }
+  world.addMember(member.spec);
+  const fact = memberFact(facts, member.spec, role, spec.scripted ?? false, null, discovered);
+  if (spec.kind === "do_not_contact") {
+    insertPerson(db, { publicId: member.spec.publicId, fullName: member.spec.fullName, firstName: member.firstName, company: member.company, doNotContact: true, ...asShown }, now);
+    fact.doNotContact = true;
+  }
+  if (spec.kind === "contacted_before") {
+    const campaignId = facts.campaigns.get(spec.elsewhere ?? "A")?.id;
+    if (campaignId === undefined) throw new RangeError(`no campaign ${spec.elsewhere ?? "A"}`);
+    const personId = insertPerson(db, { publicId: member.spec.publicId, memberId: member.spec.memberId, fullName: member.spec.fullName, firstName: member.firstName, company: member.company, ...asShown }, now);
+    closedBeforeRun(db, campaignId, personId, "withdrawn", now);
+    fact.preRunInvites = 1;
+    fact.trapSince = now;
+  }
+  return fact;
+}
+
+/** My Network → Grow as two groups that share one person (LinkedIn repeats people across groups). */
+export function recommendationGroups(publicIds: readonly string[]): RecommendationGroupSpec[] {
+  const half = Math.ceil(publicIds.length / 2);
+  return [
+    { title: "People you may know in Turin", publicIds: publicIds.slice(0, half + 1) },
+    { title: "People in logistics", publicIds: publicIds.slice(half) },
+  ];
+}
+
+/** The campaign's status, or the one it returns to when it is paused. */
+function workingStatus(row: { readonly status: CampaignStatus; readonly pausedFrom: CampaignStatus | null }): CampaignStatus {
+  return row.status === "paused" ? (row.pausedFrom ?? "paused") : row.status;
+}
+
+function stageCount(db: Db, campaignId: number, stages: readonly ProspectStage[]): number {
+  return db
+    .select({ n: count() })
+    .from(prospects)
+    .where(and(eq(prospects.campaignId, campaignId), inArray(prospects.stage, [...stages])))
+    .get()?.n ?? 0;
+}
+
+/**
+ * The simulated user's look at the approval queue, as one function to call at each of his
+ * check-ins. A discovery campaign's first batch is approved once it has been seen awaiting
+ * approval for `waitMs`; later prospects waiting for approval once seen waiting for `waitMs`. He
+ * approves them all through the app's own `approveAll`, which moves each to approved and the
+ * campaign to running, and the facts learn each approved prospect's name and company as rendered.
+ */
+export function approvalQueueUser(waitMs: number): (context: SimContext) => void {
+  const waitingSince = new Map<string, Date>();
+  return (context) => {
+    const { db, now, facts } = context;
+    for (const campaign of facts.campaigns.values()) {
+      const discovery = campaign.discovery;
+      if (discovery === undefined) continue;
+      const row = db.select({ status: campaigns.status, pausedFrom: campaigns.pausedFrom }).from(campaigns).where(eq(campaigns.id, campaign.id)).get();
+      if (row === undefined) continue;
+      const status = workingStatus(row);
+      const pending = stageCount(db, campaign.id, ["pending_approval"]);
+      const waiting = status === "awaiting_approval" || (status === "running" && pending > 0);
+      if (!waiting) {
+        waitingSince.delete(campaign.key);
+        continue;
+      }
+      const since = waitingSince.get(campaign.key);
+      if (since === undefined) {
+        waitingSince.set(campaign.key, now);
+        if (status === "awaiting_approval") facts.discoveryLog.push({ kind: "awaiting_seen", at: now, campaign: campaign.key });
+        continue;
+      }
+      if (now.getTime() - since.getTime() < waitMs) continue;
+      const lineBefore = stageCount(db, campaign.id, ["found", "pending_approval"]);
+      const outcome = approveAll(db, { campaignId: campaign.id, minScore: null }, now);
+      if (!outcome.ok) throw new Error(`the user could not approve campaign ${campaign.key}'s queue`);
+      waitingSince.delete(campaign.key);
+      facts.discoveryLog.push({ kind: "approved", at: now, campaign: campaign.key, approved: outcome.value.approved, lineBefore, batchSize: discovery.batchSize });
+      const approved = db
+        .select({ prospectId: prospects.id, publicId: people.publicId, firstName: people.firstName, company: people.company })
+        .from(prospects)
+        .innerJoin(people, eq(people.id, prospects.personId))
+        .where(and(eq(prospects.campaignId, campaign.id), eq(prospects.stage, "approved"), eq(prospects.approvedAt, now)))
+        .all();
+      for (const one of approved) {
+        facts.members.get(one.publicId)?.prospects.push({
+          campaign: campaign.key,
+          prospectId: one.prospectId,
+          personPublicId: one.publicId,
+          firstName: one.firstName,
+          company: one.company,
+          addedAt: now,
+        });
+      }
+    }
+  };
+}
+
+/** The user pauses a discovery campaign through the app (it remembers where it was); a campaign that cannot be paused is left alone. */
+export function pauseDiscovery(context: SimContext, key: string): void {
+  const campaign = context.facts.campaigns.get(key);
+  if (campaign === undefined) throw new RangeError(`no campaign ${key}`);
+  pauseCampaign(context.db, campaign.id, context.now);
+}
+
+/** The user resumes a campaign he paused (back to finding, awaiting approval or running). */
+export function resumeDiscovery(context: SimContext, key: string): void {
+  const campaign = context.facts.campaigns.get(key);
+  if (campaign === undefined) throw new RangeError(`no campaign ${key}`);
+  const row = context.db.select({ status: campaigns.status }).from(campaigns).where(eq(campaigns.id, campaign.id)).get();
+  if (row?.status === "paused") resumeCampaign(context.db, campaign.id, context.now);
+}
+
+/** Recommendation-page rows the app has claimed for a campaign so far (the load now starting included). */
+export function recommendationLoadsOf({ db, facts }: SimContext, key: string): number {
+  const campaign = facts.campaigns.get(key);
+  if (campaign === undefined) return 0;
+  return db.select({ n: count() }).from(actions).where(and(eq(actions.campaignId, campaign.id), eq(actions.type, "recommendation_page"))).get()?.n ?? 0;
+}
+
+/**
+ * While a recommendations page of `campaign` loads (its `nth` load), the user pauses the campaign;
+ * he resumes it at `resumeHour`:30 local the same evening. The cards of that load are stored while
+ * it is paused and scored when it resumes, after the window: AI work at night. Shielded, so no
+ * random kill takes the load away.
+ */
+export function pauseDuringLoad(campaign: string, nth: number, resumeHour: number): Intervention {
+  return {
+    label: `campaign ${campaign} paused while a recommendations page loads, resumed in the evening`,
+    op: "listRecommendations",
+    target: null,
+    shield: true,
+    when: (context) => recommendationLoadsOf(context, campaign) >= nth,
+    apply: (context) => {
+      pauseDiscovery(context, campaign);
+      const evening = localInstant(context.facts.settings.timeZone, localDay(context.facts.settings.timeZone, context.now), resumeHour, 30);
+      context.later(evening.getTime() - context.now.getTime(), `campaign ${campaign} resumed in the evening`, (later) => resumeDiscovery(later, campaign));
+    },
+  };
 }
 
 // ---------------------------------------------------------------- the three-week scenario
@@ -454,6 +717,20 @@ export const THREE_WEEK_MINIMUMS: Minimums = {
   killsInBurst: 3,
   weeksStoppedByWeeklyLimit: 1,
   fullDaysAfterDowntimeAtLimit: 1,
+  peopleDiscovered: 45,
+  cardsScored: 40,
+  profilesOpenedForScoring: 25,
+  daysAtProfileViewLimit: 1,
+  daysAtDiscoveryLimit: 1,
+  searchCaps: 1,
+  killsOnDiscovery: 3,
+  // G and H. K exists for AI work during a safety stop: its suggestions are also G's, and since a
+  // suggestions source now looks again every day instead of running out, K may rightly still be finding.
+  awaitingApprovalReached: 2,
+  discoveryResumedAfterApproval: 1,
+  discoveredInvited: 10,
+  aiCallsAtNight: 1,
+  aiCallsDuringSafetyStop: 1,
 };
 
 /** LinkedIn's own weekly invitation cap in the world (rolling 7 days). The app's own invites never reach it; hand-sent ones do. */
@@ -547,6 +824,171 @@ const SCRIPTED: readonly ScriptedMember[] = [
   { campaign: "F", role: "scripted_message_sleeps", extra: { acceptsAfterHours: 2 }, expect: { kind: "send_slept_through", op: "sendMessage" } },
 ];
 
+// ---------------------------------------------------------------- discovery in the three-week scenario
+
+/**
+ * Discovery, from 2027-03-17: campaign G finds people in My Network → Grow, campaign H in a two-page
+ * search; both start in finding and are scored by the fake AI. G's 60 people come 15 to a load, 5
+ * new each time (`G_POOL`); then the same 15 again, and three loads that bring nobody new exhaust
+ * the source. H's second page meets LinkedIn's monthly search cap, so H waits for April.
+ * Campaign K, from 2027-03-30, takes the new suggestions LinkedIn shows from that morning, while the
+ * AI is out until half an hour after the checkpoint of 03-31: its cards are scored during that
+ * safety stop. G's second load lands while the user pauses G until the evening: those cards are
+ * scored at night. Among the people shown: 1st-degree connections, pending invitations, a
+ * do-not-contact person, active prospects of A, people A contacted before the run, and a profile
+ * LinkedIn shows as not available.
+ */
+const DISCOVERY_DAY = "2027-03-17";
+/** From this instant My Network → Grow shows K's new suggestions; the AI is out from then too. */
+const FRESH_SUGGESTIONS_FROM = rome("2027-03-30", 8);
+export const SEARCH_URL = "https://www.linkedin.com/search/results/people/?keywords=head%20of%20operations%20turin";
+const REC_WINDOW = 15;
+const REC_STEP = 5;
+/** The user approves what has waited this long in his queue (he looks at :20 every hour from 08:20 to 19:20). */
+const APPROVAL_WAIT_MS = 3 * HOUR_MS;
+
+const discoveryOf = (source: "recommendations" | "search", batchSize: number) =>
+  ({ source, brief: DISCOVERY_BRIEF, openProfileThreshold: OPEN_PROFILE_THRESHOLD, scoreThreshold: SCORE_THRESHOLD, batchSize }) as const;
+
+export const DISCOVERY_TEMPLATES = {
+  G: {
+    key: "G",
+    inviteNote: "Hi {{first_name}}, I work with operations teams in Turin and would be glad to connect.",
+    firstMessage: "Hi {{first_name}}, thanks for connecting. How are operations going at {{company}}?",
+    followUp: "Hi {{first_name}}, just following up. Would a short call about {{company}} make sense?",
+    withdrawAfterDays: 21,
+    discovery: discoveryOf("recommendations", 30),
+  },
+  H: {
+    key: "H",
+    inviteNote: null,
+    firstMessage: "Hello {{first_name}}, good to connect. What is {{company}} working on this quarter?",
+    followUp: "Hello {{first_name}}, a short follow-up in case my message got lost.",
+    withdrawAfterDays: 21,
+    // A batch of three: page 1 fills the line with people waiting for approval, page 2 waits for the approval.
+    discovery: { ...discoveryOf("search", 3), searchUrl: SEARCH_URL },
+  },
+  K: {
+    key: "K",
+    inviteNote: null,
+    firstMessage: "Hi {{first_name}}, glad we are connected. How is the logistics side at {{company}}?",
+    followUp: "",
+    withdrawAfterDays: 21,
+    discovery: discoveryOf("recommendations", 8),
+  },
+} as const satisfies Record<string, CampaignSpec>;
+
+/** G's people in the order its loads show them; the specials are spread over the first loads. */
+const G_SPECIAL: Readonly<Record<number, DiscoveredKind>> = {
+  1: "pending_invite",
+  4: "do_not_contact",
+  8: "active_elsewhere",
+  12: "unavailable",
+  17: "contacted_before",
+  22: "active_elsewhere",
+  27: "pending_invite",
+  33: "contacted_before",
+};
+/** G's people also on H's second page (H loads it in April, when G has them already). */
+const G_SHARED = [41, 47, 53];
+/** G's people LinkedIn suggests again with K's (`threeWeekRecommendations`). */
+const G_AGAIN = [0, 5, 10];
+/**
+ * G's regular cards: most are opened and then rejected on the profile (`mid`), few wait for
+ * approval, so G spends many profile views and page loads before its line fills with people
+ * waiting: G is what brings the profile-view and discovery-page limits within reach in a day.
+ */
+const G_CYCLE: readonly CardKind[] = ["mid", "low", "mid", "high", "mid", "low3", "mid", "mid", "low", "mid", "mid_up", "mid", "low3", "mid", "mid", "low"];
+const G_FIRST = 601;
+
+function gPool(): DiscoveredSpec[] {
+  return Array.from({ length: 60 }, (_, i): DiscoveredSpec => {
+    const kind = G_SPECIAL[i] ?? "regular";
+    const shared = G_SHARED.includes(i);
+    const card: CardKind = kind !== "regular" || shared ? "high" : (G_CYCLE[i % G_CYCLE.length] ?? "low");
+    // G's first person is the target of a forced kill on their scoring view: no fault may take that view away.
+    return { n: G_FIRST + i, card, kind, campaigns: shared ? ["G", "H"] : G_AGAIN.includes(i) ? ["G", "K"] : ["G"], scripted: i === 0 };
+  });
+}
+
+/** H's own people, page 1 then page 2 (H's second page also shows the three `G_SHARED`). */
+const H_PAGE_1: readonly (readonly [CardKind, DiscoveredKind])[] = [
+  ["high", "first_degree"],
+  ["high", "regular"],
+  ["low", "regular"],
+  ["high", "first_degree"],
+  ["mid_up", "regular"],
+  ["high", "pending_invite"],
+  ["low3", "regular"],
+  ["high", "first_degree"],
+  ["high", "regular"],
+  ["low", "regular"],
+];
+const H_PAGE_2: readonly (readonly [CardKind, DiscoveredKind])[] = [
+  ["high", "regular"],
+  ["mid", "regular"],
+  ["low", "regular"],
+  ["high", "regular"],
+  ["mid_up", "regular"],
+  ["low3", "regular"],
+  ["high", "regular"],
+];
+const H_FIRST = 661;
+
+function hPool(): DiscoveredSpec[] {
+  return [...H_PAGE_1, ...H_PAGE_2].map(([card, kind], i) => ({ n: H_FIRST + i, card, kind, campaigns: ["H"] }));
+}
+
+/** The suggestions LinkedIn shows from `FRESH_SUGGESTIONS_FROM` (with three of G's people again). G could see them too. */
+const K_CARDS: readonly (readonly [CardKind, DiscoveredKind])[] = [
+  ["high", "regular"],
+  ["low", "regular"],
+  ["mid_up", "regular"],
+  ["high", "regular"],
+  ["low3", "regular"],
+  ["high", "regular"],
+  ["high", "pending_invite"],
+  ["low", "regular"],
+  ["high", "regular"],
+  ["mid_up", "regular"],
+  ["low", "regular"],
+  ["high", "regular"],
+];
+const K_FIRST = 681;
+
+function kPool(): DiscoveredSpec[] {
+  return K_CARDS.map(([card, kind], i) => ({ n: K_FIRST + i, card, kind, campaigns: ["G", "K"] }));
+}
+
+const idOf = (n: number): string => synthetic(n).spec.publicId;
+
+/** H's search results: page 1, then page 2 with the shared people spread over it. */
+function searchResults(): string[] {
+  const own = (from: number, length: number) => Array.from({ length }, (_, i) => idOf(H_FIRST + from + i));
+  const [s1, s2, s3] = G_SHARED.map((i) => idOf(G_FIRST + i));
+  const page2 = own(H_PAGE_1.length, H_PAGE_2.length);
+  return [...own(0, H_PAGE_1.length), s1 ?? "", ...page2.slice(0, 2), s2 ?? "", ...page2.slice(2, 4), s3 ?? "", ...page2.slice(4)];
+}
+
+/** What My Network → Grow shows at a load: G's window for that load, or K's new suggestions from `FRESH_SUGGESTIONS_FROM`. */
+function threeWeekRecommendations(load: number, now: Date): RecommendationGroupSpec[] {
+  if (now >= FRESH_SUGGESTIONS_FROM) {
+    return recommendationGroups([...K_CARDS.map((_, i) => idOf(K_FIRST + i)), ...G_AGAIN.map((i) => idOf(G_FIRST + i))]);
+  }
+  const last = (60 - REC_WINDOW) / REC_STEP;
+  const from = Math.min(load, last) * REC_STEP;
+  return recommendationGroups(Array.from({ length: REC_WINDOW }, (_, i) => idOf(G_FIRST + from + i)));
+}
+
+function threeWeekDiscovery(): DiscoveryPlan {
+  return {
+    recommendations: threeWeekRecommendations,
+    unavailableProfiles: Object.entries(G_SPECIAL).flatMap(([i, kind]) => (kind === "unavailable" ? [idOf(G_FIRST + Number(i))] : [])),
+    searchCaps: [{ page: 2 }],
+    aiOutages: [{ from: FRESH_SUGGESTIONS_FROM, until: { kind: "after_safety_stop", reason: "checkpoint", ms: 30 * 60_000, latest: rome("2027-04-01", 8) } }],
+  };
+}
+
 /** The world public id of the nth scripted member (from 1). */
 function scriptedId(n: number): string {
   return synthetic(n).spec.publicId;
@@ -573,6 +1015,7 @@ function interventions(): Intervention[] {
     closeMidRead(onlyOne("scripted_stopped_mid_tick"), "readThread", "stopped"),
     lowerMessageLimitMidRead(onlyOne("scripted_limit_lowered")),
     clearFollowUpMidRead(onlyOne("scripted_follow_up_cleared"), "A", 2 * HOUR_MS),
+    pauseDuringLoad("G", 2, 19),
   ];
 }
 
@@ -645,6 +1088,11 @@ function forcedKills(): ForcedKill[] {
     { kind: "member", op: "sendMessage", phase: "after", target: onlyOne("scripted_takeover_after_kill") },
     { kind: "member", op: "sendMessage", phase: "typed", target: onlyOne("scripted_takeover_typed_kill") },
     { kind: "burst", count: 3, runAtLeast: 10, restartMs: [2_000, 6_000] },
+    // Discovery: a recommendations page and a search page killed after they loaded, and the scoring
+    // view of G's first person killed after it opened.
+    { kind: "nth", op: "listRecommendations", phase: "after", nth: 4 },
+    { kind: "nth", op: "searchPeople", phase: "after", nth: 1 },
+    { kind: "member", op: "viewProfile", phase: "after", target: idOf(G_FIRST) },
   ];
 }
 
@@ -780,6 +1228,13 @@ export function threeWeekScenario(seed: number): Scenario {
     for (let i = 0; i < HAND_SENT.count; i++) {
       world.addMember(synthetic(HAND_SENT_FIRST + i, { invitedOutsideApp: true, invitedAt: HAND_SENT.at, acceptsAfterHours: null }).spec);
     }
+
+    // The people the discovery sources show. A regular one, once approved and invited, behaves as any other member.
+    for (const spec of [...gPool(), ...hPool(), ...kPool()]) {
+      const extra = spec.kind === "regular" ? regularBehaviour(random).extra : spec.kind === "active_elsewhere" ? { acceptsAfterHours: null } : {};
+      addDiscovered(context, { ...spec, extra });
+    }
+    world.setSearchResults(SEARCH_URL, searchResults());
   };
 
   const events: ScenarioEvent[] = [];
@@ -796,8 +1251,11 @@ export function threeWeekScenario(seed: number): Scenario {
     enrol(context, { campaign: "C", member: member.spec, role: "no_company", firstName: member.firstName, company: null });
   });
   for (const day of ARRIVAL_DAYS) {
+    // Into A and B only: C's new prospects come from discovery (G and H) instead, so the campaigns
+    // taking turns at invites from week 2 are three, as before, and A and B keep the share of the
+    // weekly invites their scripted cohorts need.
     at(day, 8, 30, `new approved prospects (${BATCH})`, (context) => {
-      batch(context, context.facts.campaigns.has("C") ? ["A", "B", "C"] : ["A", "B"], BATCH);
+      batch(context, ["A", "B"], BATCH);
       if (day === "2027-03-26") dynamicTraps(context, 2);
     });
   }
@@ -815,6 +1273,25 @@ export function threeWeekScenario(seed: number): Scenario {
   at("2027-03-24", 7, 0, "campaign D paused", statuses(["D"], "paused"));
   at("2027-03-25", 7, 0, "campaign F resumed", statuses(["F"], "running"));
   at("2027-03-25", 18, 30, "campaigns A, B, C and D resumed after the downtime", statuses(["A", "B", "C", "D"], "running"));
+
+  // Discovery (see `DISCOVERY_DAY`). The user pauses G and H through the app on the days the laptop
+  // opens only for a short while, so those openings keep the work they were planned for.
+  at(DISCOVERY_DAY, 8, 0, "discovery campaigns G and H created", (context) => {
+    createCampaign(context, DISCOVERY_TEMPLATES.G);
+    createCampaign(context, DISCOVERY_TEMPLATES.H);
+  });
+  const discoveryPaused = (from: Date, to: Date) => {
+    events.push({ at: from, label: "campaigns G and H paused", apply: (context) => ["G", "H"].forEach((key) => pauseDiscovery(context, key)) });
+    events.push({ at: to, label: "campaigns G and H resumed", apply: (context) => ["G", "H"].forEach((key) => resumeDiscovery(context, key)) });
+  };
+  discoveryPaused(rome("2027-03-19", 7), rome("2027-03-19", 18, 30));
+  discoveryPaused(rome("2027-03-23", 7), rome("2027-03-25", 18, 30));
+  at("2027-03-30", 8, 0, "discovery campaign K created", (context) => createCampaign(context, DISCOVERY_TEMPLATES.K));
+  const lookAtQueue = approvalQueueUser(APPROVAL_WAIT_MS);
+  for (let day = DISCOVERY_DAY; day <= LAST_DAY; day = addDays(day, 1)) {
+    if (!isWorkingDay(DEFAULT_SETTINGS, day)) continue;
+    for (let hour = 8; hour <= 19; hour++) at(day, hour, 20, "the user looks at the approval queue", lookAtQueue);
+  }
 
   const downtimes: Downtime[] = [
     // Shut all day until 17:45 (see `LATE_OPENING_DAYS`).
@@ -850,6 +1327,7 @@ export function threeWeekScenario(seed: number): Scenario {
     interventions: interventions(),
     suspensions: suspensionPlan(),
     quietSpans: SLEEP_OPENINGS.map(({ day }) => ({ from: rome(day, 17, 45), to: rome(day, 18, 30) })),
+    discovery: threeWeekDiscovery(),
     minimums: THREE_WEEK_MINIMUMS,
     // The engine's own wakeAt drives the run; this only adds a look every hour, as a runner polling for new work would.
     pollMs: 60 * 60_000,
@@ -886,7 +1364,16 @@ function closedBeforeRun(db: Db, campaignId: number, personId: number, stage: "c
   db.update(people).set({ contactedAt: ago(28), contactedProspectId: prospectId }).where(eq(people.id, personId)).run();
 }
 
-const FAULT_OPS: readonly DriverOp[] = ["viewProfile", "readThread", "sendInvite", "sendMessage", "withdrawInvite", "listRecentConnections"];
+const FAULT_OPS: readonly DriverOp[] = [
+  "viewProfile",
+  "readThread",
+  "sendInvite",
+  "sendMessage",
+  "withdrawInvite",
+  "listRecentConnections",
+  "listRecommendations",
+  "searchPeople",
+];
 const FAULT_KINDS: readonly FaultKind[] = ["unexpected", "timeout_before_effect", "timeout_after_effect"];
 
 /** Zero to two scripted faults on each working day of the run before the quiet last day, at a random time inside the window. */

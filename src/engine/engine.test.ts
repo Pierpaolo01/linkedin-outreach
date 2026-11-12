@@ -338,6 +338,17 @@ describe("picking due work", () => {
     expect(prospect(kit, inv.prospectId).stage).toBe("invited");
   });
 
+  it("never invites an approved prospect without an approval time: only an approval makes someone invitable", async () => {
+    const c = seedCampaign(kit);
+    const added = addPerson(kit);
+    const unapproved = addProspect(kit, c, added.personId, { stage: "approved", approvedAt: null });
+    seedConnectionsChecked(kit);
+    for (let i = 0; i < 3; i++) await step(kit);
+    expect(prospect(kit, unapproved).stage).toBe("approved");
+    expect(kit.world.log.filter((entry) => entry.kind === "invite")).toHaveLength(0);
+    expect(pickDueWork(kit.db, getSettings(kit.db), kit.clock.now())).toBeNull();
+  });
+
   it("skips a kind whose budget is spent while lower kinds still run", async () => {
     kit.settings({ limits: { messagesPerDay: 0 } });
     const c = seedCampaign(kit);

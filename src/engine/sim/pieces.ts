@@ -31,7 +31,10 @@ export interface BreakRun {
 
 /**
  * The runs of pieces of work with no pause of `pauseMs` or more between two of them, oldest first,
- * over the whole log. A pause runs from one piece's last entry to the next one's first.
+ * over the whole log. A pause is any stretch of `pauseMs` or more in which LinkedIn saw nothing:
+ * between two pieces, or inside one (a send the laptop slept through, long after its read). A
+ * piece with a pause inside it is not a piece "without a break": it ends the run it started in
+ * (counted there, once), and the next run starts with the piece after it.
  */
 export function breakRuns(log: readonly LogEntry[], pauseMs: number): { readonly runs: BreakRun[]; readonly pieces: number } {
   const runs: BreakRun[] = [];
@@ -40,12 +43,15 @@ export function breakRuns(log: readonly LogEntry[], pauseMs: number): { readonly
   let length = 0;
   let previous: LogEntry | undefined;
   for (const entry of log) {
+    const paused = previous !== undefined && entry.at.getTime() - previous.at.getTime() >= pauseMs;
     if (previous !== undefined && samePiece(previous, entry)) {
+      if (paused && from !== undefined) runs.push({ from, to: previous, pieces: length });
+      if (paused) from = undefined;
       previous = entry;
       continue;
     }
     pieces += 1;
-    if (previous === undefined || from === undefined || entry.at.getTime() - previous.at.getTime() >= pauseMs) {
+    if (previous === undefined || from === undefined || paused) {
       if (from !== undefined && previous !== undefined) runs.push({ from, to: previous, pieces: length });
       from = entry;
       length = 1;

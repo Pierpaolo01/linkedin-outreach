@@ -2,15 +2,19 @@
  * The engine (spec section 6, decisions 25–37): each tick does at most one piece of due work,
  * worked out from the database alone. Nothing is queued; a new engine carries on from the ledger.
  */
-import { and, asc, eq, gt, inArray, isNotNull, isNull, like, lte, max, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, like, lte, max, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { AiUnavailable } from "../ai/types";
 import { getSettings, type Settings } from "../config/settings";
 import type { Db } from "../db/index";
 import { actions, campaigns, people, prospects, type ProspectStage } from "../db/schema";
 import { checkBudget, type BudgetKind } from "./budget";
 import { closeInterruptedRows, STEP_STAGE, stepOfKey, type ActionRow, type Step } from "./ledger";
+import { availableSource, discoveryPageStep, profileViewStep, wantsCards, type SourceRef } from "./discovery";
+import { logEvent } from "./ledger";
 import { createPacer, type Pacer } from "./pacing";
 import type { Engine, EngineDeps, TickResult } from "./ports";
 import { activeSafetyStop } from "./safetyStop";
+import { COLLECTING, pickLocalWork, runLocalWork } from "./scoring";
 import {
   connectionsCheckStep,
   firstMessageStep,
@@ -20,6 +24,7 @@ import {
   withdrawStep,
   type ConnectionsTarget,
   WINDOW_END_MARGIN_MS,
+  type CampaignRow,
   type StepContext,
   type StepOutcome,
   type Target,
@@ -34,11 +39,33 @@ const CONNECTIONS_CHECK_EVERY_MS = 3 * 60 * MINUTE_MS;
 const AFTER_LOCAL_WORK_MS = 1_000;
 /** A tick called while another is in flight on the same engine asks to be called again this much later. */
 const OVERLAP_RETRY_MS = 1_000;
+/** After `AiUnavailable`, no AI work is picked for this long. */
+const AI_BACKOFF_MS = 5 * MINUTE_MS;
 
 export type DueWork =
   | { readonly kind: "reconcile"; readonly target: Target; readonly row: ActionRow }
   | { readonly kind: "connections_check" }
-  | { readonly kind: "followup" | "message1" | "withdraw" | "invite"; readonly target: Target };
+  | { readonly kind: "followup" | "message1" | "withdraw" | "invite"; readonly target: Target }
+  | { readonly kind: "profile_view"; readonly target: Target }
+  | { readonly kind: "discovery_page"; readonly campaign: CampaignRow; readonly source: SourceRef };
+
+/** What the engine may pick besides what it always may. */
+export interface PickOptions {
+  /** Invites, messages, follow-ups, withdrawals, the connections check and reconciles of those. */
+  readonly outreach: boolean;
+  /** Profile views for scoring and discovery pages: only worth loading when an AI will score them. */
+  readonly discovery: boolean;
+}
+
+const DEFAULT_PICK: PickOptions = { outreach: true, discovery: false };
+
+/** The AI's availability, held in memory by one engine. */
+interface AiState {
+  /** No AI work is picked before this instant. */
+  pausedUntil: Date | null;
+  /** The current outage has been written to the event log. */
+  warned: boolean;
+}
 
 /**
  * Whoever runs the engine must build a new driver, and a new engine on it, after the user's
@@ -47,6 +74,7 @@ export type DueWork =
  */
 export function createEngine(deps: EngineDeps): Engine {
   const pacer = createPacer(deps.random);
+  const aiState: AiState = { pausedUntil: null, warned: false };
   // A second tick while one is in flight would close the first's in-progress row as interrupted,
   // reconcile it before the click lands and send the step twice. It does nothing instead.
   let inFlight = false;
@@ -55,7 +83,7 @@ export function createEngine(deps: EngineDeps): Engine {
       if (inFlight) return { did: null, wakeAt: new Date(deps.clock.now().getTime() + OVERLAP_RETRY_MS) };
       inFlight = true;
       try {
-        return await tick(deps, pacer);
+        return await tick(deps, pacer, aiState);
       } finally {
         inFlight = false;
       }
@@ -63,7 +91,7 @@ export function createEngine(deps: EngineDeps): Engine {
   };
 }
 
-async function tick(deps: EngineDeps, pacer: Pacer): Promise<TickResult> {
+async function tick(deps: EngineDeps, pacer: Pacer, aiState: AiState): Promise<TickResult> {
   const { db, clock } = deps;
   const now = clock.now();
   const settings = getSettings(db);
@@ -71,6 +99,16 @@ async function tick(deps: EngineDeps, pacer: Pacer): Promise<TickResult> {
 
   const closed = closeInterruptedRows(db, now);
   pacer.start(db, settings, { now, foundInProgress: closed > 0 });
+
+  // Work that does not load LinkedIn goes first and is not held by the window, the pacing gate or a
+  // safety stop: scoring carries on at night and while LinkedIn is stopped.
+  const ai = deps.ai !== undefined && (aiState.pausedUntil === null || now >= aiState.pausedUntil) ? deps.ai : null;
+  const local = pickLocalWork(db, now, ai !== null);
+  if (local !== null) {
+    const did = await runLocal(deps, ai, aiState, local);
+    return { did, wakeAt: new Date(Math.max(clock.now().getTime(), now.getTime()) + AFTER_LOCAL_WORK_MS) };
+  }
+
   if (activeSafetyStop(db) !== null) return idle(new Date(now.getTime() + IDLE_MS));
   if (!isInWorkingWindow(settings, now)) return idle(nextWorkingInstant(settings, now));
   const windowEnd = endOfWorkingWindow(settings, now);
@@ -78,7 +116,7 @@ async function tick(deps: EngineDeps, pacer: Pacer): Promise<TickResult> {
   const gate = pacer.notBefore();
   if (gate !== null && now < gate) return idle(gate);
 
-  const work = pickDueWork(db, settings, now);
+  const work = pickDueWork(db, settings, now, { outreach: deps.outreach ?? true, discovery: deps.ai !== undefined });
   if (work === null) return idle(new Date(now.getTime() + IDLE_MS));
 
   const ctx: StepContext = { db, driver: deps.driver, clock, random: deps.random, settings };
@@ -88,6 +126,28 @@ async function tick(deps: EngineDeps, pacer: Pacer): Promise<TickResult> {
     ? pacer.afterAction(settings, after)
     : new Date(Math.max(after.getTime(), now.getTime()) + AFTER_LOCAL_WORK_MS);
   return { did: outcome.did, wakeAt };
+}
+
+/**
+ * Runs local work. `AiUnavailable` changes nothing: no AI work is picked for five minutes, and the
+ * outage is written to the event log once, not on every try. Any other error rejects the tick.
+ */
+async function runLocal(deps: EngineDeps, ai: NonNullable<EngineDeps["ai"]> | null, aiState: AiState, work: NonNullable<ReturnType<typeof pickLocalWork>>): Promise<string> {
+  const { db, clock } = deps;
+  try {
+    const did = await runLocalWork({ db, clock }, ai, work);
+    if (work.kind === "score_cards" || work.kind === "score_profile") aiState.warned = false;
+    return did;
+  } catch (error) {
+    if (!(error instanceof AiUnavailable)) throw error;
+    const at = clock.now();
+    aiState.pausedUntil = new Date(at.getTime() + AI_BACKOFF_MS);
+    if (!aiState.warned) {
+      aiState.warned = true;
+      logEvent(db, { level: "warning", message: `The AI is not available (${error.message}); scoring waits and is tried again every few minutes` }, at);
+    }
+    return "scoring: AI not available";
+  }
 }
 
 function run(ctx: StepContext, work: DueWork): Promise<StepOutcome> {
@@ -104,6 +164,10 @@ function run(ctx: StepContext, work: DueWork): Promise<StepOutcome> {
       return withdrawStep(ctx, work.target);
     case "invite":
       return inviteStep(ctx, work.target);
+    case "profile_view":
+      return profileViewStep(ctx, work.target);
+    case "discovery_page":
+      return discoveryPageStep(ctx, work.campaign, work.source);
     default: {
       const _exhaustive: never = work;
       throw new Error(`unknown work ${String(_exhaustive)}`);
@@ -205,15 +269,26 @@ function candidates(db: Db, unknown: ReadonlyMap<number, readonly ActionRow[]>, 
  * (never: first; tie: lowest id), then its oldest due prospect. Returns that prospect, loaded.
  */
 function inTurn(db: Db, step: Step, due: readonly Candidate[]): Target | null {
-  if (due.length === 0) return null;
+  return inTurnBy(db, like(actions.idempotencyKey, `${step}:%`), due);
+}
+
+/** When each campaign last had a ledger row matching `turn` (ms). */
+function lastTurns(db: Db, turn: SQL): Map<number, number> {
   const last = new Map<number, number>();
   const rows = db
     .select({ campaignId: actions.campaignId, started: max(actions.startedAt) })
     .from(actions)
-    .where(like(actions.idempotencyKey, `${step}:%`))
+    .where(turn)
     .groupBy(actions.campaignId)
     .all();
   for (const row of rows) if (row.campaignId !== null && row.started !== null) last.set(row.campaignId, row.started.getTime());
+  return last;
+}
+
+/** `inTurn` with the turns counted from the ledger rows matching `turn`. */
+function inTurnBy(db: Db, turn: SQL, due: readonly Candidate[]): Target | null {
+  if (due.length === 0) return null;
+  const last = lastTurns(db, turn);
   const first = [...due].sort(
     (a, b) =>
       (last.get(a.campaignId) ?? -Infinity) - (last.get(b.campaignId) ?? -Infinity) ||
@@ -248,8 +323,53 @@ function anyInvited(db: Db): boolean {
  * The next piece of due work, or null. Each kind's candidates are looked up before its budgets are
  * asked, so a kind with nothing due costs no budget query; budgets are asked at most once per call.
  */
-export function pickDueWork(db: Db, settings: Settings, now: Date): DueWork | null {
+export function pickDueWork(db: Db, settings: Settings, now: Date, options: PickOptions = DEFAULT_PICK): DueWork | null {
   const open = budgetGate(db, settings, now);
+  const outreach = options.outreach ? pickOutreach(db, now, open) : null;
+  if (outreach !== null) return outreach;
+  return options.discovery ? pickDiscovery(db, now, open) : null;
+}
+
+/** 7. Profile views for scoring, then 8. discovery pages; campaigns take turns within each. */
+function pickDiscovery(db: Db, now: Date, open: BudgetGate): DueWork | null {
+  const toView = db
+    .select({ prospectId: prospects.id, campaignId: prospects.campaignId, age: sql<number>`${prospects.foundAt}` })
+    .from(prospects)
+    .innerJoin(campaigns, eq(campaigns.id, prospects.campaignId))
+    .innerJoin(people, eq(people.id, prospects.personId))
+    .where(
+      and(
+        eq(prospects.stage, "found"),
+        inArray(campaigns.status, COLLECTING),
+        isNotNull(prospects.cardScore),
+        gte(prospects.cardScore, campaigns.openProfileThreshold),
+        isNull(people.profileViewedAt),
+        // A failed load puts the prospect off for a while (`read`).
+        dueBy(now),
+      ),
+    )
+    .all();
+  if (toView.length > 0 && open(["profile_view"])) {
+    const target = inTurnBy(db, eq(actions.type, "profile_view"), toView);
+    if (target !== null) return { kind: "profile_view", target };
+  }
+
+  const collecting = db.select().from(campaigns).where(inArray(campaigns.status, COLLECTING)).orderBy(asc(campaigns.id)).all();
+  const ready = collecting.flatMap((campaign) => {
+    if (!wantsCards(db, campaign)) return [];
+    const source = availableSource(db, campaign, now);
+    return source === null ? [] : [{ campaign, source }];
+  });
+  if (ready.length === 0 || !open(["discovery_page"])) return null;
+  const last = lastTurns(db, inArray(actions.type, ["recommendation_page", "search_page"]));
+  const first = [...ready].sort(
+    (a, b) => (last.get(a.campaign.id) ?? -Infinity) - (last.get(b.campaign.id) ?? -Infinity) || a.campaign.id - b.campaign.id,
+  )[0];
+  return first === undefined ? null : { kind: "discovery_page", campaign: first.campaign, source: first.source };
+}
+
+/** 1–6: the outreach work, in the order it has always had. */
+function pickOutreach(db: Db, now: Date, open: BudgetGate): DueWork | null {
   const unknown = unknownStepRows(db);
 
   // 1. Reconcile: the oldest unknown step row first. Only a row for the prospect's current stage counts:
@@ -310,8 +430,9 @@ export function pickDueWork(db: Db, settings: Settings, now: Date): DueWork | nu
     if (target !== null) return { kind: "withdraw", target };
   }
 
-  // 6. Invites.
-  const toInvite = candidates(db, unknown, "approved", sql<number>`coalesce(${prospects.approvedAt}, ${prospects.foundAt})`, dueBy(now));
+  // 6. Invites. Only a prospect with an approval time: an approval by the user (or the campaign's
+  // auto-approve) is the one way in, whatever else moved it to approved.
+  const toInvite = candidates(db, unknown, "approved", sql<number>`${prospects.approvedAt}`, and(isNotNull(prospects.approvedAt), dueBy(now)));
   if (toInvite.length > 0 && open(["invite", "profile_view"])) {
     const target = inTurn(db, "invite", toInvite);
     if (target !== null) return { kind: "invite", target };
