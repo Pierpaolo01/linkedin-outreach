@@ -3,9 +3,9 @@ import { listActivity, listCampaigns } from "../api";
 import type { ActivityItem, Page } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatToday } from "../format";
-import { CampaignSelect, LoadError, Pager, SECONDARY_BUTTON } from "../formParts";
+import { ActivityMessage, CampaignSelect, LoadError, Pager, SECONDARY_BUTTON } from "../formParts";
 import { useLoad } from "../useLoad";
-import { formatStamp, plainMessage } from "../words";
+import { formatStamp } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const PAGE_SIZE = 50;
@@ -57,7 +57,7 @@ export function Activity() {
   return (
     <>
       <PageHeader title="Activity log" aside={formatToday(timeZone, new Date())} />
-      <p className="mt-2 max-w-2xl text-base-content/75">Everything the app did and noticed, newest first. Times are in {timeZone.replace(/_/g, " ")}.</p>
+      <p className="mt-2 max-w-2xl text-base-content">Everything the app did and noticed, newest first. Times are in {timeZone.replace(/_/g, " ")}.</p>
 
       <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 px-3 py-3">
         <div className="join" role="group" aria-label="Show">
@@ -102,7 +102,7 @@ export function Activity() {
       ) : items.length === 0 ? (
         <div className="mt-4 rounded-box border border-base-300 px-5 py-6" data-testid="activity-empty">
           <p className="font-medium">{level === "problems" ? "No warnings or errors." : "Nothing in the log yet."}</p>
-          <p className="mt-1 text-base-content/65">
+          <p className="mt-1 text-muted">
             {level === "problems" ? "When something goes wrong or needs a look, it is listed here." : "Each invite, message and check is listed here."}
           </p>
         </div>
@@ -116,17 +116,11 @@ export function Activity() {
                   key={item.id}
                   data-testid="activity-line"
                   data-level={item.level}
-                  className={`grid gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm sm:grid-cols-[7rem_minmax(0,1fr)_12rem] ${
-                    item.level === "warning" ? "shadow-[inset_3px_0_0_0_var(--color-warning)]" : item.level === "error" ? "shadow-[inset_3px_0_0_0_var(--color-error)]" : ""
-                  }`}
+                  className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm sm:grid-cols-[7rem_minmax(0,1fr)_12rem]"
                 >
-                  <span className="nums text-base-content/60">{formatStamp(item.at, timeZone)}</span>
-                  <span className={item.level === "error" ? "text-error" : ""}>
-                    {item.level === "warning" && <span className="mr-1.5 font-medium">Warning:</span>}
-                    {item.level === "error" && <span className="mr-1.5 font-medium">Error:</span>}
-                    {plainMessage(item.message)}
-                  </span>
-                  <span className="truncate text-base-content/60 sm:text-right">{campaign ?? ""}</span>
+                  <span className="nums text-muted">{formatStamp(item.at, timeZone)}</span>
+                  <ActivityMessage level={item.level} message={item.message} />
+                  <span className="truncate text-muted sm:text-right">{campaign ?? ""}</span>
                 </li>
               );
             })}

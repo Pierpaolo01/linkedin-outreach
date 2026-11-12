@@ -181,7 +181,7 @@ export function Approvals() {
           <span className="sr-only sm:not-sr-only">Campaign</span>
           <CampaignSelect campaigns={campaigns} value={campaignId} onChange={setCampaignId} />
         </label>
-        <span className="nums text-sm text-base-content/65" data-testid="showing">
+        <span className="nums text-sm text-muted" data-testid="showing">
           Showing {shownCount}
           {matching > shownCount ? ` of ${matching}` : ""}
         </span>
@@ -199,7 +199,7 @@ export function Approvals() {
         </button>
       </div>
 
-      <p className="mt-3 hidden text-sm text-base-content/65 lg:block">
+      <p className="mt-3 hidden text-sm text-muted lg:block">
         Click a row, then press <kbd className="kbd kbd-xs">A</kbd> to approve or <kbd className="kbd kbd-xs">R</kbd> to reject. The next row
         is selected for you; <kbd className="kbd kbd-xs">↑</kbd> <kbd className="kbd kbd-xs">↓</kbd> move between rows.
       </p>
@@ -240,7 +240,7 @@ export function Approvals() {
           ) : (
             <>
               <p className="font-medium">The approval queue is empty.</p>
-              <p className="mt-1 text-base-content/65">
+              <p className="mt-1 text-muted">
                 When a campaign finds and scores new people, they wait here for you. Nobody is invited before you approve them.
               </p>
             </>
@@ -249,7 +249,7 @@ export function Approvals() {
       ) : (
         <div className="mt-4 rounded-box border border-base-300" role="table" aria-label="Prospects waiting for approval">
           <div role="rowgroup" className="hidden lg:block">
-            <div role="row" className={`grid gap-4 border-b border-base-300 px-4 py-2 text-sm text-base-content/65 ${COLUMNS}`}>
+            <div role="row" className={`grid gap-4 border-b border-base-300 px-4 py-2 text-sm text-muted ${COLUMNS}`}>
               <span role="columnheader">Score</span>
               <span role="columnheader">Person</span>
               <span role="columnheader">Why the AI picked them</span>
@@ -294,7 +294,7 @@ export function Approvals() {
           {minScore > 0 ? ` with a score of ${minScore} or more` : ""}
           {campaignName === undefined ? "" : ` in ${campaignName}`} will be invited.
         </p>
-        <p className="text-base-content/75">The app sends the invites itself, within your working hours and daily limits.</p>
+        <p className="text-base-content">The app sends the invites itself, within your working hours and daily limits.</p>
         {arrived > 0 && (
           <p role="status" className="text-sm" data-testid="new-arrivals">
             {arrived === 1 ? "1 new person is" : `${arrived} new people are`} waiting —{" "}
@@ -333,19 +333,19 @@ function Row({
       aria-label={`${person.fullName}${item.score === null ? "" : `, score ${formatScore(item.score)}`}`}
       onKeyDown={onKeyDown}
       data-testid="approval-row"
-      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-4 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-within:shadow-[inset_4px_0_0_0_var(--color-accent)] lg:gap-x-4 ${COLUMNS}`}
+      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-4 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-within:ring-2 focus-within:ring-neutral focus-within:ring-inset lg:gap-x-4 ${COLUMNS}`}
     >
       <ScoreChip score={item.score} size="lg" role="cell" />
       <div role="cell" className="min-w-0">
         <p className="font-semibold">{person.fullName}</p>
         {person.headline !== null && <p className="text-sm">{person.headline}</p>}
-        {place !== "" && <p className="text-sm text-base-content/65">{place}</p>}
-        {showCampaign && <p className="text-sm text-base-content/65">For {item.campaignName}</p>}
+        {place !== "" && <p className="text-sm text-muted">{place}</p>}
+        {showCampaign && <p className="text-sm text-muted">For {item.campaignName}</p>}
         <a
           href={person.profileUrl}
           target="_blank"
           rel="noreferrer"
-          className="link mt-1 inline-flex items-center gap-1 text-sm text-base-content/75 link-hover"
+          className="link mt-1 inline-flex items-center gap-1 text-sm text-base-content link-hover"
         >
           LinkedIn profile
           <IconExternal />
@@ -356,7 +356,7 @@ function Row({
         <p>{item.scoreReason ?? "The AI gave no reason."}</p>
         <EvidenceLines industry={person.industryEvidence} size={person.sizeEvidence} aiLine={item.aiLineEvidence ?? null} />
       </div>
-      <div role="cell" className="col-span-2 flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm text-base-content/80 lg:col-span-1">
+      <div role="cell" className="col-span-2 flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm text-base-content lg:col-span-1">
         {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} />}
         <Text label="First message, after they accept" text={item.preview.firstMessage} />
         <FollowUp text={item.followUpPreview} />
@@ -385,7 +385,7 @@ function Row({
 function Text({ label, text }: { readonly label: string; readonly text: PreviewText }) {
   return (
     <div>
-      <p className="text-xs text-base-content/55">{label}</p>
+      <p className="text-caption text-muted">{label}</p>
       {text.ok ? (
         <p className="whitespace-pre-line">{text.text}</p>
       ) : (
@@ -404,15 +404,15 @@ function FollowUp({ text }: { readonly text: PreviewText | null }) {
   if (text === null) {
     return (
       <div>
-        <p className="text-xs text-base-content/55">Follow-up</p>
-        <p className="text-base-content/65">No follow-up</p>
+        <p className="text-caption text-muted">Follow-up</p>
+        <p className="text-muted">No follow-up</p>
       </div>
     );
   }
   if (!text.ok) return <Text label={FOLLOW_UP_LABEL} text={text} />;
   return (
     <details data-testid="follow-up">
-      <summary className="cursor-pointer text-xs text-base-content/55 hover:text-base-content/80">{FOLLOW_UP_LABEL}</summary>
+      <summary className="cursor-pointer text-caption text-muted hover:text-base-content">{FOLLOW_UP_LABEL}</summary>
       <p className="mt-0.5 whitespace-pre-line">{text.text}</p>
     </details>
   );
@@ -428,7 +428,7 @@ function EvidenceLines({ industry, size, aiLine }: { readonly industry: Evidence
   const seen = (evidence: NonNullable<Evidence>) => `${evidence.value}, seen ${SOURCE_WORDS[evidence.source] ?? `in ${evidence.source}`}.`;
   if (industry === null && size === null && aiLine === null) return null;
   return (
-    <div className="text-base-content/65">
+    <div className="text-muted">
       {industry !== null && <p>Industry: {seen(industry)}</p>}
       {size !== null && <p>Size: {seen(size)}</p>}
       {aiLine !== null && <p>Personal line based on: &ldquo;{aiLine}&rdquo;</p>}

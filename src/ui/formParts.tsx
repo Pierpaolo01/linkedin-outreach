@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { CampaignStatus } from "../db/schema";
+import type { CampaignStatus, EventLevel } from "../db/schema";
 import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone } from "./format";
-import { PAUSABLE } from "./words";
+import { PAUSABLE, plainMessage } from "./words";
 
 /**
  * The pieces every page shares, so each look is decided in one place: the button recipes, the three
@@ -15,7 +15,7 @@ import { PAUSABLE } from "./words";
 export const SECONDARY_BUTTON = "btn border-base-300 bg-base-100 hover:not-disabled:bg-base-200";
 
 /** A quiet text button: no fill and no border, for an action that must not compete with what sits beside it. */
-export const QUIET_BUTTON = "btn btn-ghost font-medium text-base-content/70";
+export const QUIET_BUTTON = "btn btn-ghost font-medium text-muted";
 
 /** A button on a Stop Red surface (the safety-stop banner, the red session card). */
 export const ON_RED_BUTTON = "btn border-error-content/40 bg-error-content text-error";
@@ -72,6 +72,20 @@ export function Notice(props: { readonly tone: keyof typeof NOTICE_TONE; readonl
   );
 }
 
+/**
+ * One line of what the app did. A warning or an error leads with its word at 600; an error is Stop Red text.
+ * No stripe and no amber: amber means "waits for you", and a solid red is the safety stop.
+ */
+export function ActivityMessage({ level, message }: { readonly level: EventLevel; readonly message: string }) {
+  return (
+    <span className={level === "error" ? "text-error" : ""}>
+      {level === "warning" && <span className="mr-1.5 font-semibold">Warning:</span>}
+      {level === "error" && <span className="mr-1.5 font-semibold">Error:</span>}
+      {plainMessage(message)}
+    </span>
+  );
+}
+
 // ------------------------------------------------------------ campaign status and scores
 
 /** True when a safety stop has halted this campaign: it would be working otherwise. */
@@ -105,7 +119,7 @@ export function StatusLine(props: { readonly status: CampaignStatus; readonly sa
 const SCORE_CHIP = {
   high: "bg-score-high text-primary",
   mid: "bg-score-mid text-score-mid-content",
-  low: "bg-base-200 text-base-content/55",
+  low: "bg-base-200 text-base-content",
 } as const;
 const SCORE_SIZE = { sm: "size-7", lg: "size-10 text-lg" } as const;
 
@@ -138,7 +152,7 @@ export function Field(props: {
       <label htmlFor={props.htmlFor} className="block font-medium">
         {props.label}
       </label>
-      {props.hint !== undefined && <p className="text-sm text-base-content/65">{props.hint}</p>}
+      {props.hint !== undefined && <p className="text-sm text-muted">{props.hint}</p>}
       <div className="mt-1.5">{props.children}</div>
       <FieldError message={props.error} />
     </div>
@@ -153,7 +167,6 @@ export function SwitchRow(props: {
   readonly checked: boolean;
   readonly disabled?: boolean;
   readonly onChange: (checked: boolean) => void;
-  readonly tone?: "primary" | "warning";
 }) {
   return (
     <div className="flex items-start gap-3">
@@ -161,7 +174,7 @@ export function SwitchRow(props: {
         id={props.id}
         type="checkbox"
         role="switch"
-        className={`toggle mt-0.5 shrink-0 ${props.tone === "warning" ? "toggle-warning" : "toggle-primary"}`}
+        className="toggle toggle-primary mt-0.5 shrink-0"
         checked={props.checked}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.checked)}
@@ -170,7 +183,7 @@ export function SwitchRow(props: {
         <label htmlFor={props.id} className="font-medium">
           {props.label}
         </label>
-        {props.hint !== undefined && <div className="text-sm text-base-content/65">{props.hint}</div>}
+        {props.hint !== undefined && <div className="text-sm text-muted">{props.hint}</div>}
       </div>
     </div>
   );
@@ -209,7 +222,7 @@ export function Pager(props: { readonly page: number; readonly pageSize: number;
   const last = Math.min(total, page * pageSize);
   return (
     <nav className="mt-3 flex flex-wrap items-center justify-between gap-3" aria-label="Pages">
-      <p className="nums text-sm text-base-content/65" data-testid="pager-range">
+      <p className="nums text-sm text-muted" data-testid="pager-range">
         Showing {first} to {last} of {total}
       </p>
       {pages > 1 && (

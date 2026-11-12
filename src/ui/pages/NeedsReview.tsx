@@ -89,7 +89,7 @@ export function NeedsReview() {
   return (
     <>
       <PageHeader title="Needs review" aside={loaded.data === undefined ? undefined : `${plural(items.length, "person", "people")} held`} />
-      <p className="mt-2 max-w-2xl text-base-content/75">
+      <p className="mt-2 max-w-2xl text-base-content">
         The app stopped short with these people rather than guess. Nothing more happens to them until you choose.
       </p>
       {notice !== undefined && (
@@ -107,7 +107,7 @@ export function NeedsReview() {
       ) : items.length === 0 ? (
         <div className="mt-5 rounded-box border border-base-300 px-5 py-6" data-testid="review-empty">
           <p className="font-medium">Nobody is held for review.</p>
-          <p className="mt-1 text-base-content/65">When the app is unsure what happened with a person, it holds them here instead of guessing.</p>
+          <p className="mt-1 text-muted">When the app is unsure what happened with a person, it holds them here instead of guessing.</p>
         </div>
       ) : (
         <ul className="mt-5 divide-y divide-base-300 rounded-box border border-base-300">
@@ -159,14 +159,14 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{person.fullName}</h2>
-          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 text-sm text-base-content/75 link-hover">
+          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 text-sm text-base-content link-hover">
             LinkedIn profile
             <IconExternal />
             <span className="sr-only">(opens in your browser)</span>
           </a>
         </div>
         {person.headline !== null && <p className="text-sm">{person.headline}</p>}
-        <p className="text-sm text-base-content/65">
+        <p className="text-sm text-muted">
           In {item.campaignName}
           {heldAt === undefined ? "" : `, held ${formatWhen(heldAt, timeZone, now)}`}.
         </p>
@@ -176,15 +176,15 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
         </Notice>
         <p className="mt-2 text-sm" data-testid="review-score">
           {item.score === null ? (
-            <span className="text-base-content/75">Not scored</span>
+            <span className="text-base-content">Not scored</span>
           ) : (
             <>
               <span className="nums font-medium">Score {formatScore(item.score)} of 10</span>
-              {item.scoreReason !== null && <span className="text-base-content/75">: {item.scoreReason}</span>}
+              {item.scoreReason !== null && <span className="text-base-content">: {item.scoreReason}</span>}
             </>
           )}
         </p>
-        <p className="mt-1 text-sm text-base-content/75">So far: {progress(item, timeZone, now)}</p>
+        <p className="mt-1 text-sm text-base-content">So far: {progress(item, timeZone, now)}</p>
         {item.screenshotUrl !== null && <Screenshot url={item.screenshotUrl} name={person.fullName} />}
       </div>
 
@@ -232,7 +232,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
             {busy && <span className="loading loading-spinner loading-xs" />}
             Confirm
           </button>
-          {choice === null && <p className="text-xs text-base-content/60">Choose what should happen first.</p>}
+          {choice === null && <p className="text-caption text-muted">Choose what should happen first.</p>}
         </div>
         <ActionError message={error} />
       </div>
@@ -258,7 +258,7 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
 
   if (missing) {
     return (
-      <p className="mt-3 text-sm text-base-content/65" data-testid="screenshot-missing">
+      <p className="mt-3 text-sm text-muted" data-testid="screenshot-missing">
         A screenshot was saved, but the app could not show it.
       </p>
     );

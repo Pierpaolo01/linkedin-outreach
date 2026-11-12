@@ -3,11 +3,11 @@ import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, 
 import type { Budget, BudgetKind, Campaign, Home as HomeData, Settings } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatResume, formatShort, formatToday, joinWords } from "../format";
-import { ActionError, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, StatusLine } from "../formParts";
+import { ActionError, ActivityMessage, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { FUNNEL, FUNNEL_LABEL, PAUSABLE, plainMessage } from "../words";
+import { FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
 import { PageHeader } from "./PageHeader";
 
 /** Home: what needs the user, the campaigns, today's usage against each limit, and what the app did. */
@@ -68,7 +68,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
             </span>
             <div>
               <p className="font-medium">Nothing needs you right now.</p>
-              <p className="text-sm text-base-content/65">New prospects to approve and people held for review will show up here.</p>
+              <p className="text-sm text-muted">New prospects to approve and people held for review will show up here.</p>
             </div>
           </div>
         ) : (
@@ -120,7 +120,7 @@ function NeedRow(props: {
           <span className="sr-only">{props.count} </span>
           {props.sentence}
         </p>
-        {props.detail !== undefined && <p className="text-sm text-base-content/65">{props.detail}</p>}
+        {props.detail !== undefined && <p className="text-sm text-muted">{props.detail}</p>}
       </div>
       <Link to={props.to} className={props.primary === true ? "btn btn-sm btn-primary" : `${SECONDARY_BUTTON} btn-sm`}>
         {props.action}
@@ -172,7 +172,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
       ) : campaigns.length === 0 ? (
         <div className="rounded-box border border-base-300 px-4 py-5">
           <p className="font-medium">No campaigns yet.</p>
-          <p className="text-sm text-base-content/65">A campaign finds people, scores them and, once you approve them, invites and messages them.</p>
+          <p className="text-sm text-muted">A campaign finds people, scores them and, once you approve them, invites and messages them.</p>
           <Link to="/campaigns/new" className="btn btn-sm btn-primary mt-3">
             Create a campaign
           </Link>
@@ -181,7 +181,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
         <div className="overflow-x-auto rounded-box border border-base-300">
           <table className="table table-sm text-sm">
             <thead>
-              <tr className="text-base-content/65">
+              <tr className="text-muted">
                 <th className="font-medium">Campaign</th>
                 {FUNNEL.map((step) => (
                   <th key={step} className="hidden text-right font-medium md:table-cell">
@@ -202,8 +202,8 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                       <Link to={`/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
                         {c.name}
                       </Link>
-                      <StatusLine status={c.status} safetyStop={stopped} className="mt-0.5 text-sm text-base-content/65" />
-                      <p className="mt-0.5 text-sm text-base-content/65 md:hidden">
+                      <StatusLine status={c.status} safetyStop={stopped} className="mt-0.5 text-sm text-muted" />
+                      <p className="mt-0.5 text-sm text-muted md:hidden">
                         {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                       </p>
                     </td>
@@ -277,16 +277,16 @@ function Usage({ home }: { readonly home: HomeData }) {
                 <span>{BUDGET_LABEL[kind]}</span>
                 <span className="nums text-sm">
                   <span className="font-semibold">{budget.used}</span>
-                  <span className="text-base-content/65"> of {budget.limit}</span>
+                  <span className="text-muted"> of {budget.limit}</span>
                 </span>
               </div>
               <progress
-                className={`progress mt-1.5 h-1.5 ${full ? "progress-warning" : "progress-primary"}`}
+                className={`progress mt-1.5 h-2 border border-control bg-base-300 ${full ? "progress-neutral" : "progress-primary"}`}
                 value={Math.min(budget.used, budget.limit)}
                 max={Math.max(budget.limit, 1)}
                 aria-label={`${BUDGET_LABEL[kind]}: ${budget.used} of ${budget.limit} used today`}
               />
-              {note !== undefined && <p className={`mt-1 text-sm ${full ? "text-base-content/80" : "text-base-content/65"}`}>{note}</p>}
+              {note !== undefined && <p className={`mt-1 text-sm ${full ? "text-base-content" : "text-muted"}`}>{note}</p>}
             </li>
           );
         })}
@@ -319,15 +319,13 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
       ) : loaded.data === undefined ? (
         <div className="skeleton h-28 w-full" />
       ) : items.length === 0 ? (
-        <p className="text-sm text-base-content/65">Nothing yet. Each invite, message and check will be listed here.</p>
+        <p className="text-sm text-muted">Nothing yet. Each invite, message and check will be listed here.</p>
       ) : (
         <ol className="flex flex-col gap-2.5 text-sm">
           {items.map((item) => (
             <li key={item.id} className="grid grid-cols-[3.25rem_1fr] gap-2">
-              <span className="nums text-base-content/60">{formatShort(item.at, timeZone, now)}</span>
-              <span className={item.level === "error" ? "text-error" : item.level === "warning" ? "text-base-content/70" : ""}>
-                {plainMessage(item.message)}
-              </span>
+              <span className="nums text-muted">{formatShort(item.at, timeZone, now)}</span>
+              <ActivityMessage level={item.level} message={item.message} />
             </li>
           ))}
         </ol>

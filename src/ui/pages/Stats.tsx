@@ -17,10 +17,10 @@ function Rate({ value, part, whole, of }: { readonly value: number | null; reado
   if (value === null || whole < ENOUGH) {
     return (
       <>
-        <p className="text-base-content/60" data-testid="not-enough">
+        <p className="text-muted" data-testid="not-enough">
           not enough data yet
         </p>
-        <p className="nums text-sm text-base-content/55">
+        <p className="nums text-sm text-muted">
           {part} of {whole} {of}
         </p>
       </>
@@ -29,7 +29,7 @@ function Rate({ value, part, whole, of }: { readonly value: number | null; reado
   return (
     <>
       <p className="nums text-2xl font-semibold">{Math.round(value * 100)}%</p>
-      <p className="nums text-sm text-base-content/65">
+      <p className="nums text-sm text-muted">
         {part} of {whole} {of}
       </p>
     </>
@@ -45,7 +45,7 @@ export function Stats() {
   return (
     <>
       <PageHeader title="Stats" />
-      <p className="mt-2 max-w-2xl text-base-content/75">
+      <p className="mt-2 max-w-2xl text-base-content">
         How each campaign is doing. A rate shows once at least {ENOUGH} people are behind it. Replies are counted only until the follow-up is sent.
       </p>
       {loaded.status === "error" ? (
@@ -55,13 +55,13 @@ export function Stats() {
       ) : rows.length === 0 ? (
         <div className="mt-5 rounded-box border border-base-300 px-5 py-6">
           <p className="font-medium">No campaigns yet.</p>
-          <p className="mt-1 text-base-content/65">Stats appear once a campaign has sent invites.</p>
+          <p className="mt-1 text-muted">Stats appear once a campaign has sent invites.</p>
         </div>
       ) : (
         <div className="mt-5 overflow-x-auto rounded-box border border-base-300">
           <table className="table text-sm" data-testid="stats-table">
             <thead>
-              <tr className="align-bottom text-base-content/65">
+              <tr className="align-bottom text-muted">
                 <th className="font-medium">Campaign</th>
                 <th className="font-medium">Accepted your invite</th>
                 <th className="font-medium">{replyLabel}</th>
@@ -89,7 +89,7 @@ function StatsRow({ row }: { readonly row: Row }) {
         <Link to={`/campaigns/${row.campaignId}`} className="font-semibold hover:underline">
           {row.name}
         </Link>
-        <StatusLine status={row.status} safetyStop={home?.safetyStop != null} className="text-base-content/65" />
+        <StatusLine status={row.status} safetyStop={home?.safetyStop != null} className="text-muted" />
       </td>
       <td className="py-4">
         <Rate value={row.acceptanceRate} part={row.accepted} whole={row.invitesSent} of="invited" />
@@ -99,7 +99,7 @@ function StatsRow({ row }: { readonly row: Row }) {
       </td>
       <td className="py-4">
         {row.medianHoursToAccept === null ? (
-          <p className="text-base-content/60">No acceptances yet</p>
+          <p className="text-muted">No acceptances yet</p>
         ) : (
           <p className="nums text-lg font-semibold">{formatHours(row.medianHoursToAccept)}</p>
         )}

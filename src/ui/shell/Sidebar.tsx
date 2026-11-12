@@ -109,7 +109,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
           Re-check
         </button>
       </div>
-      <p data-testid="last-checked" className={stop === null ? "text-base-content/65" : "text-error-content/85"}>
+      <p data-testid="last-checked" className={stop === null ? "text-muted" : "text-error-content/85"}>
         {checked}
       </p>
       {recheck.error !== undefined && (
@@ -132,7 +132,7 @@ function WorkingLine() {
         ? `Working now, until ${now.until}.`
         : `Outside working hours. Starts again ${now.next}.`;
   return (
-    <p className="mt-auto px-6 pt-6 pb-6 text-sm text-base-content/65">
+    <p className="mt-auto px-6 pt-6 pb-6 text-sm text-muted">
       {formatWorkingHours(settings)}.
       <br />
       {next}

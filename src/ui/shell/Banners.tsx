@@ -49,7 +49,7 @@ export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
           {STOP_REASON[stop.reason].sentence} {stop.detail !== null && asSentence(stop.detail)}
         </p>
         <p className="text-error-content/90">What to do: {whatToDo}</p>
-        <p className="text-sm text-error-content/80">
+        <p className="text-sm text-error-content/90">
           Stopped {formatWhen(stop.raisedAt, timeZone, now)}.
           {stop.invitesBlockedUntil !== null && ` Invites stay off until ${formatWhen(stop.invitesBlockedUntil, timeZone, now)}, even after you resume.`}
         </p>
@@ -75,7 +75,7 @@ export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
         onCancel={() => setConfirming(false)}
       >
         <p>Before you resume: {whatToDo}</p>
-        <p className="text-base-content/75">If LinkedIn still shows the problem, the app stops again by itself the next time it opens a page.</p>
+        <p className="text-base-content">If LinkedIn still shows the problem, the app stops again by itself the next time it opens a page.</p>
       </ConfirmDialog>
     </div>
   );

@@ -5,7 +5,7 @@ export function PageHeader({ title, aside }: { readonly title: string; readonly 
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
       <h1 className="text-title font-semibold">{title}</h1>
-      {aside !== undefined && <div className="nums text-base-content/65">{aside}</div>}
+      {aside !== undefined && <div className="nums text-muted">{aside}</div>}
     </div>
   );
 }

@@ -28,7 +28,7 @@ const VIEWS: Readonly<Record<Session["status"], SessionView>> = {
     problem:
       "LinkedIn shows a restriction or warning on the account. Read it in the dedicated window and do not try to get past it. Press Re-check once LinkedIn has lifted it.",
   },
-  search_capped: { label: "Search limit reached", light: "status-warning" },
+  search_capped: { label: "Search limit reached", light: "status-neutral" },
   unknown: { label: "Not checked yet", light: "status-neutral" },
 };
 

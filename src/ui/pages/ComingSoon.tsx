@@ -9,7 +9,7 @@ export function ComingSoon({ title, about, lead = "This page is coming in the ne
       <PageHeader title={title} />
       <div className="mt-6 max-w-xl rounded-box border border-base-300 px-5 py-5">
         <p className="font-medium">{lead}</p>
-        <p className="mt-1 text-base-content/70">{about}</p>
+        <p className="mt-1 text-muted">{about}</p>
         <Link to="/" className={`${SECONDARY_BUTTON} btn-sm mt-4`}>
           Back to Home
         </Link>

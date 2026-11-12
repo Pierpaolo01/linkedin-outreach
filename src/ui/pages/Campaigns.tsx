@@ -64,7 +64,7 @@ export function Campaigns() {
         aside={loaded.data === undefined ? undefined : `${plural(current.length, "campaign", "campaigns")}, ${running} running`}
       />
       <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-base-content/75">
+        <p className="max-w-xl text-base-content">
           Each campaign finds people, scores them against who you said fits, and invites and messages the ones you approve.
         </p>
         <Link to="/campaigns/new" className="btn btn-sm btn-primary">
@@ -81,7 +81,7 @@ export function Campaigns() {
       ) : current.length === 0 ? (
         <div className="mt-5 rounded-box border border-base-300 px-5 py-6">
           <p className="font-medium">No campaigns yet.</p>
-          <p className="mt-1 text-base-content/65">Start one with New campaign. Nothing is sent until you approve the people it finds.</p>
+          <p className="mt-1 text-muted">Start one with New campaign. Nothing is sent until you approve the people it finds.</p>
         </div>
       ) : (
         <CampaignTable
@@ -122,7 +122,7 @@ export function Campaigns() {
         onCancel={() => setArchiving(null)}
       >
         <p>The campaign stops for good: nobody more is found, invited or messaged for it. This cannot be undone.</p>
-        <p className="text-base-content/75">Its people, the texts sent and the activity log stay. Anyone it contacted is still never contacted again.</p>
+        <p className="text-base-content">Its people, the texts sent and the activity log stay. Anyone it contacted is still never contacted again.</p>
       </ConfirmDialog>
     </>
   );
@@ -141,7 +141,7 @@ function CampaignTable(props: {
     <div className="mt-5 overflow-x-auto rounded-box border border-base-300">
       <table className="table table-sm text-sm" data-testid="campaigns-table">
         <thead>
-          <tr className="text-base-content/65">
+          <tr className="text-muted">
             <th className="font-medium">Campaign</th>
             {FUNNEL.map((step) => (
               <th key={step} className="hidden text-right font-medium md:table-cell">
@@ -164,9 +164,9 @@ function CampaignTable(props: {
                   <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="text-nav font-semibold hover:underline">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
-                  <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-base-content/65" testId="campaign-status" />
-                  {wait !== null && <p className="mt-1 max-w-sm text-sm text-base-content/80">{discoveryWaitSentence(wait, timeZone)}</p>}
-                  <p className="mt-0.5 text-sm text-base-content/65 md:hidden">
+                  <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-muted" testId="campaign-status" />
+                  {wait !== null && <p className="mt-1 max-w-sm text-sm text-base-content">{discoveryWaitSentence(wait, timeZone)}</p>}
+                  <p className="mt-0.5 text-sm text-muted md:hidden">
                     {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                   </p>
                 </td>

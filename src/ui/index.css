@@ -48,8 +48,19 @@
   --text-title: 1.75rem; /* the page title */
   --text-title--line-height: 1.25;
   --text-nav: 0.95rem; /* sidebar items, and a campaign's name in a table */
-  --text-caption: 0.8125rem; /* extra-small buttons */
+  --text-caption: 0.8125rem; /* extra-small buttons, and the small caption over a quoted text */
+  --text-caption--line-height: 1.125rem;
   --container-page: 1180px; /* the page column */
+
+  /*
+   * Text has two tones: Ink (base-content) and Muted. Muted is solid, not an opacity, so it measures the same
+   * everywhere: 5.88:1 on base-100, 5.41 on base-200, 5.60 on an open row's tint, 4.69 on base-300.
+   */
+  --color-muted: #5b625d;
+  /* The edge of a field, an unchecked radio or switch, and a meter's track: 3:1 on base-100, base-200 and the row tint. */
+  --color-control: #818683;
+  /* Amber as a dot: dark enough to read as a shape (3:1 and over) beside its words. Amber means "waits for you". */
+  --color-warning-strong: #a8700f;
 
   --color-score-high: #d5e8dc;
   --color-score-mid: #f6e3bb;
@@ -71,6 +82,31 @@ body {
 
 .nums {
   font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Example text in a field is muted text, not a fainter third tone. */
+.input::placeholder,
+.input ::placeholder,
+.textarea::placeholder {
+  color: var(--color-muted);
+  opacity: 1;
+}
+
+/* A control's edge at rest is its only boundary, so it reaches 3:1. Focus, error and checked keep daisyUI's colours. */
+.input:not(:focus, :focus-within, :disabled, .input-error),
+.select:not(:focus, :disabled, .select-error),
+.textarea:not(:focus, :disabled, .textarea-error),
+.radio:not(:checked, :disabled) {
+  border-color: var(--color-control);
+}
+.toggle:not(:checked, :disabled) {
+  --input-color: var(--color-control);
+}
+
+/* A waiting dot uses the darker amber: the theme's amber is 1.9:1 on the page. */
+.status-warning {
+  background-color: var(--color-warning-strong);
+  color: var(--color-warning-strong);
 }
 
 @media (prefers-reduced-motion: reduce) {

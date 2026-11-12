@@ -82,7 +82,7 @@ export function MessageFields({
                 onClick={() => insert(v.name)}
               >
                 {v.label}
-                <span className="text-base-content/50">{`{{${v.name}}}`}</span>
+                <span className="text-muted">{`{{${v.name}}}`}</span>
               </button>
             ))}
           </div>
@@ -91,13 +91,13 @@ export function MessageFields({
         <div>
           <div className="flex items-baseline justify-between gap-3">
             <label htmlFor={ids.inviteNote} className="font-medium">
-              Invite note <span className="font-normal text-base-content/65">(optional)</span>
+              Invite note <span className="font-normal text-muted">(optional)</span>
             </label>
-            <span className={`nums text-sm ${noteLength > INVITE_NOTE_MAX ? "font-medium text-error" : "text-base-content/65"}`} data-testid="note-count">
+            <span className={`nums text-sm ${noteLength > INVITE_NOTE_MAX ? "font-medium text-error" : "text-muted"}`} data-testid="note-count">
               {noteLength} / {INVITE_NOTE_MAX}
             </span>
           </div>
-          <p className="text-sm text-base-content/65">
+          <p className="text-sm text-muted">
             Sent with the invite. Leave it empty to invite without a note. LinkedIn allows {INVITE_NOTE_MAX} characters once the variables are filled
             in; the preview shows the real length.
           </p>
@@ -109,16 +109,16 @@ export function MessageFields({
           <label htmlFor={ids.firstMessage} className="font-medium">
             First message
           </label>
-          <p className="text-sm text-base-content/65">Sent after they accept your invite.</p>
+          <p className="text-sm text-muted">Sent after they accept your invite.</p>
           <div className="mt-1.5">{textBox("firstMessage", 6, "Your first message")}</div>
           <FieldError message={errors["firstMessage"]} />
         </div>
 
         <div>
           <label htmlFor={ids.followUp} className="font-medium">
-            Follow-up <span className="font-normal text-base-content/65">(optional)</span>
+            Follow-up <span className="font-normal text-muted">(optional)</span>
           </label>
-          <p className="text-sm text-base-content/65">Sent once if they have not replied to the first message. Leave it empty to send no follow-up.</p>
+          <p className="text-sm text-muted">Sent once if they have not replied to the first message. Leave it empty to send no follow-up.</p>
           <div className="mt-1.5">{textBox("followUp", 4, "Your follow-up")}</div>
           <FieldError message={errors["followUp"]} />
         </div>
@@ -186,7 +186,7 @@ function TemplatePreview(props: {
         <div className="skeleton mt-2 h-40 w-full" />
       ) : (
         <>
-          <p className="text-sm text-base-content/65">
+          <p className="text-sm text-muted">
             {loaded.data.samples === "invented"
               ? "Filled in for an invented person until the campaign finds real people."
               : "Filled in for the first people this campaign found, exactly as they would receive it."}
@@ -209,19 +209,19 @@ function TemplatePreview(props: {
 
 function PreviewLine({ label, text, none }: { readonly label: string; readonly text: PreviewText | null; readonly none: string }) {
   let body: ReactNode;
-  if (text === null) body = <p className="text-base-content/55">{none}</p>;
+  if (text === null) body = <p className="text-muted">{none}</p>;
   else if (text.ok) {
     body = (
       <>
         <p className="whitespace-pre-line">{text.text}</p>
-        {label === "Invite note" && <p className="nums text-xs text-base-content/55">{text.length} characters</p>}
+        {label === "Invite note" && <p className="nums text-caption text-muted">{text.length} characters</p>}
       </>
     );
-  } else if (text.problem === "empty") body = <p className="text-base-content/55">Nothing written yet.</p>;
+  } else if (text.problem === "empty") body = <p className="text-muted">Nothing written yet.</p>;
   else body = <Notice tone="waits">{text.message}</Notice>;
   return (
     <div>
-      <p className="text-xs text-base-content/55">{label}</p>
+      <p className="text-caption text-muted">{label}</p>
       {body}
     </div>
   );
@@ -338,7 +338,7 @@ function HourRange(props: {
         {box(maxKey, maxValue, "longest wait in hours")}
         <span>hours.</span>
       </div>
-      {props.note !== undefined && <p className="mt-1 text-sm text-base-content/65">{props.note}</p>}
+      {props.note !== undefined && <p className="mt-1 text-sm text-muted">{props.note}</p>}
       <FieldError message={error} />
     </fieldset>
   );

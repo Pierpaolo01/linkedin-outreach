@@ -78,19 +78,19 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
             Continue setting up
           </Link>
         )}
-        <p className="text-sm text-base-content/65">
+        <p className="text-sm text-muted">
           {campaign.discoverySource === "search" ? `From ${campaign.sourceUrls.length === 1 ? "a people search" : `${campaign.sourceUrls.length} people searches`}` : "From LinkedIn's recommendations"}
           {campaign.autoApprove ? ". Auto-approve is on" : ""}.
         </p>
       </div>
-      {wait !== null && <p className="mt-2 text-sm text-base-content/80">{discoveryWaitSentence(wait, timeZone)}</p>}
+      {wait !== null && <p className="mt-2 text-sm text-base-content">{discoveryWaitSentence(wait, timeZone)}</p>}
       <ActionError message={error} className="mt-3" />
 
       <ol className="mt-6 grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
         {FUNNEL.map((step) => (
           <li key={step} className="bg-base-100 px-4 py-3">
             <p className="nums text-2xl font-semibold">{campaign.funnel[step]}</p>
-            <p className="text-sm text-base-content/65">{FUNNEL_LABEL[step]}</p>
+            <p className="text-sm text-muted">{FUNNEL_LABEL[step]}</p>
           </li>
         ))}
       </ol>
@@ -144,7 +144,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
             </option>
           ))}
         </select>
-        <span className="nums text-sm text-base-content/65">{loaded.data === undefined ? "" : `${loaded.data.total} ${loaded.data.total === 1 ? "person" : "people"}`}</span>
+        <span className="nums text-sm text-muted">{loaded.data === undefined ? "" : `${loaded.data.total} ${loaded.data.total === 1 ? "person" : "people"}`}</span>
       </div>
 
       {loaded.status === "error" && loaded.data === undefined ? (
@@ -154,7 +154,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
       ) : items.length === 0 ? (
         <div className="mt-4 rounded-box border border-base-300 px-5 py-6" data-testid="people-empty">
           <p className="font-medium">{stage === null ? "Nobody found yet." : `Nobody at the stage ${stageWords(stage).toLowerCase()}.`}</p>
-          <p className="mt-1 text-base-content/65">
+          <p className="mt-1 text-muted">
             {stage === null ? "People appear here as the campaign finds them." : "Choose another stage, or every stage."}
           </p>
         </div>
@@ -163,7 +163,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
           <div className="mt-4 overflow-x-auto rounded-box border border-base-300">
             <table className="table table-sm text-sm" data-testid="people-table">
               <thead>
-                <tr className="text-base-content/65">
+                <tr className="text-muted">
                   <th className="font-medium">Person</th>
                   <th className="font-medium">Company</th>
                   <th className="font-medium">Stage</th>
@@ -188,7 +188,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                     />
                     {open === p.id && (
                       <tr>
-                        <td colSpan={7} className="bg-base-200/60 px-4 py-4">
+                        <td colSpan={7} className="bg-base-200/60 px-4 py-4 text-sm">
                           <ProspectDetail prospect={p} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
                         </td>
                       </tr>
@@ -225,15 +225,15 @@ function ProspectRow(props: {
   const next = nextStepWords(p.stage, campaign);
   const stopped = p.stopReason === "replied" ? " (they replied)" : p.stopReason === "manual_takeover" ? " (you messaged them yourself)" : "";
   return (
-    <tr data-testid="prospect-row" className={props.open ? "bg-base-200/60" : ""}>
+    <tr data-testid="prospect-row" className={`text-caption ${props.open ? "bg-base-200/60" : ""}`}>
       <td className="min-w-[12rem] py-3">
         <button type="button" className="text-left font-semibold hover:underline" aria-expanded={props.open} onClick={props.onToggle}>
           {p.person.fullName}
         </button>
-        {p.person.headline !== null && <p className="text-base-content/75">{p.person.headline}</p>}
+        {p.person.headline !== null && <p className="text-base-content">{p.person.headline}</p>}
         {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/15 text-error">Do not contact</span>}
       </td>
-      <td>{p.person.company ?? <span className="text-base-content/45">Unknown</span>}</td>
+      <td>{p.person.company ?? <span className="text-muted">Unknown</span>}</td>
       <td className="whitespace-nowrap" data-testid="prospect-stage">
         {stageWords(p.stage)}
         {stopped}
@@ -241,19 +241,19 @@ function ProspectRow(props: {
       <td>
         <ScoreChip score={p.score} size="sm" />
       </td>
-      <td className="text-base-content/85">{p.scoreReason ?? <span className="text-base-content/45">Not scored yet</span>}</td>
+      <td className="text-base-content">{p.scoreReason ?? <span className="text-muted">Not scored yet</span>}</td>
       <td className="min-w-[9rem]">
         {p.nextActionAt === null ? (
-          <span className="text-base-content/45">Nothing planned</span>
+          <span className="text-muted">Nothing planned</span>
         ) : (
           <>
             {next !== undefined && <p>{next}</p>}
-            <p className="text-base-content/65">{formatNext(p.nextActionAt, timeZone, now)}</p>
+            <p className="text-muted">{formatNext(p.nextActionAt, timeZone, now)}</p>
           </>
         )}
       </td>
       <td>
-        <a href={p.person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 whitespace-nowrap text-base-content/75 link-hover">
+        <a href={p.person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 whitespace-nowrap text-base-content link-hover">
           Profile
           <IconExternal />
           <span className="sr-only">of {p.person.fullName} on LinkedIn (opens in your browser)</span>
@@ -318,8 +318,8 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
         <dl className="mt-2 flex flex-col gap-3">
           {texts.map(([label, text, none]) => (
             <div key={label}>
-              <dt className="text-xs text-base-content/55">{label}</dt>
-              <dd className={`whitespace-pre-line ${text === null ? "text-base-content/55" : "border-l-2 border-base-300 pl-3"}`}>{text ?? none}</dd>
+              <dt className="text-caption text-muted">{label}</dt>
+              <dd className={`whitespace-pre-line ${text === null ? "text-muted" : "border-l-2 border-base-300 pl-3"}`}>{text ?? none}</dd>
             </div>
           ))}
         </dl>
@@ -335,7 +335,7 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
           <ol className="mt-2 flex flex-col gap-1.5">
             {history(p).map((e) => (
               <li key={e.label} className="grid grid-cols-[6.5rem_1fr] gap-2">
-                <span className="nums text-base-content/60">{formatStamp(e.at, timeZone)}</span>
+                <span className="nums text-muted">{formatStamp(e.at, timeZone)}</span>
                 <span>{e.label}</span>
               </li>
             ))}
@@ -345,7 +345,6 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
           <SwitchRow
             id={switchId}
             label="Do not contact"
-            tone="warning"
             checked={doNotContact}
             disabled={busy}
             onChange={change}
@@ -402,22 +401,22 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
       ) : (
         <div className="mt-3 rounded-box border border-base-300 px-4 py-4">
           {!live && (
-            <p className="mb-3 text-sm text-base-content/65">
+            <p className="mb-3 text-sm text-muted">
               {campaign.status === "draft" ? "A draft is changed in its setup steps." : `A${campaign.status === "archived" ? "n archived" : " finished"} campaign cannot be changed.`}
             </p>
           )}
           <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[12rem_minmax(0,1fr)]">
-            <dt className="text-base-content/65">Invite note</dt>
-            <dd className="whitespace-pre-line">{campaign.inviteNote === null || campaign.inviteNote === "" ? <span className="text-base-content/55">No note</span> : campaign.inviteNote}</dd>
-            <dt className="text-base-content/65">First message</dt>
-            <dd className="whitespace-pre-line">{campaign.firstMessage === "" ? <span className="text-base-content/55">Not written</span> : campaign.firstMessage}</dd>
-            <dt className="text-base-content/65">Follow-up</dt>
+            <dt className="text-muted">Invite note</dt>
+            <dd className="whitespace-pre-line">{campaign.inviteNote === null || campaign.inviteNote === "" ? <span className="text-muted">No note</span> : campaign.inviteNote}</dd>
+            <dt className="text-muted">First message</dt>
+            <dd className="whitespace-pre-line">{campaign.firstMessage === "" ? <span className="text-muted">Not written</span> : campaign.firstMessage}</dd>
+            <dt className="text-muted">Follow-up</dt>
             <dd className="whitespace-pre-line" data-testid="current-follow-up">
-              {campaign.followUp === "" ? <span className="text-base-content/55">No follow-up</span> : campaign.followUp}
+              {campaign.followUp === "" ? <span className="text-muted">No follow-up</span> : campaign.followUp}
             </dd>
-            <dt className="text-base-content/65">AI-written line</dt>
+            <dt className="text-muted">AI-written line</dt>
             <dd>{campaign.aiPersonalise ? "On" : "Off"}</dd>
-            <dt className="text-base-content/65">Waits</dt>
+            <dt className="text-muted">Waits</dt>
             <dd>
               First message {campaign.acceptToMessageMinHours} to {campaign.acceptToMessageMaxHours} hours after they accept; follow-up{" "}
               {campaign.followUpDelayMinHours} to {campaign.followUpDelayMaxHours} hours after that; {POLICY_WORDS[campaign.delayPolicy]}. Unaccepted

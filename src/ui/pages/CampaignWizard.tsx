@@ -110,6 +110,9 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
   const queue = useRef<SaveQueue>({ tail: Promise.resolve(), waiting: null, campaignId: id, lastSaved: null });
   const [status, setStatus] = useState<Campaign["status"]>("draft");
   const [step, setStep] = useState(0);
+  /** The furthest step the user has reached: the steps before it are done unless they show a problem. */
+  const [furthest, setFurthest] = useState(0);
+  if (step > furthest) setFurthest(step);
   const [errors, setErrors] = useState<FieldErrors>({});
   /** Saves asked for by a button that have not finished yet. */
   const [loudSaves, setLoudSaves] = useState(0);
@@ -233,7 +236,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         <PageHeader title={form.name} />
         <div className="mt-6 max-w-xl rounded-box border border-base-300 px-5 py-5">
           <p className="font-medium">This campaign has already started.</p>
-          <p className="mt-1 text-base-content/70">Its messages and timings can still change on its page; the rest stays as it started.</p>
+          <p className="mt-1 text-muted">Its messages and timings can still change on its page; the rest stays as it started.</p>
           <Link to={`/campaigns/${campaignId}`} className={`${SECONDARY_BUTTON} btn-sm mt-4`}>
             Open the campaign
           </Link>
@@ -316,6 +319,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
             {[...STEPS.map((s) => s.title), "Review and start"].map((title, index) => {
               const here = index === step;
               const problem = stepsWithProblems.has(index);
+              const done = !here && !problem && index < furthest;
               return (
                 <li key={title} className="shrink-0">
                   <button
@@ -323,20 +327,27 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
                     disabled={!created && index > 0}
                     aria-current={here ? "step" : undefined}
                     onClick={() => void goTo(index)}
-                    className={`flex w-full items-center gap-2.5 rounded-field px-2.5 py-2 text-left text-sm ${
-                      here ? "bg-neutral text-neutral-content" : "hover:bg-base-200 disabled:opacity-50"
+                    className={`relative flex w-full items-center gap-2.5 rounded-field px-2.5 py-2 text-left text-sm ${
+                      here ? "bg-neutral text-neutral-content" : "hover:bg-base-200 disabled:text-muted"
                     }`}
                   >
                     <span
                       className={`nums flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                        problem ? "bg-error text-error-content" : here ? "bg-neutral-content text-neutral" : "bg-base-300"
+                        problem
+                          ? "border-2 border-error bg-base-100 text-error"
+                          : here
+                            ? "bg-neutral-content text-neutral"
+                            : done
+                              ? "bg-score-high text-primary"
+                              : "bg-base-300"
                       }`}
                       aria-hidden="true"
                     >
-                      {index + 1}
+                      {done ? <IconCheck className="size-3.5" /> : index + 1}
                     </span>
                     <span className="whitespace-nowrap">{title}</span>
                     {problem && <span className="sr-only">(needs attention)</span>}
+                    {done && <span className="sr-only">(done)</span>}
                   </button>
                 </li>
               );
@@ -385,7 +396,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
               </button>
             )}
             {step === REVIEW && (
-              <p className="text-sm text-base-content/65">Starting begins finding people. Nobody is invited before you approve them{form.autoApprove ? ", unless auto-approve is on" : ""}.</p>
+              <p className="text-sm text-muted">Starting begins finding people. Nobody is invited before you approve them{form.autoApprove ? ", unless auto-approve is on" : ""}.</p>
             )}
           </div>
         </div>
@@ -404,7 +415,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
           Everyone who scores {form.scoreThreshold} or more will be invited and messaged without your review. You will not see them in the approval
           queue first.
         </p>
-        <p className="text-base-content/75">To review each person yourself, cancel and turn auto-approve off in the Approval step.</p>
+        <p className="text-base-content">To review each person yourself, cancel and turn auto-approve off in the Approval step.</p>
       </ConfirmDialog>
     </>
   );
@@ -424,7 +435,7 @@ function StepFrame({ title, lead, children }: { readonly title: string; readonly
       <h2 id="step-title" className="text-xl font-semibold">
         {title}
       </h2>
-      <p className="mt-1 max-w-2xl text-base-content/75">{lead}</p>
+      <p className="mt-1 max-w-2xl text-base-content">{lead}</p>
       <div className="mt-6">{children}</div>
     </section>
   );
@@ -481,7 +492,7 @@ function SourceStep({ form, set, errors }: StepProps) {
             />
             <span>
               <span className="block font-medium">{label}</span>
-              <span className="block text-sm text-base-content/65">{hint}</span>
+              <span className="block text-sm text-muted">{hint}</span>
             </span>
           </label>
         ))}
@@ -491,7 +502,7 @@ function SourceStep({ form, set, errors }: StepProps) {
       {form.discoverySource === "search" && (
         <div className="mt-6 max-w-2xl">
           <p className="font-medium">Search addresses</p>
-          <p className="text-sm text-base-content/65">
+          <p className="text-sm text-muted">
             Run the search on LinkedIn, then copy the address from your browser&rsquo;s address bar and paste it here. It must start with{" "}
             <span className="font-medium break-all">{SEARCH_PREFIX}</span>
           </p>
@@ -523,7 +534,7 @@ function SourceStep({ form, set, errors }: StepProps) {
                   {serverError !== undefined ? (
                     <FieldError message={serverError} />
                   ) : (
-                    looksWrong && <p className="mt-1 text-sm text-base-content/80">This address does not start with {SEARCH_PREFIX}</p>
+                    looksWrong && <p className="mt-1 text-sm text-base-content">This address does not start with {SEARCH_PREFIX}</p>
                   )}
                 </li>
               );
@@ -564,7 +575,7 @@ function WhoFitsStep({ form, set, errors }: StepProps) {
       <label htmlFor={briefId} className="block font-medium">
         Who fits this campaign, and who does not
       </label>
-      <div className="mt-1 max-w-3xl text-sm text-base-content/65">
+      <div className="mt-1 max-w-3xl text-sm text-muted">
         <p>Write who you want to reach: their role or whether they own the business, the industries, the places and the company size.</p>
         <p>Then write the signs of a good fit, and who to leave out.</p>
       </div>
@@ -622,7 +633,6 @@ function ApprovalStep({ form, set, errors }: StepProps) {
           <SwitchRow
             id={ids.auto}
             label="Auto-approve"
-            tone="warning"
             checked={form.autoApprove}
             onChange={(on) => set("autoApprove", on)}
             hint={form.autoApprove ? undefined : "Off: you approve each person before the app invites them."}
@@ -662,7 +672,7 @@ function Review({
         const label = key === "sourceUrls" && index !== undefined ? "Search address" : (Object.entries(FIELD_LABEL).find(([name]) => name === key)?.[1] ?? key);
         return { path, text: `${label}${index === undefined ? "" : ` ${Number(index) + 1}`}: ${message}` };
       });
-  const text = (value: string, empty: string) => (value.trim() === "" ? <span className="text-base-content/55">{empty}</span> : <span className="whitespace-pre-line">{value}</span>);
+  const text = (value: string, empty: string) => (value.trim() === "" ? <span className="text-muted">{empty}</span> : <span className="whitespace-pre-line">{value}</span>);
 
   const sections: readonly { readonly step: number; readonly rows: readonly (readonly [string, ReactNode])[] }[] = [
     { step: 0, rows: [["Name", text(form.name, "No name yet")]] },
@@ -671,7 +681,7 @@ function Review({
       rows: [
         ["Source", form.discoverySource === "search" ? "People searches" : "LinkedIn's recommendations"],
         ...(form.discoverySource === "search"
-          ? [["Searches", urls.length === 0 ? <span className="text-base-content/55">None yet</span> : <ul className="break-all">{urls.map((u) => <li key={u}>{u}</li>)}</ul>] as const]
+          ? [["Searches", urls.length === 0 ? <span className="text-muted">None yet</span> : <ul className="break-all">{urls.map((u) => <li key={u}>{u}</li>)}</ul>] as const]
           : []),
         ["People to find", form.targetProspectCount.trim() === "" ? "No limit" : form.targetProspectCount],
       ],
@@ -711,7 +721,7 @@ function Review({
       <h2 id="step-title" className="text-xl font-semibold">
         Review and start
       </h2>
-      <p className="mt-1 max-w-2xl text-base-content/75">Check everything once more. The app checks it too when you press Start.</p>
+      <p className="mt-1 max-w-2xl text-base-content">Check everything once more. The app checks it too when you press Start.</p>
       <ActionError message={startError} className="mt-4" testId="start-error" />
       <div className="mt-5 divide-y divide-base-300 rounded-box border border-base-300">
         {sections.map(({ step, rows }) => {
@@ -730,7 +740,7 @@ function Review({
               <dl className="mt-2 grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-[13rem_minmax(0,1fr)]">
                 {rows.map(([label, value]) => (
                   <div key={label} className="contents">
-                    <dt className="text-base-content/65">{label}</dt>
+                    <dt className="text-muted">{label}</dt>
                     <dd className="min-w-0">{value}</dd>
                   </div>
                 ))}

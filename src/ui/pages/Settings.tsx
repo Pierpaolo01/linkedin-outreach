@@ -211,7 +211,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
   return (
     <>
       <PageHeader title="Settings" />
-      <p className="mt-2 max-w-2xl text-base-content/75">These apply to the whole app and to every campaign.</p>
+      <p className="mt-2 max-w-2xl text-base-content">These apply to the whole app and to every campaign.</p>
 
       <div className="mt-6 flex max-w-3xl flex-col gap-6 pb-4">
         <LinkedInWindow />
@@ -348,7 +348,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
             </div>
             <div>
               <p className="font-medium">Gap between actions</p>
-              <p className="text-sm text-base-content/65">A random wait between two actions on LinkedIn.</p>
+              <p className="text-sm text-muted">A random wait between two actions on LinkedIn.</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
                 <span>Between</span>
                 {num("actionGapSeconds.min", "Shortest gap in seconds")}
@@ -360,7 +360,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
             </div>
             <div>
               <p className="font-medium">Breaks</p>
-              <p className="text-sm text-base-content/65">A longer pause now and then, as a person would take.</p>
+              <p className="text-sm text-muted">A longer pause now and then, as a person would take.</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
                 <span>A break of</span>
                 {num("breaks.minutesMin", "Shortest break in minutes")}
@@ -385,7 +385,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
             onChange={(on) => change({ keepAwake: on }, "keepAwake")}
             hint="Only inside your working hours, while a campaign is finding people or running. The screen can still turn off."
           />
-          <p className="mt-2 text-sm text-base-content/75" data-testid="keep-awake-now">
+          <p className="mt-2 text-sm text-base-content" data-testid="keep-awake-now">
             {ops.data === undefined ? "" : ops.data.keepAwake.active ? "Keeping the Mac awake right now." : "Not keeping the Mac awake right now."}
           </p>
         </Section>
@@ -417,7 +417,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               <label htmlFor={ids.model} className="block font-medium">
                 Model
               </label>
-              <p className="text-sm text-base-content/65">Leave it empty to use the provider&rsquo;s default.</p>
+              <p className="text-sm text-muted">Leave it empty to use the provider&rsquo;s default.</p>
               <input
                 id={ids.model}
                 className="input mt-1.5 w-full max-w-sm bg-base-100"
@@ -455,7 +455,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
             Undo changes
           </button>
         )}
-        <p role="status" className={`text-sm ${result === undefined ? "text-base-content/65" : result.ok ? "text-primary" : "text-error"}`} data-testid="settings-result">
+        <p role="status" className={`text-sm ${result === undefined ? "text-muted" : result.ok ? "text-primary" : "text-error"}`} data-testid="settings-result">
           {result?.text ?? (dirty ? "You have changes that are not saved." : "")}
         </p>
       </div>
@@ -470,7 +470,7 @@ function Section({ title, lead, children }: { readonly title: string; readonly l
       <h2 id={id} className="text-lg font-semibold">
         {title}
       </h2>
-      <p className="mb-4 text-sm text-base-content/65">{lead}</p>
+      <p className="mb-4 text-sm text-muted">{lead}</p>
       {children}
     </section>
   );
@@ -481,7 +481,7 @@ function LimitRow({ control, label, hint, error }: { readonly control: ReactNode
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
       <div>
         <p className="font-medium">{label}</p>
-        <p className="text-sm text-base-content/65">{hint}</p>
+        <p className="text-sm text-muted">{hint}</p>
       </div>
       {control}
       {error !== undefined && (
@@ -512,7 +512,7 @@ function LinkedInWindow() {
               <span className={`status ${view.light}`} aria-hidden="true" />
               {view.label}
             </p>
-            <p className="text-sm text-base-content/65" data-testid="linkedin-window-checked">
+            <p className="text-sm text-muted" data-testid="linkedin-window-checked">
               {session.lastCheckedAt === null ? "Never checked." : `Last checked ${formatWhen(session.lastCheckedAt, timeZone, new Date())}.`}
             </p>
             {view.problem !== undefined && <p className="mt-1 text-sm">{view.problem}</p>}
@@ -524,7 +524,7 @@ function LinkedInWindow() {
         </div>
       )}
       <ActionError message={recheck.error} className="mt-2" />
-      <p className="mt-4 text-sm text-base-content/75">
+      <p className="mt-4 text-sm text-base-content">
         If LinkedIn logs the app out, log in again in the app&rsquo;s own Chrome window, not in your usual browser, then press Re-check.
       </p>
     </Section>
@@ -562,11 +562,11 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
           Test
         </button>
         {running && (
-          <p role="status" className="nums text-sm text-base-content/75">
+          <p role="status" className="nums text-sm text-base-content">
             Asking the AI a small question… {seconds} s. This can take up to half a minute.
           </p>
         )}
-        {blocked && !running && <p className="text-sm text-base-content/65">Save your changes first: the test uses the saved settings.</p>}
+        {blocked && !running && <p className="text-sm text-muted">Save your changes first: the test uses the saved settings.</p>}
       </div>
       {outcome !== undefined && (
         <div
@@ -579,7 +579,7 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
           ) : (
             <>
               <p>{asSentence(outcome.message)}</p>
-              {outcome.ok && outcome.model !== null && outcome.model !== "" && <p className="text-base-content/65">Model: {outcome.model}</p>}
+              {outcome.ok && outcome.model !== null && outcome.model !== "" && <p className="text-muted">Model: {outcome.model}</p>}
             </>
           )}
         </div>
@@ -640,13 +640,13 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
       ) : ops.data === undefined ? (
         <div className="skeleton h-20 w-full" />
       ) : backups.length === 0 ? (
-        <p className="text-base-content/75">No backups yet.</p>
+        <p className="text-base-content">No backups yet.</p>
       ) : (
         <ul className="divide-y divide-base-300 rounded-box border border-base-300 text-sm" data-testid="backups">
           {backups.map((b) => (
             <li key={b.file} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2">
               <span>{backupDay(b.date, timeZone)}</span>
-              <span className="text-base-content/65">
+              <span className="text-muted">
                 {b.file.split("/").at(-1)}, {formatBytes(b.sizeBytes)}
               </span>
             </li>
@@ -666,14 +666,14 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
       </div>
       <div className="mt-5 text-sm">
         <p className="font-medium">To go back to a backup</p>
-        <p className="mt-1 text-base-content/75">
+        <p className="mt-1 text-base-content">
           Stop the app first. Then, in Terminal, in the app&rsquo;s folder, run this with the name of the backup you want
           {backups[0] === undefined ? "" : " (here, the newest)"}:
         </p>
         <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono">
           <code>npm run restore -- {backups[0]?.file.split("/").at(-1) ?? "<backup file name>"}</code>
         </pre>
-        <p className="mt-1 text-base-content/75">
+        <p className="mt-1 text-base-content">
           The current database is kept aside first, so nothing is lost.
           {ops.data === undefined ? "" : ` The backups are in ${ops.data.dataDir}/backups.`}
         </p>
@@ -698,10 +698,10 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
       ) : (
         <p data-testid="service-state">{state}</p>
       )}
-      {service?.note != null && service.note !== "" && <p className="mt-1 text-sm text-base-content/75">{asSentence(service.note.replace(/`/g, ""))}</p>}
+      {service?.note != null && service.note !== "" && <p className="mt-1 text-sm text-base-content">{asSentence(service.note.replace(/`/g, ""))}</p>}
       {service !== undefined && !(service.installed && service.loaded) && (service.note == null || service.note === "") && (
         <>
-          <p className="mt-3 text-sm text-base-content/75">To set it up, run this in Terminal, in the app&rsquo;s folder:</p>
+          <p className="mt-3 text-sm text-base-content">To set it up, run this in Terminal, in the app&rsquo;s folder:</p>
           <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono text-sm">
             <code>npm run service:install</code>
           </pre>
