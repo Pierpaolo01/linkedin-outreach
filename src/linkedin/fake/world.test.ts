@@ -9,6 +9,8 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 /** With `random` fixed at 0.5 every driver call takes 2 s + floor(0.5 × 18 001) ms. */
 const STEP = 11_000;
+/** A write deadline no test reaches. */
+const OPEN = { notAfter: new Date("2100-01-01T00:00:00Z") };
 
 function virtualClock(start: Date = START) {
   let t = start.getTime();
@@ -48,7 +50,7 @@ function setup(members: readonly MemberSpec[] = [], options: Omit<WorldOptions, 
 
 /** Invites person `i` with `note` and moves the clock past their acceptance. Returns the acceptance time. */
 async function inviteAndAccept(env: ReturnType<typeof setup>, i: number, note: string | null): Promise<Date> {
-  expect(await env.driver.sendInvite(ref(i), note)).toBe("sent");
+  expect(await env.driver.sendInvite(ref(i), note, OPEN)).toBe("sent");
   env.clock.advance(DAY);
   await env.driver.listRecentConnections();
   const connectedAt = env.world.status(`test-person-${i}`).connectedAt;
@@ -94,7 +96,7 @@ describe("viewProfile", () => {
 describe("sendInvite", () => {
   it("sends once and logs the invite with its note", async () => {
     const { world, driver } = setup([person(1)]);
-    expect(await driver.sendInvite(ref(1), "Hello there")).toBe("sent");
+    expect(await driver.sendInvite(ref(1), "Hello there", OPEN)).toBe("sent");
     expect(world.invitesTo("test-person-1")).toEqual([
       { kind: "invite", publicId: "test-person-1", memberId: "ACoATestPerson1", note: "Hello there", at: new Date(START.getTime() + STEP) },
     ]);
@@ -107,55 +109,55 @@ describe("sendInvite", () => {
       person(2, { degree: 1 }),
       person(3, { connectUnavailable: true }),
     ]);
-    expect(await driver.sendInvite(ref(1), null)).toBe("already_pending");
-    expect(await driver.sendInvite(ref(2), null)).toBe("already_connected");
-    expect(await driver.sendInvite(ref(3), null)).toBe("not_offered");
+    expect(await driver.sendInvite(ref(1), null, OPEN)).toBe("already_pending");
+    expect(await driver.sendInvite(ref(2), null, OPEN)).toBe("already_connected");
+    expect(await driver.sendInvite(ref(3), null, OPEN)).toBe("not_offered");
     expect(world.log.filter((entry) => entry.kind === "invite")).toEqual([]);
   });
 
   it("a second invite to the same person finds it pending", async () => {
     const { world, driver } = setup([person(1)]);
-    await driver.sendInvite(ref(1), null);
-    expect(await driver.sendInvite(ref(1), null)).toBe("already_pending");
+    await driver.sendInvite(ref(1), null, OPEN);
+    expect(await driver.sendInvite(ref(1), null, OPEN)).toBe("already_pending");
     expect(world.invitesTo("test-person-1")).toHaveLength(1);
   });
 
   it("throws Unexpected and sends nothing for a note over 300 UTF-16 units; 300 fits", async () => {
     const { world, driver } = setup([person(1), person(2)]);
-    await expect(driver.sendInvite(ref(1), "é".repeat(150) + "😀".repeat(1) + "x".repeat(149))).rejects.toBeInstanceOf(Unexpected);
+    await expect(driver.sendInvite(ref(1), "é".repeat(150) + "😀".repeat(1) + "x".repeat(149), OPEN)).rejects.toBeInstanceOf(Unexpected);
     expect(world.invitesTo("test-person-1")).toEqual([]);
-    expect(await driver.sendInvite(ref(2), "x".repeat(300))).toBe("sent");
+    expect(await driver.sendInvite(ref(2), "x".repeat(300), OPEN)).toBe("sent");
   });
 
   it("over the weekly cap throws LimitHit and sends nothing; a week later it sends again", async () => {
     const { world, driver } = setup([person(1), person(2), person(3)], { weeklyInviteCap: 2 });
-    await driver.sendInvite(ref(1), null);
-    await driver.sendInvite(ref(2), null);
-    await expect(driver.sendInvite(ref(3), null)).rejects.toBeInstanceOf(LimitHit);
+    await driver.sendInvite(ref(1), null, OPEN);
+    await driver.sendInvite(ref(2), null, OPEN);
+    await expect(driver.sendInvite(ref(3), null, OPEN)).rejects.toBeInstanceOf(LimitHit);
     expect(world.log.filter((entry) => entry.kind === "invite")).toHaveLength(2);
     expect(world.status("test-person-3").pendingSince).toBeNull();
 
     const later = virtualClock(new Date(START.getTime() + 7 * DAY + MINUTE));
     const fresh = world.connect({ clock: later, random: () => 0.5 }).driver;
-    expect(await fresh.sendInvite(ref(3), null)).toBe("sent");
+    expect(await fresh.sendInvite(ref(3), null, OPEN)).toBe("sent");
   });
 
   it("counts an invitation sent outside the app against the weekly cap until a week after it was sent", async () => {
     const { world, driver } = setup([person(1, { invitedOutsideApp: true, invitedAt: START }), person(2)], { weeklyInviteCap: 1 });
-    await expect(driver.sendInvite(ref(2), null)).rejects.toBeInstanceOf(LimitHit);
+    await expect(driver.sendInvite(ref(2), null, OPEN)).rejects.toBeInstanceOf(LimitHit);
     // It is LinkedIn's count, not the app's: the log of what the app sent stays empty.
     expect(world.log.filter((entry) => entry.kind === "invite")).toEqual([]);
 
     const later = virtualClock(new Date(START.getTime() + 7 * DAY + MINUTE));
     const fresh = world.connect({ clock: later, random: () => 0.5 }).driver;
-    expect(await fresh.sendInvite(ref(2), null)).toBe("sent");
+    expect(await fresh.sendInvite(ref(2), null, OPEN)).toBe("sent");
   });
 });
 
 describe("acceptance", () => {
   it("becomes visible only once its time has come", async () => {
     const { clock, world, driver } = setup([person(1, { acceptsAfterHours: 5 })]);
-    await driver.sendInvite(ref(1), null);
+    await driver.sendInvite(ref(1), null, OPEN);
     const sentAt = clock.now().getTime();
 
     clock.advance(5 * HOUR - 3 * STEP);
@@ -172,7 +174,7 @@ describe("acceptance", () => {
 
   it("never comes for a member who never accepts", async () => {
     const { clock, driver } = setup([person(1, { acceptsAfterHours: null })]);
-    await driver.sendInvite(ref(1), null);
+    await driver.sendInvite(ref(1), null, OPEN);
     clock.advance(60 * DAY);
     expect(await driver.listRecentConnections()).toEqual([]);
   });
@@ -198,9 +200,9 @@ describe("acceptance", () => {
 
   it("does not happen after the invitation was withdrawn", async () => {
     const { clock, world, driver } = setup([person(1, { acceptsAfterHours: 48 })]);
-    await driver.sendInvite(ref(1), null);
-    expect(await driver.withdrawInvite(ref(1))).toBe("withdrawn");
-    expect(await driver.withdrawInvite(ref(1))).toBe("not_pending");
+    await driver.sendInvite(ref(1), null, OPEN);
+    expect(await driver.withdrawInvite(ref(1), OPEN)).toBe("withdrawn");
+    expect(await driver.withdrawInvite(ref(1), OPEN)).toBe("not_pending");
     clock.advance(10 * DAY);
     expect(await driver.listRecentConnections()).toEqual([]);
     expect(world.log.filter((entry) => entry.kind === "withdraw")).toHaveLength(1);
@@ -239,7 +241,7 @@ describe("readThread", () => {
   it("returns the latest 20 messages, oldest first", async () => {
     const { clock, driver } = setup([person(1, { degree: 1 })]);
     for (let n = 1; n <= 22; n += 1) {
-      await driver.sendMessage(ref(1), `Message ${n}`);
+      await driver.sendMessage(ref(1), `Message ${n}`, { ...OPEN, messageCount: Math.min(n - 1, 20) });
       clock.advance(MINUTE);
     }
     const thread = await driver.readThread(ref(1));
@@ -251,9 +253,9 @@ describe("readThread", () => {
     const world = new FakeWorld({ start: START });
     world.addMember(person(1, { degree: 1 }));
     const { driver } = world.connect({ clock, random: () => 0.5 });
-    await driver.sendMessage(ref(1), "Last year");
+    await driver.sendMessage(ref(1), "Last year", { ...OPEN, messageCount: 0 });
     clock.advance(8 * DAY);
-    await driver.sendMessage(ref(1), "New year");
+    await driver.sendMessage(ref(1), "New year", { ...OPEN, messageCount: 1 });
     const messages = (await driver.readThread(ref(1))).messages;
     expect(messages.map((message) => [message.sentAtRaw, message.sentAt])).toEqual([
       ["Dec 31, 2025 3:00 PM", new Date("2025-12-31T15:00:00Z")],
@@ -263,7 +265,7 @@ describe("readThread", () => {
 
   it("names the participant by member id once they have written, and by nobody when only the user has", async () => {
     const env = setup([person(1, { degree: 1, repliesAfterHours: 1 })]);
-    await env.driver.sendMessage(ref(1), "Hello");
+    await env.driver.sendMessage(ref(1), "Hello", { ...OPEN, messageCount: 0 });
     expect((await env.driver.readThread(ref(1))).participant.publicId).toBeNull();
     env.clock.advance(2 * HOUR);
     expect((await env.driver.readThread(ref(1))).participant.publicId).toBe("ACoATestPerson1");
@@ -273,7 +275,7 @@ describe("readThread", () => {
 describe("texts as LinkedIn stores them", () => {
   it("trims, turns CRLF into LF, collapses three or more line breaks to two and puts a non-breaking space before ? ! :", async () => {
     const { world, driver } = setup([person(1, { degree: 1 })]);
-    await driver.sendMessage(ref(1), "  Hi Test Person 1 !\r\nOne question :\r\n\r\n\r\n\r\nHow are you ?  ");
+    await driver.sendMessage(ref(1), "  Hi Test Person 1 !\r\nOne question :\r\n\r\n\r\n\r\nHow are you ?  ", { ...OPEN, messageCount: 0 });
     const stored = "Hi Test Person 1 !\nOne question :\n\nHow are you ?";
     expect((await driver.readThread(ref(1))).messages.map((message) => message.text)).toEqual([stored]);
     expect(world.messagesSentTo("test-person-1").map((entry) => entry.text)).toEqual([
@@ -283,7 +285,7 @@ describe("texts as LinkedIn stores them", () => {
 
   it("keeps the space when the non-breaking space option is off", async () => {
     const { driver } = setup([person(1, { degree: 1 })], { nbspBeforePunctuation: false });
-    await driver.sendMessage(ref(1), "How are you ?");
+    await driver.sendMessage(ref(1), "How are you ?", { ...OPEN, messageCount: 0 });
     expect((await driver.readThread(ref(1))).messages.map((message) => message.text)).toEqual(["How are you ?"]);
   });
 });
@@ -291,8 +293,8 @@ describe("texts as LinkedIn stores them", () => {
 describe("sendMessage", () => {
   it("throws Unexpected and sends nothing to someone who is not a connection", async () => {
     const { world, driver } = setup([person(1), person(2, { invitedOutsideApp: true })]);
-    await expect(driver.sendMessage(ref(1), "Hello")).rejects.toBeInstanceOf(Unexpected);
-    await expect(driver.sendMessage(ref(2), "Hello")).rejects.toBeInstanceOf(Unexpected);
+    await expect(driver.sendMessage(ref(1), "Hello", { ...OPEN, messageCount: 0 })).rejects.toBeInstanceOf(Unexpected);
+    await expect(driver.sendMessage(ref(2), "Hello", { ...OPEN, messageCount: 0 })).rejects.toBeInstanceOf(Unexpected);
     expect(world.log.filter((entry) => entry.kind === "message")).toEqual([]);
     expect(world.thread("test-person-1")).toEqual([]);
   });
@@ -301,7 +303,7 @@ describe("sendMessage", () => {
 describe("scripted members", () => {
   it("reply a set number of hours after the app's first message, not before", async () => {
     const env = setup([person(1, { degree: 1, repliesAfterHours: 30 })]);
-    await env.driver.sendMessage(ref(1), "Hello");
+    await env.driver.sendMessage(ref(1), "Hello", { ...OPEN, messageCount: 0 });
     const firstAt = env.clock.now().getTime();
     env.clock.advance(30 * HOUR - 2 * STEP);
     expect((await env.driver.readThread(ref(1))).messages.map((message) => message.sender)).toEqual(["user"]);
@@ -325,7 +327,7 @@ describe("scripted members", () => {
 
   it("do not write first when the app has already messaged them", async () => {
     const env = setup([person(1, { degree: 1, repliesBeforeFirstMessageAfterHours: 10 })]);
-    await env.driver.sendMessage(ref(1), "Hello");
+    await env.driver.sendMessage(ref(1), "Hello", { ...OPEN, messageCount: 0 });
     env.clock.advance(DAY);
     await env.driver.readThread(ref(1));
     expect(env.world.thread("test-person-1").map((message) => message.source)).toEqual(["app"]);
@@ -343,7 +345,7 @@ describe("scripted members", () => {
 
   it("the user re-sends by hand a text identical to the app's last message", async () => {
     const env = setup([person(1, { degree: 1, userResendsAfterHours: 4 })]);
-    await env.driver.sendMessage(ref(1), "Quick question ?");
+    await env.driver.sendMessage(ref(1), "Quick question ?", { ...OPEN, messageCount: 0 });
     env.clock.advance(5 * HOUR);
     const thread = await env.driver.readThread({ memberId: "ACoATestPerson1" });
     expect(thread.messages.map((message) => [message.sender, message.text])).toEqual([
@@ -354,12 +356,14 @@ describe("scripted members", () => {
     expect(env.world.messagesSentTo("test-person-1")).toHaveLength(1);
   });
 
-  it("a reply that falls between the pre-send read and the send lands before the app's message", async () => {
+  it("a reply that falls between the pre-send read and the send is seen by the send: nothing goes out", async () => {
     const env = setup([person(1, { degree: 1, repliesBeforeFirstMessageAfterHours: 1 })]);
     env.clock.advance(HOUR - STEP - 1_000);
-    expect((await env.driver.readThread(ref(1))).isNew).toBe(true);
-    await env.driver.sendMessage(ref(1), "Hello");
-    expect(env.world.thread("test-person-1").map((message) => message.source)).toEqual(["member", "app"]);
+    const before = await env.driver.readThread(ref(1));
+    expect(before.isNew).toBe(true);
+    expect(await env.driver.sendMessage(ref(1), "Hello", { ...OPEN, messageCount: before.messages.length })).toBe("thread_changed");
+    expect(env.world.thread("test-person-1").map((message) => message.source)).toEqual(["member"]);
+    expect(env.world.messagesSentTo("test-person-1")).toEqual([]);
   });
 });
 
@@ -382,7 +386,7 @@ describe("listSentInvitations", () => {
       person(k + 1, { invitedOutsideApp: true, invitedAt: new Date(START.getTime() - (k + 1) * DAY) }),
     );
     const { world, driver } = setup([...members, person(99)]);
-    await driver.sendInvite(ref(99), null);
+    await driver.sendInvite(ref(99), null, OPEN);
     const cards = await driver.listSentInvitations();
     expect(cards).toHaveLength(50);
     expect(cards.slice(0, 3).map((card) => [card.publicId, card.sentText])).toEqual([
@@ -437,7 +441,7 @@ describe("the log", () => {
     const { clock, world, driver } = setup([person(1, { degree: 1 })]);
     await driver.ensureSession();
     clock.advance(HOUR);
-    await driver.sendMessage(ref(1), "Hello");
+    await driver.sendMessage(ref(1), "Hello", { ...OPEN, messageCount: 0 });
     expect(world.log.map((entry) => [entry.kind, entry.page ?? null, entry.at.getTime() - START.getTime()])).toEqual([
       ["page_load", "feed", STEP],
       ["page_load", "messaging", STEP + HOUR + STEP],

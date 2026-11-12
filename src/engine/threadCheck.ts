@@ -49,8 +49,16 @@ export function judgeThread(thread: Pick<Thread, "messages">, sent: AppSent): Th
 /** Decides, after a send whose result is unknown, whether the message went out. */
 export function judgeSend(thread: Pick<Thread, "messages">, expectedText: string, userMessagesBefore: number): SendVerdict {
   const texts = userTexts(thread.messages);
-  if (texts.length === userMessagesBefore) return "not_sent";
-  const newest = texts.at(-1);
-  if (texts.length === userMessagesBefore + 1 && newest !== undefined && sameText(newest, expectedText)) return "sent";
+  // An unchanged count proves nothing on its own: LinkedIn may have shown the invite note before
+  // the send and not after (or the reverse). Only when the text is nowhere among the user's
+  // messages is it not sent.
+  if (texts.length === userMessagesBefore) {
+    return texts.some((text) => sameText(text, expectedText)) ? "unclear" : "not_sent";
+  }
+  // The first message of the user that was not there before the send. If it is the text, the text
+  // reached the person and is never sent again, whatever the user wrote by hand after it: the
+  // next thread check sees those extra messages and stops the sequence as a manual takeover.
+  const firstNew = texts.length > userMessagesBefore ? texts[userMessagesBefore] : undefined;
+  if (firstNew !== undefined && sameText(firstNew, expectedText)) return "sent";
   return "unclear";
 }

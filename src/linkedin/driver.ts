@@ -219,25 +219,48 @@ export interface PersonRef {
 }
 
 /**
- * What the invite step found. Only `sent` means an invitation went out; the others are refusals
- * the engine turns into needs review.
+ * The driver reads the clock before each thing it does (a page load, typing, the click). Later
+ * than `notAfter`, it does nothing more and returns "expired": a laptop that slept inside the
+ * call must not act when it wakes.
  */
-export type InviteResult = "sent" | "already_pending" | "already_connected" | "not_offered";
+export interface SendGuard {
+  readonly notAfter: Date;
+}
 
-export type WithdrawResult = "withdrawn" | "not_pending";
+/**
+ * What the invite step found. Only `sent` means an invitation went out; `expired` means the
+ * deadline had passed and nothing was done; the others are refusals the engine turns into needs
+ * review.
+ */
+export type InviteResult = "sent" | "already_pending" | "already_connected" | "not_offered" | "expired";
+
+export type WithdrawResult = "withdrawn" | "not_pending" | "expired";
+
+/**
+ * `sent`: the message went out. `thread_changed`: the conversation was not the one the caller
+ * judged; nothing was sent. `expired`: the deadline had passed; nothing was sent.
+ */
+export type MessageResult = "sent" | "thread_changed" | "expired";
 
 /**
  * The operations that change something on LinkedIn. Each resolves only once LinkedIn shows the
  * result. A throw means the result is not known: the click may have happened, so the caller
- * checks LinkedIn before it tries again. The live implementation arrives in milestone 4; until
- * then only the fake driver has these.
+ * checks LinkedIn before it tries again. Each takes a deadline (`SendGuard`): a call the laptop
+ * slept through must not click hours later, outside the working window. The live implementation
+ * arrives in milestone 4; until then only the fake driver has these.
  */
 export interface WriteDriver {
   /** Throws `LimitHit` on LinkedIn's own invitation-limit message. `note` null sends without a note. */
-  sendInvite(person: PersonRef, note: string | null): Promise<InviteResult>;
-  /** Sends one message to a 1st-degree connection. Clears any draft left in the message box first. */
-  sendMessage(person: PersonRef, text: string): Promise<void>;
-  withdrawInvite(person: PersonRef): Promise<WithdrawResult>;
+  sendInvite(person: PersonRef, note: string | null, guard: SendGuard): Promise<InviteResult>;
+  /**
+   * Sends one message to a 1st-degree connection. Clears any draft left in the message box first.
+   * `expected.messageCount` is how many messages the conversation showed when the caller judged it.
+   * The driver compares it with the conversation it has open immediately before sending; if it
+   * differs, nothing is sent and the result is "thread_changed". The deadline is checked at the
+   * same moment, after typing; past it the draft is cleared and the result is "expired".
+   */
+  sendMessage(person: PersonRef, text: string, expected: SendGuard & { readonly messageCount: number }): Promise<MessageResult>;
+  withdrawInvite(person: PersonRef, guard: SendGuard): Promise<WithdrawResult>;
 }
 
 export type Driver = ReadDriver & WriteDriver;

@@ -12,7 +12,7 @@
  * are day headings with no exact time except for earlier years, older connections fall off the
  * connections page, and a conversation with someone who is not a connection cannot be opened.
  */
-import type { InviteResult, ReadThreadResult, SearchQuery, WithdrawResult } from "../driver";
+import type { InviteResult, MessageResult, ReadThreadResult, SearchQuery, WithdrawResult } from "../driver";
 import { Checkpoint, LimitHit, LoggedOut, Restricted, Unexpected, type LinkedInError } from "../errors";
 import { profileUrlFor, type Card } from "../parse/card";
 import type { ConnectionCard } from "../parse/connections";
@@ -165,6 +165,7 @@ export class FakeWorld {
   /** When invitations sent outside the app went out. They use up LinkedIn's weekly cap but are not in the log of what the app did. */
   readonly #outsideInvites: Date[] = [];
   readonly #faults = new Map<DriverOp, FaultKind[]>();
+  readonly #suspensions = new Map<DriverOp, number[]>();
   readonly #searches = new Map<string, readonly string[]>();
   #recommendations: readonly RecommendationGroupSpec[] = [];
   #session: SessionBreak | "ok" = "ok";
@@ -227,6 +228,21 @@ export class FakeWorld {
   /** Queues a fault for the next call of `op`, on any handle. Faults queue in order. */
   failNext(op: DriverOp, fault: FaultKind): void {
     this.#faults.set(op, [...(this.#faults.get(op) ?? []), fault]);
+  }
+
+  /**
+   * The next call of `op`, on any handle, takes `ms` of simulated time before its effect instead of
+   * the usual 2–20 s (the laptop slept while the page was loading), then proceeds normally.
+   * Suspensions queue in order.
+   */
+  suspendNext(op: DriverOp, ms: number): void {
+    if (!Number.isFinite(ms) || ms < 0) throw new RangeError(`not a duration: ${ms}`);
+    this.#suspensions.set(op, [...(this.#suspensions.get(op) ?? []), ms]);
+  }
+
+  /** Puts a message from the member into the conversation at `at`, as if they wrote it then. */
+  writeAsMember(publicId: string, text: string, at: Date): void {
+    this.#post(this.#member(publicId), { sender: "participant", source: "member", text, at });
   }
 
   /** A new driver handle: a new process. It starts with no latched safety stop. */
@@ -448,6 +464,8 @@ export class FakeWorld {
 
       takeFault: (op) => this.#faults.get(op)?.shift(),
 
+      takeSuspension: (op) => this.#suspensions.get(op)?.shift(),
+
       ensureSession: (now): PageClassification => {
         this.#pageLoad("feed", now);
         return { state: "ok", evidence: "fake world: signed in" };
@@ -556,7 +574,7 @@ export class FakeWorld {
         this.#record({ kind: "thread_read", ...ids(member), at: now });
         const hasWritten = member.thread.some((message) => message.sender === "participant");
         const shownId = hasWritten ? spec.memberId : isNew ? spec.publicId : null;
-        const messages = member.thread.slice(-THREAD_WINDOW).map((message): Message => {
+        const messages = shownMessages(member.thread).map((message): Message => {
           const { raw, exact } = shownTime(message.at, now);
           return {
             sender: message.sender,
@@ -583,7 +601,7 @@ export class FakeWorld {
         };
       },
 
-      sendInvite: (person, note, now): InviteResult => {
+      sendInvite: (person, note, notAfter, now): InviteResult => {
         const member = this.#profileTarget(person.publicId, now);
         if (note !== null && note.length > NOTE_LIMIT) {
           this.#pageLoad("profile", now, member);
@@ -593,6 +611,11 @@ export class FakeWorld {
         if (refusal !== null) {
           this.#pageLoad("profile", now, member);
           return refusal;
+        }
+        // Right before the click: LinkedIn's limit message only shows after it.
+        if (now > notAfter) {
+          this.#pageLoad("profile", now, member);
+          return "expired";
         }
         const cap = this.#options.weeklyInviteCap;
         const since = now.getTime() - WEEK_MS;
@@ -616,22 +639,30 @@ export class FakeWorld {
         member.draft = text;
       },
 
-      sendTyped: (person, now) => {
+      sendTyped: (person, expected, now): MessageResult => {
         const member = this.#byMemberId.get(person.memberId);
         if (member === undefined) throw new Unexpected(`fake world: no member ${person.memberId}`);
         const text = member.draft;
         if (text === null) throw new Unexpected("fake world: the message box is empty");
         member.draft = null;
+        if (now > expected.notAfter) return "expired";
+        // What the open conversation shows right now, counted as `readThread` would show it.
+        if (shownMessages(member.thread).length !== expected.messageCount) return "thread_changed";
         this.#post(member, { sender: "user", source: "app", text, at: now });
         member.firstAppMessageAt ??= new Date(now);
         this.#record({ kind: "message", ...ids(member), text, at: now });
+        return "sent";
       },
 
-      withdrawInvite: (person, now): WithdrawResult => {
+      withdrawInvite: (person, notAfter, now): WithdrawResult => {
         const member = this.#profileTarget(person.publicId, now);
         if (member.invite === null) {
           this.#pageLoad("sent_invitations", now, member);
           return "not_pending";
+        }
+        if (now > notAfter) {
+          this.#pageLoad("sent_invitations", now, member);
+          return "expired";
         }
         member.invite = null;
         this.#record({ kind: "withdraw", ...ids(member), at: now });
@@ -646,6 +677,11 @@ export class FakeWorld {
     if (member.spec.connectUnavailable === true) return "not_offered";
     return null;
   }
+}
+
+/** The part of a conversation the messaging page shows: the latest `THREAD_WINDOW` messages. */
+function shownMessages(thread: readonly WorldMessage[]): readonly WorldMessage[] {
+  return thread.slice(-THREAD_WINDOW);
 }
 
 function ids(member: Member): { publicId: string; memberId: string } {

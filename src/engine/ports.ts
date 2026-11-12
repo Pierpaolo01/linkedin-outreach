@@ -5,6 +5,9 @@
  */
 export type { Driver, InviteResult, PersonRef, ReadDriver, WithdrawResult, WriteDriver } from "../linkedin/driver";
 export type { RandomSource } from "../linkedin/human";
+import type { Db } from "../db/index";
+import type { Driver } from "../linkedin/driver";
+import type { RandomSource } from "../linkedin/human";
 
 export interface Clock {
   now(): Date;
@@ -16,3 +19,26 @@ export const systemClock: Clock = {
   now: () => new Date(),
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 };
+
+export interface EngineDeps {
+  readonly db: Db;
+  readonly driver: Driver;
+  readonly clock: Clock;
+  readonly random: RandomSource;
+}
+
+export interface TickResult {
+  /** What the tick did, in a few words for the log. Null when nothing was due or allowed. */
+  readonly did: string | null;
+  /** The earliest instant at which another tick could do something. Always later than now. */
+  readonly wakeAt: Date;
+}
+
+/**
+ * The engine does at most one piece of due work per tick and never sleeps by itself: whoever
+ * runs it waits until `wakeAt` and calls `tick` again. An engine object holds nothing that
+ * matters across a restart; everything it needs to carry on is in the database.
+ */
+export interface Engine {
+  tick(): Promise<TickResult>;
+}

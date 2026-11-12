@@ -64,6 +64,13 @@ describe("openDb", () => {
     close();
   });
 
+  it("skips the drive sync only when asked, for tests and the simulation", () => {
+    const { sqlite, close } = openDb(join(dir, "app.db"), { durable: false });
+    expect(sqlite.pragma("synchronous", { simple: true })).toBe(0);
+    expect(sqlite.pragma("fullfsync", { simple: true })).toBe(0);
+    close();
+  });
+
   it("leaves an existing database's data untouched when reopened", () => {
     const file = join(dir, "app.db");
     const first = openDb(file);

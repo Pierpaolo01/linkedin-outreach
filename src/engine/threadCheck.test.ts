@@ -72,6 +72,12 @@ describe("judgeSend", () => {
     expect(judgeSend({ messages: [] }, FIRST, 0)).toBe("not_sent");
   });
 
+  it("is unclear, not not_sent, when the count is unchanged but the text is there: the note shown before the send and not after", () => {
+    // Before: [note] (one user message). After: [first message] (still one). The message went out.
+    expect(judgeSend({ messages: [user(FIRST)] }, FIRST, 1)).toBe("unclear");
+    expect(judgeSend({ messages: [user(FIRST.replace("\n\n", "\n"))] }, FIRST, 1)).toBe("unclear");
+  });
+
   it("is sent when there is exactly one more user message and it is the text", () => {
     expect(judgeSend({ messages: [user(NOTE), user(FIRST)] }, FIRST, 1)).toBe("sent");
     expect(judgeSend({ messages: [user(FIRST.replace("\n\n", "\n"))] }, FIRST, 0)).toBe("sent");
@@ -85,8 +91,17 @@ describe("judgeSend", () => {
     expect(judgeSend({ messages: [user(NOTE), user("Hey Marco")] }, FIRST, 1)).toBe("unclear");
   });
 
-  it("is unclear when the count jumped by two", () => {
-    expect(judgeSend({ messages: [user(FIRST), user(FIRST)] }, FIRST, 0)).toBe("unclear");
+  it("is sent when the first new message of the user is the text, whatever he wrote after it", () => {
+    // Killed right after the send, then the user wrote by hand before the app came back. The text
+    // reached the person, so it is never sent again; the next thread check sees the extra message
+    // and stops the sequence as a manual takeover.
+    expect(judgeSend({ messages: [user(FIRST), user(FIRST)] }, FIRST, 0)).toBe("sent");
+    expect(judgeSend({ messages: [user(NOTE), user(FIRST), user("Call me when you can")] }, FIRST, 1)).toBe("sent");
+  });
+
+  it("is unclear when the user's first new message is not the text", () => {
+    expect(judgeSend({ messages: [user("Call me when you can"), user(FIRST)] }, FIRST, 0)).toBe("unclear");
+    expect(judgeSend({ messages: [user(NOTE), user("Hey"), user("there")] }, FIRST, 1)).toBe("unclear");
   });
 
   it("is unclear when the count went down", () => {
