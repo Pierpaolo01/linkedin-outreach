@@ -140,6 +140,51 @@ body {
   color: var(--color-warning-strong);
 }
 
+/* A campaign that is not working (draft, paused, completed, archived) is a ring, so its dot differs by shape, not only hue. */
+.status.status-hollow {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+/* On the current menu item (Dark Moss) every dot is light ink: no status hue reaches 3:1 there. Its words are in the link's name. */
+.menu .menu-active .status {
+  background-color: var(--color-neutral-content);
+  color: var(--color-neutral-content);
+}
+
+/*
+ * One focus indicator: a 2px Ink outline (14.7:1 on Desk Paper, 13.6:1 on Sidebar Sage) on everything that takes focus
+ * from the keyboard. Buttons, fields, switches and radios keep daisyUI's own 2px outline in the same family. A menu
+ * item draws it inside its box (its neighbours are 2px away); on the current item (Dark Moss) it is light ink (12.8:1).
+ */
+:where(a:not(.btn), summary, [tabindex="0"]:not([role="row"])):focus-visible {
+  outline: 2px solid var(--color-base-content);
+  outline-offset: 2px;
+}
+.menu li > a:focus-visible {
+  outline: 2px solid var(--color-base-content);
+  outline-offset: -2px;
+}
+.menu li > a.menu-active:focus-visible {
+  outline-color: var(--color-neutral-content);
+}
+/* A skip link waits above the top edge and slides into the corner when the keyboard reaches it. */
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 50;
+  translate: 0 -200%;
+}
+.skip-link:focus {
+  translate: 0 0;
+}
+/* A page heading or the page itself takes focus only from a script (after a link or a skip link): no ring. */
+:where(h1, main)[tabindex="-1"]:focus {
+  outline: none;
+}
+
 /*
  * One table density: 14px rows with 12px above and below each body cell. daisyUI sits in a sublayer of
  * `utilities`, so these rules beat it; their zero specificity lets a cell's own utility (the opened row) still win.
@@ -169,8 +214,9 @@ body {
   }
 }
 
+/* Loaders keep turning (daisyUI already slows them under reduced motion): a still spinner reads as a stuck app. */
 @media (prefers-reduced-motion: reduce) {
-  *,
+  *:not(.loading),
   *::before,
   *::after {
     transition-duration: 0s !important;

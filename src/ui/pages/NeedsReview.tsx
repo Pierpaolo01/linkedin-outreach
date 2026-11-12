@@ -3,7 +3,7 @@ import { listActivity, listReview, resolveReview, toApiError } from "../api";
 import type { ResolveStage, ReviewItem } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatScore, formatWhen, plural } from "../format";
-import { ActionError, EmptyState, LoadError, Notice, SECONDARY_BUTTON } from "../formParts";
+import { ActionError, Announce, EmptyState, LoadError, Notice, SECONDARY_BUTTON } from "../formParts";
 import { IconExternal } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -109,15 +109,11 @@ export function NeedsReview() {
         aside={loaded.data === undefined ? undefined : `${plural(items.length, "person", "people")} held`}
         lead="The app stopped short with these people rather than guess. Nothing more happens to them until you choose."
       />
-      {notice !== undefined && (
-        <p role="status" className="mb-group text-sm text-primary">
-          {notice}
-        </p>
-      )}
+      <Announce>{notice !== undefined && <p className="mb-group text-sm text-primary">{notice}</p>}</Announce>
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the people held for review" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="flex flex-col gap-3" aria-label="Loading">
+        <div className="flex flex-col gap-3" role="status" aria-label="Loading">
           <div className="skeleton h-40 w-full" />
           <div className="skeleton h-40 w-full" />
         </div>
@@ -254,6 +250,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
             type="button"
             className="btn btn-sm btn-primary"
             disabled={busy || choice === null}
+            aria-busy={busy}
             onClick={() => {
               if (choice !== null) resolve(choice);
             }}

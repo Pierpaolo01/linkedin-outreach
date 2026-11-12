@@ -3,7 +3,7 @@ import { backUpNow, getOps, prospectsCsvUrl, testAi, toApiError, updateSettings 
 import { AI_PROVIDERS, type AiProvider, type AiTest, type BackupResult, type Ops, type Settings as SettingsData, type SettingsPatch } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatWhen } from "../format";
-import { ActionError, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
+import { ActionError, Announce, describedByError, errorProps, FieldError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
 import { sessionView } from "../shell/sessionView";
 import { useRecheck } from "../shell/useRecheck";
 import { useLoad, type Loaded } from "../useLoad";
@@ -130,6 +130,9 @@ const PROVIDER_LABEL: Readonly<Record<AiProvider, string>> = {
   anthropic_api: "Anthropic API, with your API key",
 };
 
+/** The id of a setting's control (or of a group's error line), from its path: "limits.invitesPerDay" is "setting-limits-invitesPerDay". */
+const fieldId = (path: string) => `setting-${path.replaceAll(".", "-")}`;
+
 // ------------------------------------------------------------ the page
 
 export function Settings() {
@@ -139,7 +142,7 @@ export function Settings() {
       <>
         <PageHeader title="Settings" />
         {settingsError === undefined ? (
-          <div className="skeleton h-96 w-full" />
+          <SkeletonRows rows={4} rowClassName="h-16" className="max-w-3xl" />
         ) : (
           <LoadError what="the settings" message={settingsError.message} onRetry={refreshSettings} />
         )}
@@ -194,18 +197,30 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
       .finally(() => setSaving(false));
   };
 
+  /** The error line of a group of fields (a range, the hours) is named after the group's first path. */
+  const GROUPS: Readonly<Record<string, readonly string[]>> = {
+    warmUp: ["warmUp", "warmUp.invitesStartPerDay", "warmUp.invitesIncreasePerDay"],
+    actionGapSeconds: ["actionGapSeconds", "actionGapSeconds.min", "actionGapSeconds.max"],
+    breaks: ["breaks", "breaks.minutesMin", "breaks.minutesMax", "breaks.everyActionsMin", "breaks.everyActionsMax"],
+    workingHours: ["workingHours", "workingHours.start", "workingHours.end"],
+  };
+  const groupOf = (path: string) => Object.keys(GROUPS).find((group) => path.startsWith(`${group}.`)) ?? path;
+  /** The first message for any of these paths (a range's check arrives on the group). */
+  const errorOf = (...paths: string[]) => paths.map((p) => errors[p]).find((m) => m !== undefined);
+  const groupError = (group: string) => errorOf(...(GROUPS[group] ?? [group]));
+  /** A number box: marked invalid by its own error, described by its group's error line. */
   const num = (path: string, label: string, width = "w-20") => (
     <input
+      id={fieldId(path)}
       aria-label={label}
+      aria-invalid={errors[path] !== undefined || undefined}
+      {...describedByError(fieldId(groupOf(path)), groupError(groupOf(path)))}
       inputMode="numeric"
       className={`input input-sm ${width} bg-base-100 nums ${errors[path] === undefined ? "" : "input-error"}`}
       value={form.numbers[path] ?? ""}
       onChange={(event) => setNumber(path)(event.target.value)}
     />
   );
-  /** The first message for any of these paths (a range's check arrives on the group). */
-  const errorOf = (...paths: string[]) => paths.map((p) => errors[p]).find((m) => m !== undefined);
-
   const timeZones = Intl.supportedValuesOf("timeZone");
 
   return (
@@ -228,15 +243,16 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                   className={`input mt-1.5 w-full max-w-sm bg-base-100 ${errors["timeZone"] === undefined ? "" : "input-error"}`}
                   value={form.timeZone}
                   onChange={(event) => change({ timeZone: event.target.value }, "timeZone")}
+                  {...errorProps(ids.zone, errors["timeZone"])}
                 />
                 <datalist id={`${ids.zone}-list`}>
                   {timeZones.map((zone) => (
                     <option key={zone} value={zone} />
                   ))}
                 </datalist>
-                <FieldError message={errors["timeZone"]} />
+                <FieldError controlId={ids.zone} message={errors["timeZone"]} />
               </div>
-              <fieldset className="min-w-0">
+              <fieldset className="min-w-0" {...describedByError(fieldId("workingDays"), errorOf("workingDays"))}>
                 <legend className="font-medium">Working days</legend>
                 <div className="mt-1.5 grid max-w-md grid-cols-4 gap-1 sm:grid-cols-7">
                   {DAYS.map((day, i) => {
@@ -255,7 +271,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     );
                   })}
                 </div>
-                <FieldError message={errorOf("workingDays")} />
+                <FieldError controlId={fieldId("workingDays")} message={errorOf("workingDays")} />
               </fieldset>
               <fieldset>
                 <legend className="font-medium">Hours</legend>
@@ -266,6 +282,8 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     id={ids.start}
                     type="time"
                     aria-label="Start of the working day"
+                    aria-invalid={errors["workingHours.start"] !== undefined || undefined}
+                    {...describedByError(fieldId("workingHours"), groupError("workingHours"))}
                     className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${errors["workingHours.start"] === undefined ? "" : "input-error"}`}
                     value={form.start}
                     onChange={(event) => change({ start: event.target.value }, "workingHours")}
@@ -277,13 +295,15 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     id={ids.end}
                     type="time"
                     aria-label="End of the working day"
+                    aria-invalid={errors["workingHours.end"] !== undefined || errors["workingHours"] !== undefined || undefined}
+                    {...describedByError(fieldId("workingHours"), groupError("workingHours"))}
                     className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${errors["workingHours.end"] === undefined && errors["workingHours"] === undefined ? "" : "input-error"}`}
                     value={form.end}
                     onChange={(event) => change({ end: event.target.value }, "workingHours")}
                   />
                   </span>
                 </div>
-                <FieldError message={errorOf("workingHours", "workingHours.start", "workingHours.end")} />
+                <FieldError controlId={fieldId("workingHours")} message={groupError("workingHours")} />
               </fieldset>
             </div>
           </Section>
@@ -294,33 +314,38 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these limits.
             </Notice>
             <div className="flex flex-col divide-y divide-base-300">
-              <LimitRow control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
+              <LimitRow path="limits.invitesPerDay" control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
               <LimitRow
+                path="limits.invitesPerWeek"
                 control={num("limits.invitesPerWeek", "Invites per week")}
                 label="Invites per week"
                 hint="A ceiling for the calendar week, so several full days do not add up to too many."
                 error={errorOf("limits.invitesPerWeek")}
               />
-              <LimitRow control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow-ups together." error={errorOf("limits.messagesPerDay")} />
+              <LimitRow path="limits.messagesPerDay" control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow-ups together." error={errorOf("limits.messagesPerDay")} />
               <LimitRow
+                path="limits.profileViewsPerDay"
                 control={num("limits.profileViewsPerDay", "Profile views per day")}
                 label="Profile views per day"
                 hint="Profiles the app opens to score people."
                 error={errorOf("limits.profileViewsPerDay")}
               />
               <LimitRow
+                path="limits.discoveryPagesPerDay"
                 control={num("limits.discoveryPagesPerDay", "Discovery pages per day")}
                 label="Discovery pages per day"
                 hint="Search and recommendation pages loaded to find people."
                 error={errorOf("limits.discoveryPagesPerDay")}
               />
               <LimitRow
+                path="limits.withdrawalsPerDay"
                 control={num("limits.withdrawalsPerDay", "Withdrawals per day")}
                 label="Withdrawals per day"
                 hint="Old invites nobody accepted, withdrawn in a day."
                 error={errorOf("limits.withdrawalsPerDay")}
               />
               <LimitRow
+                path={COOLDOWN}
                 control={num(COOLDOWN, "Days invites stay off")}
                 label="Days invites stay off"
                 hint="After LinkedIn says you have sent too many invites, the app sends none for this many days, even after you resume."
@@ -349,7 +374,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     </span>
                   </div>
                 )}
-                <FieldError message={errorOf("warmUp", "warmUp.invitesStartPerDay", "warmUp.invitesIncreasePerDay")} />
+                <FieldError controlId={fieldId("warmUp")} message={groupError("warmUp")} />
               </div>
               <div>
                 <p className="font-medium">Gap between actions</p>
@@ -362,7 +387,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     and {num("actionGapSeconds.max", "Longest gap in seconds")} seconds.
                   </span>
                 </div>
-                <FieldError message={errorOf("actionGapSeconds", "actionGapSeconds.min", "actionGapSeconds.max")} />
+                <FieldError controlId={fieldId("actionGapSeconds")} message={groupError("actionGapSeconds")} />
               </div>
               <div>
                 <p className="font-medium">Breaks</p>
@@ -381,7 +406,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     to {num("breaks.everyActionsMax", "Most actions between breaks")} actions.
                   </span>
                 </div>
-                <FieldError message={errorOf("breaks", "breaks.minutesMin", "breaks.minutesMax", "breaks.everyActionsMin", "breaks.everyActionsMax")} />
+                <FieldError controlId={fieldId("breaks")} message={groupError("breaks")} />
               </div>
             </div>
           </Section>
@@ -412,6 +437,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                   id={ids.provider}
                   className="select mt-1.5 w-full max-w-sm bg-base-100"
                   value={form.provider}
+                  {...errorProps(ids.provider, errorOf("ai", "ai.provider"))}
                   onChange={(event) => {
                     const provider = AI_PROVIDERS.find((p) => p === event.target.value);
                     if (provider !== undefined) change({ provider }, "ai");
@@ -423,7 +449,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     </option>
                   ))}
                 </select>
-                <FieldError message={errorOf("ai", "ai.provider")} />
+                <FieldError controlId={ids.provider} message={errorOf("ai", "ai.provider")} />
               </div>
               <div>
                 <label htmlFor={ids.model} className="block font-medium">
@@ -435,8 +461,9 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                   className="input mt-1.5 w-full max-w-sm bg-base-100"
                   value={form.model}
                   onChange={(event) => change({ model: event.target.value }, "ai")}
+                  {...errorProps(ids.model, errorOf("ai.model"))}
                 />
-                <FieldError message={errorOf("ai.model")} />
+                <FieldError controlId={ids.model} message={errorOf("ai.model")} />
               </div>
               <AiTestButton blocked={aiDirty} />
             </div>
@@ -454,7 +481,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
       </div>
 
       <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-t border-base-300 bg-base-100 px-4 py-3 lg:-mx-10 lg:px-10">
-        <button type="button" className="btn btn-sm btn-primary" disabled={saving || !dirty} onClick={save}>
+        <button type="button" className="btn btn-sm btn-primary" disabled={saving || !dirty} aria-busy={saving} onClick={save}>
           {saving && <span className="loading loading-spinner loading-xs" />}
           Save settings
         </button>
@@ -502,7 +529,7 @@ function Section({ title, lead, children }: { readonly title: string; readonly l
   );
 }
 
-function LimitRow({ control, label, hint, error }: { readonly control: ReactNode; readonly label: string; readonly hint: string; readonly error: string | undefined }) {
+function LimitRow({ path, control, label, hint, error }: { readonly path: string; readonly control: ReactNode; readonly label: string; readonly hint: string; readonly error: string | undefined }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
       <div>
@@ -512,7 +539,7 @@ function LimitRow({ control, label, hint, error }: { readonly control: ReactNode
       {control}
       {error !== undefined && (
         <div className="col-span-2">
-          <FieldError message={error} />
+          <FieldError controlId={fieldId(path)} message={error} />
         </div>
       )}
     </div>
@@ -543,7 +570,7 @@ function LinkedInWindow() {
             </p>
             {view.problem !== undefined && <p className="mt-1 text-sm">{view.problem}</p>}
           </div>
-          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={recheck.checking} onClick={recheck.run}>
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={recheck.checking} aria-busy={recheck.checking} onClick={recheck.run}>
             {recheck.checking && <span className="loading loading-spinner loading-xs" />}
             Re-check
           </button>
@@ -583,13 +610,13 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={running || blocked} onClick={run}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={running || blocked} aria-busy={running} onClick={run}>
           {running && <span className="loading loading-spinner loading-xs" />}
           Test
         </button>
         {running && (
           <p role="status" className="nums text-sm text-base-content">
-            Asking the AI a small question… {seconds} s. This can take up to half a minute.
+            Asking the AI a small question… <span aria-hidden="true">{seconds} s.</span> This can take up to half a minute.
           </p>
         )}
         {blocked && !running && <p className="text-sm text-muted">Save your changes first: the test uses the saved settings.</p>}
@@ -680,15 +707,17 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
         </ul>
       )}
       <div className="mt-group flex flex-wrap items-center gap-3">
-        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={busy} onClick={backUp}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={busy} aria-busy={busy} onClick={backUp}>
           {busy && <span className="loading loading-spinner loading-xs" />}
           Back up now
         </button>
-        {result !== undefined && (
-          <p role="status" className={`text-sm ${result.ok ? "text-primary" : "text-error"}`} data-testid="backup-result">
-            {result.text}
-          </p>
-        )}
+        <Announce>
+          {result !== undefined && (
+            <p className={`text-sm ${result.ok ? "text-primary" : "text-error"}`} data-testid="backup-result">
+              {result.text}
+            </p>
+          )}
+        </Announce>
       </div>
       <ForYourAiTool testId="restore-help">
         <p className="font-medium">To go back to a backup</p>

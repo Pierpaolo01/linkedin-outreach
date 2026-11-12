@@ -100,6 +100,26 @@ test("the approval queue shows each follow-up folded under the first message, or
   await expect(rows.filter({ hasText: "No follow-up" })).toHaveCount(3);
 });
 
+test("approval queue: the row A and R act on shows a ring under keyboard focus, not while a control inside it has focus", async ({ page }) => {
+  await page.goto("/approvals");
+  const rows = page.getByTestId("approval-row");
+  await expect(rows.nth(1)).toBeVisible();
+  const name = (await rows.first().locator("p.font-semibold").innerText()).trim();
+  await rows.first().getByText(name, { exact: true }).click();
+  await page.keyboard.press("ArrowDown");
+  const row = rows.nth(1);
+  await expect(row).toBeFocused();
+  const shadow = () => row.evaluate((element) => getComputedStyle(element).boxShadow);
+  expect(await shadow(), "the focused row has no Dark Moss ring").toContain(MOSS);
+
+  // Into the row: the profile link has its own ring, and the row's ring gives way.
+  await page.keyboard.press("Tab");
+  const profile = row.getByRole("link", { name: /LinkedIn profile/ });
+  await expect(profile).toBeFocused();
+  await expectFocusRing(profile, INK);
+  expect(await shadow(), "the row keeps its ring while the link inside it has focus").not.toContain(MOSS);
+});
+
 test("approve all shown at a minimum score of 8 sends exactly the ids on screen", async ({ page }) => {
   await page.goto("/approvals");
   const before = await badge(page, "approvals");
@@ -485,6 +505,85 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
   await expect(page).toHaveURL(/\/approvals$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Approval queue");
   await expect(nav).toBeHidden();
+});
+
+/** The focus indicator drawn on an element: a solid outline at least 2px wide, in `rgb`. */
+async function expectFocusRing(locator: ReturnType<Page["locator"]>, rgb: string) {
+  const ring = await locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { style: style.outlineStyle, width: Number.parseFloat(style.outlineWidth), color: style.outlineColor };
+  });
+  expect(ring.style, "the focused element draws no outline").toBe("solid");
+  expect(ring.width, "the focus outline is thinner than 2px").toBeGreaterThanOrEqual(2);
+  expect(ring.color).toBe(rgb);
+}
+const INK = "rgb(29, 37, 33)";
+const ON_MOSS = "rgb(242, 244, 240)";
+const MOSS = "rgb(38, 48, 43)";
+
+test("keyboard: skip links first, a visible focus on sidebar items, and focus moves to the page you open", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("link", { name: "Skip to menu" })).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  const nav = sidebar(page).getByRole("navigation", { name: "Main" });
+  // The current page's item (Dark Moss) shows its focus in light ink; any other item in Ink.
+  const home = nav.getByRole("link", { name: "Home" });
+  await expect(home).toBeFocused();
+  await expectFocusRing(home, ON_MOSS);
+  await page.keyboard.press("Tab");
+  const approvals = nav.getByRole("link", { name: "Approval queue" });
+  await expect(approvals).toBeFocused();
+  await expectFocusRing(approvals, INK);
+
+  await page.keyboard.press("Enter");
+  const heading = page.getByRole("heading", { level: 1 });
+  await expect(heading).toHaveText("Approval queue");
+  await expect(heading).toBeFocused();
+});
+
+test("phone width: the menu is a modal; Escape and the overlay close it and give focus back to the menu button", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Home");
+  const button = page.getByRole("button", { name: "Open menu" });
+  const nav = page.getByRole("navigation", { name: "Main" });
+
+  // Skip to content, then the menu button, which shows its focus.
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Tab");
+  await expect(button).toBeFocused();
+  await expectFocusRing(button, INK);
+  await expect(button).toHaveAttribute("aria-expanded", "false");
+
+  // Open: focus moves into the menu, and Tab never reaches the page behind it.
+  await page.keyboard.press("Enter");
+  await expect(nav).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Home" })).toBeFocused();
+  for (let i = 0; i < 30; i += 1) {
+    await page.keyboard.press("Tab");
+    const where = await page.evaluate(() => {
+      const active = document.activeElement;
+      if (active === null || active === document.body) return "nowhere";
+      return active.closest("aside") === null ? `page: ${active.textContent ?? ""}` : "menu";
+    });
+    expect(where === "menu" || where === "nowhere", `Tab reached the page behind the menu (${where})`).toBe(true);
+  }
+
+  await page.keyboard.press("Escape");
+  await expect(nav).toBeHidden();
+  await expect(button).toBeFocused();
+
+  await button.click();
+  await expect(nav).toBeVisible();
+  // The overlay is the strip to the right of the 16rem menu.
+  await page.mouse.click(370, 400);
+  await expect(nav).toBeHidden();
+  await expect(button).toBeFocused();
 });
 
 test("the safety-stop banner says what to do, and Resume asks first", async ({ page }) => {

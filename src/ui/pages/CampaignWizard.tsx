@@ -20,7 +20,7 @@ import {
 import { MessageFields, TimingFields } from "../CampaignFields";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatClock } from "../format";
-import { ActionError, EmptyState, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
+import { ActionError, describedByError, EmptyState, errorProps, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link, navigate } from "../router";
 import { useLoad } from "../useLoad";
@@ -448,7 +448,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
               </button>
             )}
             {step < REVIEW ? (
-              <button type="button" className="btn btn-sm btn-primary" disabled={saving} onClick={() => void goTo(step + 1)}>
+              <button type="button" className="btn btn-sm btn-primary" disabled={saving} aria-busy={saving} onClick={() => void goTo(step + 1)}>
                 {saving && <span className="loading loading-spinner loading-xs" />}
                 {step === REVIEW - 1 ? "Save and review" : "Save and continue"}
               </button>
@@ -457,6 +457,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
                 type="button"
                 className="btn btn-primary"
                 disabled={starting}
+                aria-busy={starting}
                 onClick={() => (form.autoApprove ? setConfirmAuto(true) : void start(false))}
               >
                 {starting && <span className="loading loading-spinner loading-sm" />}
@@ -521,6 +522,7 @@ function NameStep({ form, set, errors, onEnter }: StepProps & { readonly onEnter
           maxLength={200}
           autoFocus
           onChange={(event) => set("name", event.target.value)}
+          {...errorProps(inputId, errors["name"])}
           onKeyDown={(event) => {
             if (event.key === "Enter") onEnter();
           }}
@@ -557,6 +559,7 @@ function SourceStep({ form, set, errors }: StepProps) {
               className="radio radio-sm radio-primary mt-0.5"
               checked={form.discoverySource === value}
               onChange={() => set("discoverySource", value)}
+              {...describedByError(radioName, errors["discoverySource"])}
             />
             <span>
               <span className="block font-medium">{label}</span>
@@ -565,7 +568,7 @@ function SourceStep({ form, set, errors }: StepProps) {
           </label>
         ))}
       </fieldset>
-      <FieldError message={errors["discoverySource"]} />
+      <FieldError controlId={radioName} message={errors["discoverySource"]} />
 
       {form.discoverySource === "search" && (
         <div className="mt-block max-w-2xl">
@@ -578,11 +581,14 @@ function SourceStep({ form, set, errors }: StepProps) {
             {urls.map((url, index) => {
               const serverError = url.trim() === "" ? undefined : errors[`sourceUrls.${sentIndex[index] ?? index}`];
               const looksWrong = url.trim() !== "" && !url.trim().startsWith(SEARCH_PREFIX);
+              const urlId = `${countId}-url-${index}`;
               return (
                 <li key={index}>
                   <div className="flex gap-2">
                     <input
+                      id={urlId}
                       aria-label={`Search address ${index + 1}`}
+                      {...errorProps(urlId, serverError)}
                       className={`input min-w-0 flex-1 bg-base-100 ${serverError === undefined ? "" : "input-error"}`}
                       value={url}
                       placeholder={SEARCH_PREFIX}
@@ -600,7 +606,7 @@ function SourceStep({ form, set, errors }: StepProps) {
                     )}
                   </div>
                   {serverError !== undefined ? (
-                    <FieldError message={serverError} />
+                    <FieldError controlId={urlId} message={serverError} />
                   ) : (
                     looksWrong && <p className="mt-1 text-sm text-base-content">This address does not start with {SEARCH_PREFIX}</p>
                   )}
@@ -630,6 +636,7 @@ function SourceStep({ form, set, errors }: StepProps) {
           className={`input w-32 bg-base-100 nums ${errors["targetProspectCount"] === undefined ? "" : "input-error"}`}
           value={form.targetProspectCount}
           onChange={(event) => set("targetProspectCount", event.target.value)}
+          {...errorProps(countId, errors["targetProspectCount"])}
         />
       </Field>
     </StepFrame>
@@ -653,8 +660,9 @@ function WhoFitsStep({ form, set, errors }: StepProps) {
         className={`textarea mt-2 w-full max-w-3xl bg-base-100 text-base ${errors["scoringBrief"] === undefined ? "" : "textarea-error"}`}
         value={form.scoringBrief}
         onChange={(event) => set("scoringBrief", event.target.value)}
+        {...errorProps(briefId, errors["scoringBrief"])}
       />
-      <FieldError message={errors["scoringBrief"]} />
+      <FieldError controlId={briefId} message={errors["scoringBrief"]} />
     </StepFrame>
   );
 }
@@ -668,6 +676,7 @@ function ApprovalStep({ form, set, errors }: StepProps) {
       className={`input w-24 bg-base-100 nums ${errors[key] === undefined ? "" : "input-error"}`}
       value={form[key]}
       onChange={(event) => set(key, event.target.value)}
+      {...errorProps(id, errors[key])}
     />
   );
   return (
@@ -711,7 +720,7 @@ function ApprovalStep({ form, set, errors }: StepProps) {
               them in the approval queue first.
             </Notice>
           )}
-          <FieldError message={errors["autoApprove"]} />
+          <FieldError controlId={ids.auto} message={errors["autoApprove"]} />
         </div>
       </div>
     </StepFrame>

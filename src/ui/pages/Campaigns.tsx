@@ -4,11 +4,11 @@ import type { Campaign, DiscoveryWait } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { plural } from "../format";
-import { ActionError, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, StatusLine } from "../formParts";
+import { ActionError, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
-import { PageHeader } from "./PageHeader";
+import { PAGE_TITLE_ID, PageHeader } from "./PageHeader";
 
 /** Every campaign: status, funnel counts, Pause or Resume, Archive. Archived ones are listed apart. */
 export function Campaigns() {
@@ -75,11 +75,12 @@ export function Campaigns() {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-48 w-full" />
+        <SkeletonRows rows={4} rowClassName="h-16" />
       ) : current.length === 0 ? (
         <EmptyState title="No campaigns yet.">Start one with New campaign. Nothing is sent until you approve the people it finds.</EmptyState>
       ) : (
         <CampaignTable
+          labelledBy={PAGE_TITLE_ID}
           campaigns={current}
           waits={waits}
           stopped={stopped}
@@ -99,7 +100,7 @@ export function Campaigns() {
               {showArchived ? "Hide" : `Show ${archived.length}`}
             </button>
           </SectionHead>
-          {showArchived && <CampaignTable campaigns={archived} waits={new Map()} stopped={false} busyId={null} onToggle={() => undefined} />}
+          {showArchived && <CampaignTable labelledBy="archived-campaigns" campaigns={archived} waits={new Map()} stopped={false} busyId={null} onToggle={() => undefined} />}
         </section>
       )}
 
@@ -127,20 +128,22 @@ function CampaignTable(props: {
   readonly busyId: number | null;
   readonly onToggle: (campaign: Campaign) => void;
   readonly onArchive?: (campaign: Campaign) => void;
+  /** The id of the heading that names the table. */
+  readonly labelledBy: string;
 }) {
   const { timeZone } = useAppData();
   return (
     <div className="@container overflow-x-auto rounded-box border border-base-300">
-      <table className="table table-sm" data-testid="campaigns-table">
+      <table className="table table-sm" data-testid="campaigns-table" aria-labelledby={props.labelledBy}>
         <thead>
           <tr className="text-muted">
-            <th className="font-medium">Campaign</th>
+            <th scope="col" className="font-medium">Campaign</th>
             {FUNNEL.map((step) => (
-              <th key={step} className="hidden text-right font-medium @funnel:table-cell">
+              <th key={step} scope="col" className="hidden text-right font-medium @funnel:table-cell">
                 {FUNNEL_LABEL[step]}
               </th>
             ))}
-            <th>
+            <th scope="col">
               <span className="sr-only">Actions</span>
             </th>
           </tr>
@@ -152,7 +155,7 @@ function CampaignTable(props: {
             const busy = props.busyId === c.id;
             return (
               <tr key={c.id} data-testid="campaign-row">
-                <td className="@funnel:min-w-[10.5rem]">
+                <th scope="row" className="text-left font-normal @funnel:min-w-[10.5rem]">
                   <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
@@ -161,7 +164,7 @@ function CampaignTable(props: {
                   <p className="mt-0.5 text-sm text-muted @funnel:hidden">
                     {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                   </p>
-                </td>
+                </th>
                 {FUNNEL.map((step) => (
                   <td key={step} className="hidden text-right @funnel:table-cell">
                     {c.funnel[step]}
@@ -179,6 +182,7 @@ function CampaignTable(props: {
                         type="button"
                         className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-xs`}
                         disabled={busy}
+                        aria-busy={busy}
                         onClick={() => props.onToggle(c)}
                         aria-label={`${c.status === "paused" ? "Resume" : "Pause"} ${c.name}`}
                       >

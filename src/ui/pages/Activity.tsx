@@ -3,7 +3,7 @@ import { listActivity, listCampaigns } from "../api";
 import type { ActivityItem, Page } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatToday } from "../format";
-import { ActivityMessage, CampaignSelect, EmptyState, LoadError, Pager, SECONDARY_BUTTON, TOOLBAR } from "../formParts";
+import { ActivityMessage, CampaignSelect, EmptyState, LoadError, Pager, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { useLoad } from "../useLoad";
 import { formatStamp } from "../words";
 import { PageHeader } from "./PageHeader";
@@ -101,7 +101,7 @@ export function Activity() {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-72 w-full" />
+        <SkeletonRows rows={6} rowClassName="h-5" />
       ) : items.length === 0 ? (
         <EmptyState title={level === "problems" ? "No warnings or errors." : "Nothing in the log yet."} testId="activity-empty">
           {level === "problems" ? "When something goes wrong or needs a look, it is listed here." : "Each invite, message and check is listed here."}

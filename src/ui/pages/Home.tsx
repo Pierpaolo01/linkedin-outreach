@@ -3,7 +3,7 @@ import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, 
 import type { Budget, BudgetKind, Campaign, Home as HomeData, Settings } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatResume, formatShort, formatToday, joinWords } from "../format";
-import { ActionError, ActivityMessage, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, StatusLine } from "../formParts";
+import { ActionError, ActivityMessage, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
@@ -20,9 +20,7 @@ export function Home() {
       {home === undefined && homeError !== undefined ? (
         <LoadError what="Home" message={homeError.message} onRetry={refresh} />
       ) : home === undefined ? (
-        <div className="flex justify-center py-4">
-          <span className="loading loading-dots loading-md" aria-label="Loading" />
-        </div>
+        <HomeLoading />
       ) : (
         <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_21rem]">
           <div className="flex min-w-0 flex-col gap-section">
@@ -36,6 +34,35 @@ export function Home() {
         </div>
       )}
     </>
+  );
+}
+
+/** Home's shape while it loads: each section's block at about its final height, so nothing jumps when the data arrives. */
+function HomeLoading() {
+  const heading = <div className="skeleton mb-group h-7 w-40" />;
+  return (
+    <div role="status" aria-label="Loading" className="grid gap-section xl:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="flex min-w-0 flex-col gap-section" aria-hidden="true">
+        <div>
+          {heading}
+          <SkeletonRows quiet rows={2} rowClassName="h-13" />
+        </div>
+        <div>
+          {heading}
+          <SkeletonRows quiet rows={4} rowClassName="h-16" />
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-col gap-section" aria-hidden="true">
+        <div>
+          {heading}
+          <div className="skeleton h-96 w-full" />
+        </div>
+        <div>
+          {heading}
+          <div className="skeleton h-42 w-full" />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -108,7 +135,7 @@ function NeedRow(props: {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4">
       <span
-        className="nums flex size-11 shrink-0 items-center justify-center rounded-box bg-accent text-xl font-semibold text-accent-content"
+        className="nums flex h-11 min-w-11 shrink-0 items-center justify-center rounded-box bg-accent px-1.5 text-xl font-semibold text-accent-content"
         aria-hidden="true"
       >
         {props.count}
@@ -163,7 +190,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-40 w-full" />
+        <SkeletonRows rows={4} rowClassName="h-16" />
       ) : campaigns.length === 0 ? (
         <EmptyState
           title="No campaigns yet."
@@ -177,16 +204,16 @@ function Campaigns({ home }: { readonly home: HomeData }) {
         </EmptyState>
       ) : (
         <div className="@container overflow-x-auto rounded-box border border-base-300">
-          <table className="table table-sm">
+          <table className="table table-sm" aria-labelledby="home-campaigns">
             <thead>
               <tr className="text-muted">
-                <th className="font-medium">Campaign</th>
+                <th scope="col" className="font-medium">Campaign</th>
                 {FUNNEL.map((step) => (
-                  <th key={step} className="hidden text-right font-medium @funnel:table-cell">
+                  <th key={step} scope="col" className="hidden text-right font-medium @funnel:table-cell">
                     {FUNNEL_LABEL[step]}
                   </th>
                 ))}
-                <th>
+                <th scope="col">
                   <span className="sr-only">Pause or resume</span>
                 </th>
               </tr>
@@ -196,7 +223,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                 const halted = haltedBy(c.status, stopped);
                 return (
                   <tr key={c.id}>
-                    <td className="@funnel:min-w-[10.5rem]">
+                    <th scope="row" className="text-left font-normal @funnel:min-w-[10.5rem]">
                       <Link to={`/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
                         {c.name}
                       </Link>
@@ -204,7 +231,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                       <p className="mt-0.5 text-sm text-muted @funnel:hidden">
                         {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
                       </p>
-                    </td>
+                    </th>
                     {FUNNEL.map((step) => (
                       <td key={step} className="hidden text-right @funnel:table-cell">
                         {c.funnel[step]}
@@ -216,6 +243,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                           type="button"
                           className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-xs`}
                           disabled={busyId === c.id}
+                          aria-busy={busyId === c.id}
                           onClick={() => toggle(c)}
                           aria-label={`${c.status === "paused" ? "Resume" : "Pause"} ${c.name}`}
                         >
@@ -310,7 +338,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-28 w-full" />
+        <div role="status" aria-label="Loading" className="skeleton h-42 w-full" />
       ) : items.length === 0 ? (
         <p className="text-sm text-muted">Nothing yet. Each invite, message and check will be listed here.</p>
       ) : (

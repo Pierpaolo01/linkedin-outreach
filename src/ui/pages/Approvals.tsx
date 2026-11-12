@@ -4,7 +4,7 @@ import type { ApprovalItem, Evidence, Person, PreviewText } from "../apiSchemas"
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatScore, plural } from "../format";
-import { ActionError, CampaignSelect, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, TOOLBAR } from "../formParts";
+import { ActionError, Announce, CampaignSelect, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, TOOLBAR } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -28,6 +28,8 @@ export function Approvals() {
   const [rowErrors, setRowErrors] = useState<ReadonlyMap<number, string>>(new Map());
   const [decided, setDecided] = useState(0);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  /** What a screen reader hears when a decision lands: the row leaving the list is the only other sign. */
+  const [said, setSaid] = useState<string | undefined>(undefined);
   /** The ids on screen when "Approve all" was pressed: exactly what the dialog approves. */
   const [confirmIds, setConfirmIds] = useState<readonly number[] | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
@@ -90,6 +92,7 @@ export function Approvals() {
     (decision === "approve" ? approveProspect(item.id) : rejectProspect(item.id))
       .then(() => {
         setDecided((n) => n + 1);
+        setSaid(`${decision === "approve" ? "Approved" : "Rejected"} ${item.person.fullName}.`);
         // Home's count drops by this one; that is not news.
         setInStep((n) => (n === undefined ? n : n - 1));
         refresh();
@@ -201,20 +204,16 @@ export function Approvals() {
       </div>
 
       <p className="hidden text-sm text-muted lg:block">
-        Click a row, then press <kbd className="kbd kbd-xs">A</kbd> to approve or <kbd className="kbd kbd-xs">R</kbd> to reject. The next row
-        is selected for you; <kbd className="kbd kbd-xs">↑</kbd> <kbd className="kbd kbd-xs">↓</kbd> move between rows.
+        Click a row, then press <kbd className="kbd kbd-sm">A</kbd> to approve or <kbd className="kbd kbd-sm">R</kbd> to reject. The next row
+        is selected for you; <kbd className="kbd kbd-sm">↑</kbd> <kbd className="kbd kbd-sm">↓</kbd> move between rows.
       </p>
 
-      {notice !== undefined && (
-        <p role="status" className="text-sm text-primary">
-          {notice}
-        </p>
-      )}
+      <Announce message={said}>{notice !== undefined && <p className="text-sm text-primary">{notice}</p>}</Announce>
 
       {loaded.status === "error" ? (
         <LoadError what="the approval queue" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.status === "loading" ? (
-        <div className="flex flex-col gap-3" aria-label="Loading">
+        <div className="flex flex-col gap-3" role="status" aria-label="Loading">
           {[0, 1, 2].map((n) => (
             <div key={n} className="skeleton h-24 w-full" />
           ))}
@@ -244,7 +243,7 @@ export function Approvals() {
         )
       ) : (
         <div className="rounded-box border border-base-300" role="table" aria-label="Prospects waiting for approval">
-          <div role="rowgroup" className="hidden lg:block">
+          <div role="rowgroup" className="sr-only lg:not-sr-only">
             <div role="row" className={`grid gap-4 border-b border-base-300 px-4 py-2 text-sm text-muted ${COLUMNS}`}>
               <span role="columnheader">Score</span>
               <span role="columnheader">Person</span>
@@ -330,7 +329,7 @@ function Row({
       aria-label={`${person.fullName}${item.score === null ? "" : `, score ${formatScore(item.score)}`}`}
       onKeyDown={onKeyDown}
       data-testid="approval-row"
-      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-3 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-within:ring-2 focus-within:ring-neutral focus-within:ring-inset lg:gap-x-4 ${COLUMNS}`}
+      className={`grid grid-cols-[2.75rem_1fr] gap-x-3 gap-y-2.5 border-b border-base-300 px-4 py-3 outline-none last:border-b-0 focus-within:bg-base-200/60 focus-visible:ring-2 focus-visible:ring-neutral focus-visible:ring-inset lg:gap-x-4 ${COLUMNS}`}
     >
       <ScoreChip score={item.score} size="lg" role="cell" />
       <div role="cell" className="min-w-0">
@@ -362,14 +361,14 @@ function Row({
         <button type="button" className="btn btn-sm btn-outline flex-1 border-primary/50 text-primary lg:flex-none" onClick={() => onDecide("approve")}>
           <IconCheck />
           Approve
-          <kbd className="kbd kbd-xs hidden lg:inline-flex" aria-hidden="true">
+          <kbd className="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">
             A
           </kbd>
         </button>
         <button type="button" className={`${SECONDARY_BUTTON} btn-sm flex-1 lg:flex-none`} onClick={() => onDecide("reject")}>
           <IconX />
           Reject
-          <kbd className="kbd kbd-xs hidden lg:inline-flex" aria-hidden="true">
+          <kbd className="kbd kbd-sm hidden lg:inline-flex" aria-hidden="true">
             R
           </kbd>
         </button>

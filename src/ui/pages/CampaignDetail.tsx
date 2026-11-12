@@ -1,11 +1,12 @@
-import { Fragment, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import { getCampaign, listCampaignProspects, pauseCampaign, prospectsCsvUrl, resumeCampaign, setDoNotContact, toApiError, updateCampaign } from "../api";
 import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { ActionError, EmptyState, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
+import { ActionError, Announce, EmptyState, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
 import { IconChevron, IconExternal } from "../icons";
+import { tabTitle } from "../format";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, formatNext, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords } from "../words";
@@ -50,8 +51,11 @@ export function CampaignDetail({ id }: { readonly id: string }) {
     return (
       <>
         <PageHeader title="Campaign" />
-        <div className="skeleton h-24 w-full" />
-        <div className="skeleton mt-section h-72 w-full" />
+        <div role="status" aria-label="Loading">
+          <div className="skeleton h-6 w-72 max-w-full" aria-hidden="true" />
+          <div className="skeleton mt-group h-20 w-full" aria-hidden="true" />
+          <SkeletonRows quiet rows={4} rowClassName="h-12" className="mt-section" />
+        </div>
       </>
     );
   }
@@ -60,6 +64,10 @@ export function CampaignDetail({ id }: { readonly id: string }) {
 
 function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly onChanged: () => void }) {
   const { home, refresh, timeZone } = useAppData();
+  // The tab says which campaign this is (the route only knows "Campaign" until it has loaded).
+  useEffect(() => {
+    document.title = tabTitle(campaign.name.trim() === "" ? "Untitled campaign" : campaign.name);
+  }, [campaign.name]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const wait = home?.campaigns.find((c) => c.id === campaign.id)?.discoveryWait ?? null;
@@ -85,7 +93,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <StatusLine status={campaign.status} safetyStop={stopped} className="gap-2 font-medium" testId="campaign-status" />
         {(PAUSABLE.has(campaign.status) || campaign.status === "paused") && (
-          <button type="button" className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-sm`} disabled={busy} onClick={toggle}>
+          <button type="button" className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-sm`} disabled={busy} aria-busy={busy} onClick={toggle}>
             {busy && <span className="loading loading-spinner loading-xs" />}
             {campaign.status === "paused" ? "Resume" : "Pause"}
           </button>
@@ -169,7 +177,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
       {loaded.status === "error" && loaded.data === undefined ? (
         <LoadError what="the people" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-64 w-full" />
+        <SkeletonRows rows={4} rowClassName="h-12" />
       ) : items.length === 0 ? (
         <EmptyState title={stage === null ? "Nobody found yet." : `Nobody at the stage ${stageWords(stage).toLowerCase()}.`} testId="people-empty">
           {stage === null ? "People appear here as the campaign finds them." : "Choose another stage, or every stage."}
@@ -177,16 +185,16 @@ function People({ campaign }: { readonly campaign: Campaign }) {
       ) : (
         <>
           <div className="@container overflow-x-auto rounded-box border border-base-300">
-            <table role="table" className="table table-sm @max-people:block" data-testid="people-table">
+            <table role="table" className="table table-sm @max-people:block" data-testid="people-table" aria-labelledby="people">
               <thead role="rowgroup" className="@max-people:sr-only">
                 <tr role="row" className="text-muted">
-                  <th role="columnheader" className="font-medium">Person</th>
-                  <th role="columnheader" className="font-medium">Company</th>
-                  <th role="columnheader" className="font-medium">Stage</th>
-                  <th role="columnheader" className="font-medium">Score</th>
-                  <th role="columnheader" className="min-w-[14rem] font-medium">Why the AI scored them so</th>
-                  <th role="columnheader" className="font-medium">Next action</th>
-                  <th role="columnheader">
+                  <th role="columnheader" scope="col" className="font-medium">Person</th>
+                  <th role="columnheader" scope="col" className="font-medium">Company</th>
+                  <th role="columnheader" scope="col" className="font-medium">Stage</th>
+                  <th role="columnheader" scope="col" className="font-medium">Score</th>
+                  <th role="columnheader" scope="col" className="min-w-[14rem] font-medium">Why the AI scored them so</th>
+                  <th role="columnheader" scope="col" className="font-medium">Next action</th>
+                  <th role="columnheader" scope="col">
                     <span className="sr-only">LinkedIn profile</span>
                   </th>
                 </tr>
@@ -246,7 +254,7 @@ function ProspectRow(props: {
       data-testid="prospect-row"
       className={`@max-people:flex @max-people:flex-col @max-people:gap-2 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-content/5 ${props.open ? "bg-base-200/60" : ""}`}
     >
-      <td role="cell" className={`min-w-[10rem] ${STACK_CELL}`}>
+      <th role="rowheader" scope="row" className={`min-w-[10rem] text-left font-normal ${STACK_CELL}`}>
         <button
           type="button"
           className="inline-flex min-h-6 items-center gap-1 text-left font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11"
@@ -258,7 +266,7 @@ function ProspectRow(props: {
         </button>
         {p.person.headline !== null && <p className="text-base-content">{p.person.headline}</p>}
         {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/15 text-error">Do not contact</span>}
-      </td>
+      </th>
       <td role="cell" className={STACK_PAIR}>
         <StackLabel>Company</StackLabel>
         <span>{p.person.company ?? <span className="text-muted">Unknown</span>}</span>
@@ -443,11 +451,7 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
           </button>
         )}
       </SectionHead>
-      {notice !== undefined && (
-        <p role="status" className="mb-group text-sm text-primary">
-          {notice}
-        </p>
-      )}
+      <Announce>{notice !== undefined && <p className="mb-group text-sm text-primary">{notice}</p>}</Announce>
       {editing ? (
         <LiveEdit
           campaign={campaign}
@@ -529,7 +533,7 @@ function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign
       <TimingFields form={form} set={set} errors={errors} />
       <ActionError message={error} className="mt-block" />
       <div className="mt-block flex gap-3">
-        <button type="button" className="btn btn-sm btn-primary" disabled={saving} onClick={save}>
+        <button type="button" className="btn btn-sm btn-primary" disabled={saving} aria-busy={saving} onClick={save}>
           {saving && <span className="loading loading-spinner loading-xs" />}
           Save changes
         </button>

@@ -2,7 +2,7 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { previewCampaign } from "./api";
 import type { PreviewText } from "./apiSchemas";
 import { INVITE_NOTE_MAX, VARIABLES, type CampaignForm, type FieldErrors, type SetField } from "./campaignForm";
-import { FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
+import { describedByError, errorProps, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
 import { Link } from "./router";
 import { useLoad } from "./useLoad";
 
@@ -58,7 +58,7 @@ export function MessageFields({
       placeholder={placeholder}
       onFocus={() => setTarget(key)}
       onChange={(event) => set(key, event.target.value)}
-      aria-invalid={errors[key] !== undefined}
+      {...errorProps(ids[key], errors[key])}
     />
   );
 
@@ -103,7 +103,7 @@ export function MessageFields({
               in; the preview shows the real length.
             </p>
             <div className="mt-1.5">{textBox("inviteNote", 3, "Your invite note")}</div>
-            <FieldError message={errors["inviteNote"]} />
+            <FieldError controlId={ids.inviteNote} message={errors["inviteNote"]} />
           </div>
   
           <div>
@@ -112,7 +112,7 @@ export function MessageFields({
             </label>
             <p className="text-sm text-muted">Sent after they accept your invite.</p>
             <div className="mt-1.5">{textBox("firstMessage", 6, "Your first message")}</div>
-            <FieldError message={errors["firstMessage"]} />
+            <FieldError controlId={ids.firstMessage} message={errors["firstMessage"]} />
           </div>
   
           <div>
@@ -121,7 +121,7 @@ export function MessageFields({
             </label>
             <p className="text-sm text-muted">Sent once if they have not replied to the first message. Leave it empty to send no follow-up.</p>
             <div className="mt-1.5">{textBox("followUp", 4, "Your follow-up")}</div>
-            <FieldError message={errors["followUp"]} />
+            <FieldError controlId={ids.followUp} message={errors["followUp"]} />
           </div>
   
           <div className="flex flex-col gap-3 rounded-box border border-base-300 px-4 py-4">
@@ -132,7 +132,7 @@ export function MessageFields({
               checked={form.aiPersonalise}
               onChange={(on) => set("aiPersonalise", on)}
             />
-            <FieldError message={errors["aiPersonalise"]} />
+            <FieldError controlId={ids.personalise} message={errors["aiPersonalise"]} />
             {form.aiPersonalise && (
               <div>
                 <label htmlFor={ids.instructions} className="text-sm font-medium">
@@ -145,8 +145,9 @@ export function MessageFields({
                   value={form.personalisationInstructions}
                   placeholder="What the line should be about, and what to avoid"
                   onChange={(event) => set("personalisationInstructions", event.target.value)}
+                  {...errorProps(ids.instructions, errors["personalisationInstructions"])}
                 />
-                <FieldError message={errors["personalisationInstructions"]} />
+                <FieldError controlId={ids.instructions} message={errors["personalisationInstructions"]} />
               </div>
             )}
           </div>
@@ -269,12 +270,13 @@ export function TimingFields({ form, set, errors }: { readonly form: CampaignFor
                 className="radio radio-sm radio-primary"
                 checked={form.delayPolicy === value}
                 onChange={() => set("delayPolicy", value)}
+                {...describedByError(ids.policy, errors["delayPolicy"])}
               />
               {label}
             </label>
           ))}
         </div>
-        <FieldError message={errors["delayPolicy"]} />
+        <FieldError controlId={ids.policy} message={errors["delayPolicy"]} />
       </fieldset>
 
       <div>
@@ -289,10 +291,11 @@ export function TimingFields({ form, set, errors }: { readonly form: CampaignFor
             className={`input input-sm w-20 bg-base-100 nums ${errors["withdrawAfterDays"] === undefined ? "" : "input-error"}`}
             value={form.withdrawAfterDays}
             onChange={(event) => set("withdrawAfterDays", event.target.value)}
+            {...errorProps(ids.withdraw, errors["withdrawAfterDays"])}
           />
           <span>days.</span>
         </div>
-        <FieldError message={errors["withdrawAfterDays"]} />
+        <FieldError controlId={ids.withdraw} message={errors["withdrawAfterDays"]} />
       </div>
 
       <Notice tone="note" className="text-sm">
@@ -321,6 +324,7 @@ function HourRange(props: {
   const [minKey, minValue] = props.min;
   const [maxKey, maxValue] = props.max;
   const error = props.errors[minKey] ?? props.errors[maxKey];
+  const groupId = useId();
   const box = (key: HourKey, value: string, label: string) => (
     <input
       inputMode="numeric"
@@ -328,6 +332,8 @@ function HourRange(props: {
       className={`input input-sm w-20 bg-base-100 nums ${props.errors[key] === undefined ? "" : "input-error"}`}
       value={value}
       onChange={(event) => props.set(key, event.target.value)}
+      aria-invalid={props.errors[key] !== undefined || undefined}
+      {...describedByError(groupId, error)}
     />
   );
   return (
@@ -341,7 +347,7 @@ function HourRange(props: {
         <span>hours.</span>
       </div>
       {props.note !== undefined && <p className="mt-1 text-sm text-muted">{props.note}</p>}
-      <FieldError message={error} />
+      <FieldError controlId={groupId} message={error} />
     </fieldset>
   );
 }

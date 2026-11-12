@@ -98,13 +98,13 @@ export const CAMPAIGN_STATUS_LABEL: Readonly<Record<CampaignStatus, string>> = {
 };
 
 export const CAMPAIGN_STATUS_DOT: Readonly<Record<CampaignStatus, string>> = {
-  draft: "status-neutral",
+  draft: "status-neutral status-hollow",
   finding: "status-info",
   awaiting_approval: "status-warning",
   running: "status-success",
-  paused: "status-neutral",
-  completed: "status-neutral",
-  archived: "status-neutral",
+  paused: "status-neutral status-hollow",
+  completed: "status-neutral status-hollow",
+  archived: "status-neutral status-hollow",
 };
 
 export const STAGE_LABEL: Readonly<Record<ProspectStage, string>> = {
@@ -159,3 +159,6 @@ export function workingNow(settings: Settings, now: Date): { readonly open: true
   }
   return { open: false, next: "on the next working day" };
 }
+
+/** The browser tab's title for a page named `name`. */
+export const tabTitle = (name: string) => `${name} | LinkedIn outreach`;

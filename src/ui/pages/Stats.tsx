@@ -1,7 +1,7 @@
 import { getStats } from "../api";
 import type { Stats as StatsData } from "../apiSchemas";
 import { useAppData } from "../appData";
-import { EmptyState, LoadError, StatusLine } from "../formParts";
+import { EmptyState, LoadError, SkeletonRows, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { useLoad } from "../useLoad";
 import { formatHours } from "../words";
@@ -66,19 +66,19 @@ export function Stats() {
       {loaded.status === "error" ? (
         <LoadError what="the stats" message={loaded.error.message} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-56 w-full" />
+        <SkeletonRows rows={4} rowClassName="h-14" />
       ) : rows.length === 0 ? (
         <EmptyState title="No campaigns yet.">Stats appear once a campaign has sent invites.</EmptyState>
       ) : (
         <div className="@container overflow-x-auto rounded-box border border-base-300">
-          <table role="table" className="table table-sm @max-stats:block" data-testid="stats-table">
+          <table role="table" className="table table-sm @max-stats:block" data-testid="stats-table" aria-label="Stats per campaign">
             <thead role="rowgroup" className="@max-stats:sr-only">
               <tr role="row" className="align-bottom text-muted">
-                <th role="columnheader" className="font-medium">Campaign</th>
-                <th role="columnheader" className="font-medium">Accepted your invite</th>
-                <th role="columnheader" className="font-medium">{replyLabel}</th>
-                <th role="columnheader" className="font-medium">Median time to accept</th>
-                <th role="columnheader" className="text-right font-medium">Invites withdrawn</th>
+                <th role="columnheader" scope="col" className="font-medium">Campaign</th>
+                <th role="columnheader" scope="col" className="font-medium">Accepted your invite</th>
+                <th role="columnheader" scope="col" className="font-medium">{replyLabel}</th>
+                <th role="columnheader" scope="col" className="font-medium">Median time to accept</th>
+                <th role="columnheader" scope="col" className="text-right font-medium">Invites withdrawn</th>
               </tr>
             </thead>
             <tbody role="rowgroup" className="@max-stats:block">
@@ -97,12 +97,12 @@ function StatsRow({ row, replyLabel }: { readonly row: Row; readonly replyLabel:
   const { home } = useAppData();
   return (
     <tr role="row" data-testid="stats-row" className="align-top @max-stats:grid @max-stats:grid-cols-2 @max-stats:gap-x-4 @max-stats:gap-y-3 @max-stats:px-4 @max-stats:py-3 @max-stats:not-last:border-b @max-stats:not-last:border-base-content/5">
-      <td role="cell" className="@max-stats:col-span-2 @max-stats:border-0 @max-stats:p-0">
+      <th role="rowheader" scope="row" className="text-left font-normal @max-stats:col-span-2 @max-stats:border-0 @max-stats:p-0">
         <Link to={`/campaigns/${row.campaignId}`} className="inline-flex min-h-6 items-center font-semibold hover:underline">
           {row.name}
         </Link>
         <StatusLine status={row.status} safetyStop={home?.safetyStop != null} className="text-muted" />
-      </td>
+      </th>
       <td role="cell" className={STACK_MEASURE}>
         <StackLabel>Accepted your invite</StackLabel>
         <Rate value={row.acceptanceRate} part={row.accepted} whole={row.invitesSent} of="invited" />

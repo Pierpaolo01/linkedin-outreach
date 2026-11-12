@@ -22,13 +22,40 @@ export const ON_RED_BUTTON = "btn border-error-content/40 bg-error-content text-
 
 // ------------------------------------------------------------ errors and notices
 
-/** The server's (or the form's) message for one field, under it. */
-export function FieldError({ id, message }: { readonly id?: string; readonly message: string | undefined }) {
+/** The id of the error line under the control `controlId`. */
+export const errorIdOf = (controlId: string) => `${controlId}-error`;
+
+/** What a control carries when it has an error: marked invalid, and described by its error line (`FieldError` with the same id). */
+export function errorProps(controlId: string, message: string | undefined) {
+  return message === undefined ? {} : { "aria-invalid": true, "aria-describedby": errorIdOf(controlId) };
+}
+
+/** For one control of a group whose error line is `groupId`'s (a range, a time pair): points at that line while it shows. */
+export function describedByError(groupId: string, message: string | undefined) {
+  return message === undefined ? {} : { "aria-describedby": errorIdOf(groupId) };
+}
+
+/** The server's (or the form's) message for one field, under it. Pass the control's id so the control can point at it. */
+export function FieldError({ controlId, message }: { readonly controlId?: string; readonly message: string | undefined }) {
   if (message === undefined) return null;
   return (
-    <p id={id} className="mt-1 text-sm text-error" data-testid="field-error">
+    <p id={controlId === undefined ? undefined : errorIdOf(controlId)} role="alert" className="mt-1 text-sm text-error" data-testid="field-error">
       {message}
     </p>
+  );
+}
+
+/**
+ * A live region that is always in the page, so what appears in it is read out: the visible result of an action
+ * (`children`, shown only once there is one), and `message` for a screen reader alone. It draws no box of its own,
+ * so an empty one takes no room in a list or a row.
+ */
+export function Announce({ message, children }: { readonly message?: string | undefined; readonly children?: ReactNode }) {
+  return (
+    <div role="status" className="contents">
+      {children}
+      {message !== undefined && <span className="sr-only">{message}</span>}
+    </div>
   );
 }
 
@@ -103,6 +130,35 @@ export function SectionHead(props: { readonly id: string; readonly title: string
   );
 }
 
+/**
+ * What a list shows while it loads: a few bars of row height inside the list's own bordered box, so the page
+ * keeps its shape when the rows arrive.
+ */
+export function SkeletonRows(props: {
+  readonly rows?: number;
+  /** The height of one bar; with the 12px above and below it, one row of the list. */
+  readonly rowClassName?: string;
+  readonly className?: string;
+  /** Part of a larger loading view that says "Loading" once for all its blocks. */
+  readonly quiet?: boolean;
+}) {
+  const { rows = 3, rowClassName = "h-10", quiet = false } = props;
+  return (
+    <div
+      role={quiet ? undefined : "status"}
+      aria-label={quiet ? undefined : "Loading"}
+      aria-hidden={quiet || undefined}
+      className={`flex flex-col divide-y divide-base-300 rounded-box border border-base-300 ${props.className ?? ""}`}
+    >
+      {Array.from({ length: rows }, (_, n) => (
+        <div key={n} className="px-4 py-3">
+          <div className={`skeleton w-full ${rowClassName}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** What a list says when it has nothing to show: one sentence at 500, a line on what will appear, maybe one action. */
 export function EmptyState(props: { readonly title: ReactNode; readonly children?: ReactNode; readonly action?: ReactNode; readonly className?: string; readonly testId?: string }) {
   return (
@@ -122,6 +178,10 @@ export function haltedBy(status: CampaignStatus, safetyStop: boolean): boolean {
 }
 
 /** A campaign's status as the user reads it. */
+export function statusLabel(status: CampaignStatus, safetyStop: boolean): string {
+  return statusView(status, safetyStop).label;
+}
+
 function statusView(status: CampaignStatus, safetyStop: boolean): { readonly dot: string; readonly label: string } {
   if (haltedBy(status, safetyStop)) return { dot: "status-error", label: "Stopped by safety stop" };
   return { dot: CAMPAIGN_STATUS_DOT[status], label: CAMPAIGN_STATUS_LABEL[status] };
@@ -166,7 +226,10 @@ export function ScoreChip({ score, size, role }: { readonly score: number | null
 
 // ------------------------------------------------------------ controls
 
-/** A labelled field: the label, an optional line on what it is for, the control, its error. */
+/**
+ * A labelled field: the label, an optional line on what it is for, the control, its error. The control's id is
+ * `htmlFor`; give it `errorProps(htmlFor, error)` so it is marked invalid and points at its error line.
+ */
 export function Field(props: {
   readonly label: ReactNode;
   readonly htmlFor: string;
@@ -182,7 +245,7 @@ export function Field(props: {
       </label>
       {props.hint !== undefined && <p className="text-sm text-muted">{props.hint}</p>}
       <div className="mt-1.5">{props.children}</div>
-      <FieldError message={props.error} />
+      <FieldError controlId={props.htmlFor} message={props.error} />
     </div>
   );
 }

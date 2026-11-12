@@ -1,9 +1,11 @@
 import { useAppData } from "../appData";
 import { formatClock, formatDays, workingNow } from "../format";
-import { ON_RED_BUTTON, SECONDARY_BUTTON, StatusDot } from "../formParts";
+import { ON_RED_BUTTON, SECONDARY_BUTTON, StatusDot, statusLabel } from "../formParts";
 import { Link } from "../router";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
+
+export const SIDEBAR_ID = "sidebar";
 
 /** The left column on a wide screen, the menu on a phone: session, the eight destinations, working hours. */
 export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; readonly recheck: Recheck; readonly onNavigate: () => void }) {
@@ -11,7 +13,7 @@ export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; 
   const campaigns = home?.campaigns ?? [];
   const stopped = home?.safetyStop != null;
   return (
-    <aside className="flex min-h-full w-64 flex-col border-r border-base-300 bg-base-200" aria-label="Sidebar">
+    <aside id={SIDEBAR_ID} className="flex min-h-full w-64 flex-col border-r border-base-300 bg-base-200" aria-label="Sidebar">
       {/* Boxes (the session card, the menu's items) start 12px in; text starts 24px in, the menu's own text inset. */}
       <div className="px-3 pt-6 pb-4">
         <p className="px-3 text-lg font-semibold">Outreach</p>
@@ -40,6 +42,7 @@ export function Sidebar({ path, recheck, onNavigate }: { readonly path: string; 
                       <Link to={to} className={`text-sm ${path === to ? "menu-active" : ""}`} aria-current={path === to ? "page" : undefined} onClick={onNavigate}>
                         <StatusDot status={c.status} safetyStop={stopped} />
                         <span className="truncate">{c.name}</span>
+                        <span className="sr-only">, {statusLabel(c.status, stopped)}</span>
                       </Link>
                     </li>
                   );
@@ -79,7 +82,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
   if (home === undefined) {
     return (
       <div className="mt-3 rounded-box bg-base-100 px-3 py-2.5 text-sm">
-        <span className="loading loading-dots loading-sm" aria-label="Loading" />
+        <span role="status" className="loading loading-dots loading-sm" aria-label="Loading" />
       </div>
     );
   }
@@ -104,6 +107,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
           type="button"
           className={`${stop === null ? SECONDARY_BUTTON : ON_RED_BUTTON} btn-xs shrink-0`}
           disabled={recheck.checking}
+          aria-busy={recheck.checking}
           onClick={recheck.run}
         >
           {recheck.checking && <span className="loading loading-spinner loading-xs" />}
@@ -114,7 +118,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
         {checked}
       </p>
       {recheck.error !== undefined && (
-        <p role="status" className={`mt-1.5 ${stop === null ? "text-error" : ""}`}>
+        <p role="alert" className={`mt-1.5 ${stop === null ? "text-error" : ""}`}>
           {recheck.error}
         </p>
       )}

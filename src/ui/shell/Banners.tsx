@@ -92,7 +92,7 @@ export function SessionBanner({ session, recheck }: { readonly session: Session;
         <p className="font-semibold">LinkedIn needs you.</p>
         <p className="text-error-content/90">{view.problem}</p>
       </div>
-      <button type="button" className={ON_RED} disabled={recheck.checking} onClick={recheck.run}>
+      <button type="button" className={ON_RED} disabled={recheck.checking} aria-busy={recheck.checking} onClick={recheck.run}>
         {recheck.checking && <span className="loading loading-spinner loading-sm" />}
         Re-check
       </button>

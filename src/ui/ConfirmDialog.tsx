@@ -16,6 +16,7 @@ export function ConfirmDialog(props: {
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const bodyId = useId();
   const { open } = props;
 
   useEffect(() => {
@@ -30,6 +31,7 @@ export function ConfirmDialog(props: {
       ref={ref}
       className="modal modal-bottom sm:modal-middle"
       aria-labelledby={titleId}
+      aria-describedby={bodyId}
       onClose={() => {
         if (props.open) props.onCancel();
       }}
@@ -38,7 +40,9 @@ export function ConfirmDialog(props: {
         <h2 id={titleId} className="text-lg font-semibold">
           {props.title}
         </h2>
-        <div className="mt-3 flex flex-col gap-2">{props.children}</div>
+        <div id={bodyId} className="mt-3 flex flex-col gap-2">
+          {props.children}
+        </div>
         <ActionError message={props.error} className="mt-3" />
         <div className="modal-action">
           <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} onClick={props.onCancel} disabled={props.busy}>
@@ -49,14 +53,16 @@ export function ConfirmDialog(props: {
             className={`btn btn-sm ${props.tone === "error" ? "btn-error" : "btn-primary"}`}
             onClick={props.onConfirm}
             disabled={props.busy}
+            aria-busy={props.busy}
           >
             {props.busy === true && <span className="loading loading-spinner loading-sm" />}
             {props.confirmLabel}
           </button>
         </div>
       </div>
+      {/* A click outside the box closes the dialog; the keyboard has Escape and Cancel, so this is no tab stop. */}
       <form method="dialog" className="modal-backdrop">
-        <button type="submit" disabled={props.busy}>
+        <button type="submit" disabled={props.busy} tabIndex={-1} aria-hidden="true">
           Close
         </button>
       </form>
