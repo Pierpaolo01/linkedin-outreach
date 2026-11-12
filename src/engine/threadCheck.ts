@@ -50,7 +50,10 @@ export function judgeThread(thread: Pick<Thread, "messages">, sent: AppSent): Th
 export function judgeSend(thread: Pick<Thread, "messages">, expectedText: string, userMessagesBefore: number): SendVerdict {
   const texts = userTexts(thread.messages);
   if (texts.length === userMessagesBefore) return "not_sent";
-  const newest = texts.at(-1);
-  if (texts.length === userMessagesBefore + 1 && newest !== undefined && sameText(newest, expectedText)) return "sent";
+  // The first message of the user that was not there before the send. If it is the text, the text
+  // reached the person and is never sent again, whatever the user wrote by hand after it: the
+  // next thread check sees those extra messages and stops the sequence as a manual takeover.
+  const firstNew = texts.length > userMessagesBefore ? texts[userMessagesBefore] : undefined;
+  if (firstNew !== undefined && sameText(firstNew, expectedText)) return "sent";
   return "unclear";
 }

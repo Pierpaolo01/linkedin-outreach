@@ -5,11 +5,12 @@
  * the world's (`world.ts`).
  *
  * Every operation runs the same steps: refuse if revoked or latched, call the hook with `before`,
- * sleep a random 2–20 s on the injected clock, settle the world, check the session, take a scripted
+ * sleep a random 2–20 s on the injected clock (or the time `suspendNext` set for this call), settle
+ * the world, check the session, take a scripted
  * fault, act, call the hook with `after`. A revoked handle throws at its next step and does nothing
  * more, so a killed process never does what it had not yet done.
  */
-import type { Driver, InviteResult, PersonRef, ReadThreadResult, SearchQuery, WithdrawResult } from "../driver";
+import type { Driver, InviteResult, MessageResult, PersonRef, ReadThreadResult, SearchQuery, WithdrawResult } from "../driver";
 import { LinkedInError, SearchCapped, Unexpected } from "../errors";
 import type { ConnectionCard } from "../parse/connections";
 import type { Profile } from "../parse/profile";
@@ -75,6 +76,8 @@ export interface FakeLinkedIn {
   /** The typed error the session shows (the page load is logged), or null when it is ok. */
   sessionError(op: DriverOp, now: Date): LinkedInError | null;
   takeFault(op: DriverOp): FaultKind | undefined;
+  /** How long the next call of `op` takes before its effect, when `suspendNext` set one. */
+  takeSuspension(op: DriverOp): number | undefined;
   ensureSession(now: Date): PageClassification;
   searchPeople(query: SearchQuery, now: Date): SearchResults;
   listRecommendations(now: Date): RecommendationsResult;
@@ -85,8 +88,11 @@ export interface FakeLinkedIn {
   sendInvite(person: PersonRef, note: string | null, now: Date): InviteResult;
   /** Opens the message box, clears any draft and types `text`. Nothing is sent. */
   typeMessage(person: PersonRef, text: string, now: Date): void;
-  /** Sends what is in the message box. */
-  sendTyped(person: PersonRef, now: Date): void;
+  /**
+   * Sends what is in the message box, unless the conversation no longer shows `expectedCount`
+   * messages: then the box is cleared, nothing is sent and the result is `thread_changed`.
+   */
+  sendTyped(person: PersonRef, expectedCount: number, now: Date): MessageResult;
   withdrawInvite(person: PersonRef, now: Date): WithdrawResult;
 }
 
@@ -112,7 +118,7 @@ export function createFakeDriver(world: FakeLinkedIn, { clock, random, hook }: C
     if (stopped !== undefined) throw stopped;
     world.settle(clock.now());
     await point(op, "before");
-    await clock.sleep(MIN_STEP_MS + Math.floor(random() * (MAX_STEP_MS - MIN_STEP_MS + 1)));
+    await clock.sleep(world.takeSuspension(op) ?? MIN_STEP_MS + Math.floor(random() * (MAX_STEP_MS - MIN_STEP_MS + 1)));
     alive(op);
     const now = clock.now();
     world.settle(now);
@@ -152,12 +158,12 @@ export function createFakeDriver(world: FakeLinkedIn, { clock, random, hook }: C
     listSentInvitations: () => run("listSentInvitations", () => world.listSentInvitations(clock.now())),
     readThread: (person) => run("readThread", () => world.readThread(person, clock.now())),
     sendInvite: (person, note) => run("sendInvite", () => world.sendInvite(person, note, clock.now())),
-    sendMessage: (person, text) =>
+    sendMessage: (person, text, expected) =>
       run("sendMessage", async () => {
         world.typeMessage(person, text, clock.now());
         await point("sendMessage", "typed");
         world.settle(clock.now());
-        world.sendTyped(person, clock.now());
+        return world.sendTyped(person, expected.messageCount, clock.now());
       }),
     withdrawInvite: (person) => run("withdrawInvite", () => world.withdrawInvite(person, clock.now())),
   };

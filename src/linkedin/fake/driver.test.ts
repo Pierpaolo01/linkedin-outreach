@@ -59,11 +59,58 @@ describe("simulated time", () => {
   });
 });
 
+describe("suspendNext", () => {
+  it("the next call of that operation takes the given time before its effect, then calls take the usual time again", async () => {
+    const { clock, world, driver } = setup();
+    world.suspendNext("viewProfile", 66 * 60_000);
+    await driver.ensureSession();
+    expect(clock.now().getTime() - START.getTime()).toBe(11_000);
+    await driver.viewProfile("test-person-2");
+    expect(clock.now().getTime() - START.getTime()).toBe(11_000 + 66 * 60_000);
+    expect(world.log.at(-1)).toMatchObject({ kind: "profile_view", at: clock.now() });
+    await driver.viewProfile("test-person-2");
+    expect(clock.now().getTime() - START.getTime()).toBe(2 * 11_000 + 66 * 60_000);
+  });
+});
+
+describe("sendMessage against the conversation the caller judged", () => {
+  it("sends and resolves sent when the conversation still shows the expected number of messages", async () => {
+    const { world, driver } = setup();
+    expect(await driver.sendMessage(ref1, "Hello", { messageCount: 0 })).toBe("sent");
+    expect(await driver.sendMessage(ref1, "Again", { messageCount: 1 })).toBe("sent");
+    expect(world.messagesSentTo("test-person-1").map((entry) => entry.text)).toEqual(["Hello", "Again"]);
+  });
+
+  it("a reply that lands while the text is being typed: nothing is sent, the draft is cleared, the result is thread_changed", async () => {
+    const clock = virtualClock();
+    const world = new FakeWorld({ start: START });
+    world.addMember(connection);
+    const { driver } = world.connect({
+      clock,
+      random: () => 0.5,
+      hook: (point) => {
+        if (point.op === "sendMessage" && point.phase === "typed") world.writeAsMember("test-person-1", "A reply", clock.now());
+      },
+    });
+    expect(await driver.sendMessage(ref1, "Hello", { messageCount: 0 })).toBe("thread_changed");
+    expect(world.messagesSentTo("test-person-1")).toEqual([]);
+    expect(world.thread("test-person-1")).toMatchObject([{ sender: "participant", source: "member", text: "A reply" }]);
+    expect(world.draft("test-person-1")).toBeNull();
+  });
+
+  it("a stale count is refused too: the conversation already held a message the caller did not count", async () => {
+    const { world, driver } = setup();
+    world.writeAsMember("test-person-1", "Written earlier", START);
+    expect(await driver.sendMessage(ref1, "Hello", { messageCount: 0 })).toBe("thread_changed");
+    expect(world.messagesSentTo("test-person-1")).toEqual([]);
+  });
+});
+
 describe("kill points", () => {
   it("sendMessage passes before, typed and after, in order; a read passes before and after", async () => {
     const { seen, hook } = killAt({ op: "ensureSession", phase: "typed" });
     const { driver } = setup(hook);
-    await driver.sendMessage(ref1, "Hello");
+    await driver.sendMessage(ref1, "Hello", { messageCount: 0 });
     await driver.viewProfile("test-person-2");
     expect(seen).toEqual([
       { op: "sendMessage", phase: "before" },
@@ -77,7 +124,7 @@ describe("kill points", () => {
   it("killed before: nothing happened, and the hook's error propagates unchanged", async () => {
     const { killed, hook } = killAt({ op: "sendMessage", phase: "before" });
     const { world, driver } = setup(hook);
-    await expect(driver.sendMessage(ref1, "Hello")).rejects.toBe(killed);
+    await expect(driver.sendMessage(ref1, "Hello", { messageCount: 0 })).rejects.toBe(killed);
     expect(world.log).toEqual([]);
     expect(world.draft("test-person-1")).toBeNull();
     expect(world.thread("test-person-1")).toEqual([]);
@@ -86,7 +133,7 @@ describe("kill points", () => {
   it("killed when typed: the draft is in the box and no message was sent", async () => {
     const { killed, hook } = killAt({ op: "sendMessage", phase: "typed" });
     const { world, driver } = setup(hook);
-    await expect(driver.sendMessage(ref1, "Hello")).rejects.toBe(killed);
+    await expect(driver.sendMessage(ref1, "Hello", { messageCount: 0 })).rejects.toBe(killed);
     expect(world.draft("test-person-1")).toBe("Hello");
     expect(world.thread("test-person-1")).toEqual([]);
     expect(world.messagesSentTo("test-person-1")).toEqual([]);
@@ -95,7 +142,7 @@ describe("kill points", () => {
   it("killed after: the message is in the thread and the log", async () => {
     const { killed, hook } = killAt({ op: "sendMessage", phase: "after" });
     const { world, driver } = setup(hook);
-    await expect(driver.sendMessage(ref1, "Hello")).rejects.toBe(killed);
+    await expect(driver.sendMessage(ref1, "Hello", { messageCount: 0 })).rejects.toBe(killed);
     expect(world.thread("test-person-1")).toMatchObject([{ sender: "user", source: "app", text: "Hello" }]);
     expect(world.messagesSentTo("test-person-1")).toMatchObject([{ kind: "message", text: "Hello" }]);
     expect(world.draft("test-person-1")).toBeNull();
@@ -111,11 +158,11 @@ describe("kill points", () => {
   it("a draft left by a killed send is cleared before the next send: no stale text is glued on", async () => {
     const { killed, hook } = killAt({ op: "sendMessage", phase: "typed" });
     const first = setup(hook);
-    await expect(first.driver.sendMessage(ref1, "Old text")).rejects.toBe(killed);
+    await expect(first.driver.sendMessage(ref1, "Old text", { messageCount: 0 })).rejects.toBe(killed);
     expect(first.world.draft("test-person-1")).toBe("Old text");
 
     const { driver } = first.world.connect({ clock: first.clock, random: () => 0.5 });
-    await driver.sendMessage(ref1, "New text");
+    await driver.sendMessage(ref1, "New text", { messageCount: 0 });
     expect(first.world.thread("test-person-1").map((message) => message.text)).toEqual(["New text"]);
     expect(first.world.messagesSentTo("test-person-1").map((entry) => entry.text)).toEqual(["New text"]);
     expect(first.world.draft("test-person-1")).toBeNull();
@@ -138,7 +185,7 @@ describe("revoke", () => {
       if (point.phase === "typed") revokeHandle();
     });
     revokeHandle = revoke;
-    await expect(driver.sendMessage(ref1, "Hello")).rejects.toBeInstanceOf(HandleRevoked);
+    await expect(driver.sendMessage(ref1, "Hello", { messageCount: 0 })).rejects.toBeInstanceOf(HandleRevoked);
     expect(world.draft("test-person-1")).toBe("Hello");
     expect(world.messagesSentTo("test-person-1")).toEqual([]);
   });
@@ -147,11 +194,11 @@ describe("revoke", () => {
     const { clock, world, driver, revoke } = setup();
     revoke();
     await expect(driver.ensureSession()).rejects.toBeInstanceOf(HandleRevoked);
-    await expect(driver.sendMessage(ref1, "Hello")).rejects.toBeInstanceOf(HandleRevoked);
+    await expect(driver.sendMessage(ref1, "Hello", { messageCount: 0 })).rejects.toBeInstanceOf(HandleRevoked);
     expect(world.log).toEqual([]);
     expect(clock.now()).toEqual(START);
     const fresh = world.connect({ clock, random: () => 0.5 });
-    await fresh.driver.sendMessage(ref1, "Hello");
+    await fresh.driver.sendMessage(ref1, "Hello", { messageCount: 0 });
     expect(world.messagesSentTo("test-person-1")).toHaveLength(1);
   });
 });
@@ -168,7 +215,7 @@ describe("scripted faults", () => {
   it("timeout before effect: throws a plain Error and nothing happens", async () => {
     const { world, driver } = setup();
     world.failNext("sendMessage", "timeout_before_effect");
-    const error: unknown = await driver.sendMessage(ref1, "Hello").catch((thrown: unknown) => thrown);
+    const error: unknown = await driver.sendMessage(ref1, "Hello", { messageCount: 0 }).catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(Error);
     expect(error).not.toHaveProperty("kind");
     expect(world.thread("test-person-1")).toEqual([]);
@@ -180,7 +227,7 @@ describe("scripted faults", () => {
     world.failNext("sendInvite", "timeout_after_effect");
     world.failNext("sendMessage", "timeout_after_effect");
     const inviteError: unknown = await driver.sendInvite(ref2, "Hi").catch((thrown: unknown) => thrown);
-    const messageError: unknown = await driver.sendMessage(ref1, "Hello").catch((thrown: unknown) => thrown);
+    const messageError: unknown = await driver.sendMessage(ref1, "Hello", { messageCount: 0 }).catch((thrown: unknown) => thrown);
     for (const error of [inviteError, messageError]) {
       expect(error).toBeInstanceOf(Error);
       expect(error).not.toHaveProperty("kind");
@@ -209,7 +256,7 @@ describe("session and safety stops", () => {
   ] as const)("a %s session makes calls throw the matching error and latches the handle", async (kind, ErrorType) => {
     const { clock, world, driver } = setup();
     world.breakSession(kind);
-    const error: unknown = await driver.sendMessage(ref1, "Hello").catch((thrown: unknown) => thrown);
+    const error: unknown = await driver.sendMessage(ref1, "Hello", { messageCount: 0 }).catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(ErrorType);
     expect(world.thread("test-person-1")).toEqual([]);
 

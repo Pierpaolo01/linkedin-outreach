@@ -29,8 +29,9 @@ export function ensureDataDir(paths: DataPaths = dataPaths()): void {
 /**
  * Opens the app database (default: `app.db` in the data directory), creating
  * its directory with mode 700 if missing, and applies pending migrations.
+ * Commits are synced to the drive unless `durable` is false.
  */
-export function openDb(file: string = dataPaths().db): OpenedDb {
+export function openDb(file: string = dataPaths().db, { durable = true }: { durable?: boolean } = {}): OpenedDb {
   const dir = dirname(file);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -44,8 +45,9 @@ export function openDb(file: string = dataPaths().db): OpenedDb {
     sqlite.pragma("busy_timeout = 5000");
     // A committed ledger claim must survive a power cut: losing it after the click would send a step twice.
     // FULL syncs the WAL on every commit; fullfsync makes macOS flush the drive's own cache too.
-    sqlite.pragma("synchronous = FULL");
-    sqlite.pragma("fullfsync = ON");
+    // `durable: false` is for tests and the simulation only, where thousands of commits would each wait for the drive.
+    sqlite.pragma(durable ? "synchronous = FULL" : "synchronous = OFF");
+    sqlite.pragma(durable ? "fullfsync = ON" : "fullfsync = OFF");
     const db = drizzle(sqlite, { schema });
     migrate(db, { migrationsFolder: MIGRATIONS_DIR });
     return { db, sqlite, close: () => sqlite.close() };

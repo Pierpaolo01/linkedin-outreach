@@ -239,7 +239,7 @@ describe("readThread", () => {
   it("returns the latest 20 messages, oldest first", async () => {
     const { clock, driver } = setup([person(1, { degree: 1 })]);
     for (let n = 1; n <= 22; n += 1) {
-      await driver.sendMessage(ref(1), `Message ${n}`);
+      await driver.sendMessage(ref(1), `Message ${n}`, { messageCount: Math.min(n - 1, 20) });
       clock.advance(MINUTE);
     }
     const thread = await driver.readThread(ref(1));
@@ -251,9 +251,9 @@ describe("readThread", () => {
     const world = new FakeWorld({ start: START });
     world.addMember(person(1, { degree: 1 }));
     const { driver } = world.connect({ clock, random: () => 0.5 });
-    await driver.sendMessage(ref(1), "Last year");
+    await driver.sendMessage(ref(1), "Last year", { messageCount: 0 });
     clock.advance(8 * DAY);
-    await driver.sendMessage(ref(1), "New year");
+    await driver.sendMessage(ref(1), "New year", { messageCount: 1 });
     const messages = (await driver.readThread(ref(1))).messages;
     expect(messages.map((message) => [message.sentAtRaw, message.sentAt])).toEqual([
       ["Dec 31, 2025 3:00 PM", new Date("2025-12-31T15:00:00Z")],
@@ -263,7 +263,7 @@ describe("readThread", () => {
 
   it("names the participant by member id once they have written, and by nobody when only the user has", async () => {
     const env = setup([person(1, { degree: 1, repliesAfterHours: 1 })]);
-    await env.driver.sendMessage(ref(1), "Hello");
+    await env.driver.sendMessage(ref(1), "Hello", { messageCount: 0 });
     expect((await env.driver.readThread(ref(1))).participant.publicId).toBeNull();
     env.clock.advance(2 * HOUR);
     expect((await env.driver.readThread(ref(1))).participant.publicId).toBe("ACoATestPerson1");
@@ -273,7 +273,7 @@ describe("readThread", () => {
 describe("texts as LinkedIn stores them", () => {
   it("trims, turns CRLF into LF, collapses three or more line breaks to two and puts a non-breaking space before ? ! :", async () => {
     const { world, driver } = setup([person(1, { degree: 1 })]);
-    await driver.sendMessage(ref(1), "  Hi Test Person 1 !\r\nOne question :\r\n\r\n\r\n\r\nHow are you ?  ");
+    await driver.sendMessage(ref(1), "  Hi Test Person 1 !\r\nOne question :\r\n\r\n\r\n\r\nHow are you ?  ", { messageCount: 0 });
     const stored = "Hi Test Person 1 !\nOne question :\n\nHow are you ?";
     expect((await driver.readThread(ref(1))).messages.map((message) => message.text)).toEqual([stored]);
     expect(world.messagesSentTo("test-person-1").map((entry) => entry.text)).toEqual([
@@ -283,7 +283,7 @@ describe("texts as LinkedIn stores them", () => {
 
   it("keeps the space when the non-breaking space option is off", async () => {
     const { driver } = setup([person(1, { degree: 1 })], { nbspBeforePunctuation: false });
-    await driver.sendMessage(ref(1), "How are you ?");
+    await driver.sendMessage(ref(1), "How are you ?", { messageCount: 0 });
     expect((await driver.readThread(ref(1))).messages.map((message) => message.text)).toEqual(["How are you ?"]);
   });
 });
@@ -291,8 +291,8 @@ describe("texts as LinkedIn stores them", () => {
 describe("sendMessage", () => {
   it("throws Unexpected and sends nothing to someone who is not a connection", async () => {
     const { world, driver } = setup([person(1), person(2, { invitedOutsideApp: true })]);
-    await expect(driver.sendMessage(ref(1), "Hello")).rejects.toBeInstanceOf(Unexpected);
-    await expect(driver.sendMessage(ref(2), "Hello")).rejects.toBeInstanceOf(Unexpected);
+    await expect(driver.sendMessage(ref(1), "Hello", { messageCount: 0 })).rejects.toBeInstanceOf(Unexpected);
+    await expect(driver.sendMessage(ref(2), "Hello", { messageCount: 0 })).rejects.toBeInstanceOf(Unexpected);
     expect(world.log.filter((entry) => entry.kind === "message")).toEqual([]);
     expect(world.thread("test-person-1")).toEqual([]);
   });
@@ -301,7 +301,7 @@ describe("sendMessage", () => {
 describe("scripted members", () => {
   it("reply a set number of hours after the app's first message, not before", async () => {
     const env = setup([person(1, { degree: 1, repliesAfterHours: 30 })]);
-    await env.driver.sendMessage(ref(1), "Hello");
+    await env.driver.sendMessage(ref(1), "Hello", { messageCount: 0 });
     const firstAt = env.clock.now().getTime();
     env.clock.advance(30 * HOUR - 2 * STEP);
     expect((await env.driver.readThread(ref(1))).messages.map((message) => message.sender)).toEqual(["user"]);
@@ -325,7 +325,7 @@ describe("scripted members", () => {
 
   it("do not write first when the app has already messaged them", async () => {
     const env = setup([person(1, { degree: 1, repliesBeforeFirstMessageAfterHours: 10 })]);
-    await env.driver.sendMessage(ref(1), "Hello");
+    await env.driver.sendMessage(ref(1), "Hello", { messageCount: 0 });
     env.clock.advance(DAY);
     await env.driver.readThread(ref(1));
     expect(env.world.thread("test-person-1").map((message) => message.source)).toEqual(["app"]);
@@ -343,7 +343,7 @@ describe("scripted members", () => {
 
   it("the user re-sends by hand a text identical to the app's last message", async () => {
     const env = setup([person(1, { degree: 1, userResendsAfterHours: 4 })]);
-    await env.driver.sendMessage(ref(1), "Quick question ?");
+    await env.driver.sendMessage(ref(1), "Quick question ?", { messageCount: 0 });
     env.clock.advance(5 * HOUR);
     const thread = await env.driver.readThread({ memberId: "ACoATestPerson1" });
     expect(thread.messages.map((message) => [message.sender, message.text])).toEqual([
@@ -354,12 +354,14 @@ describe("scripted members", () => {
     expect(env.world.messagesSentTo("test-person-1")).toHaveLength(1);
   });
 
-  it("a reply that falls between the pre-send read and the send lands before the app's message", async () => {
+  it("a reply that falls between the pre-send read and the send is seen by the send: nothing goes out", async () => {
     const env = setup([person(1, { degree: 1, repliesBeforeFirstMessageAfterHours: 1 })]);
     env.clock.advance(HOUR - STEP - 1_000);
-    expect((await env.driver.readThread(ref(1))).isNew).toBe(true);
-    await env.driver.sendMessage(ref(1), "Hello");
-    expect(env.world.thread("test-person-1").map((message) => message.source)).toEqual(["member", "app"]);
+    const before = await env.driver.readThread(ref(1));
+    expect(before.isNew).toBe(true);
+    expect(await env.driver.sendMessage(ref(1), "Hello", { messageCount: before.messages.length })).toBe("thread_changed");
+    expect(env.world.thread("test-person-1").map((message) => message.source)).toEqual(["member"]);
+    expect(env.world.messagesSentTo("test-person-1")).toEqual([]);
   });
 });
 
@@ -437,7 +439,7 @@ describe("the log", () => {
     const { clock, world, driver } = setup([person(1, { degree: 1 })]);
     await driver.ensureSession();
     clock.advance(HOUR);
-    await driver.sendMessage(ref(1), "Hello");
+    await driver.sendMessage(ref(1), "Hello", { messageCount: 0 });
     expect(world.log.map((entry) => [entry.kind, entry.page ?? null, entry.at.getTime() - START.getTime()])).toEqual([
       ["page_load", "feed", STEP],
       ["page_load", "messaging", STEP + HOUR + STEP],

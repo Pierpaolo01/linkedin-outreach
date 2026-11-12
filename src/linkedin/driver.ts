@@ -226,6 +226,9 @@ export type InviteResult = "sent" | "already_pending" | "already_connected" | "n
 
 export type WithdrawResult = "withdrawn" | "not_pending";
 
+/** `sent`: the message went out. `thread_changed`: the conversation was not the one the caller judged; nothing was sent. */
+export type MessageResult = "sent" | "thread_changed";
+
 /**
  * The operations that change something on LinkedIn. Each resolves only once LinkedIn shows the
  * result. A throw means the result is not known: the click may have happened, so the caller
@@ -235,8 +238,13 @@ export type WithdrawResult = "withdrawn" | "not_pending";
 export interface WriteDriver {
   /** Throws `LimitHit` on LinkedIn's own invitation-limit message. `note` null sends without a note. */
   sendInvite(person: PersonRef, note: string | null): Promise<InviteResult>;
-  /** Sends one message to a 1st-degree connection. Clears any draft left in the message box first. */
-  sendMessage(person: PersonRef, text: string): Promise<void>;
+  /**
+   * Sends one message to a 1st-degree connection. Clears any draft left in the message box first.
+   * `expected.messageCount` is how many messages the conversation showed when the caller judged it.
+   * The driver compares it with the conversation it has open immediately before sending; if it
+   * differs, nothing is sent and the result is "thread_changed".
+   */
+  sendMessage(person: PersonRef, text: string, expected: { readonly messageCount: number }): Promise<MessageResult>;
   withdrawInvite(person: PersonRef): Promise<WithdrawResult>;
 }
 
