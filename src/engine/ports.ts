@@ -5,6 +5,7 @@
  */
 export type { Driver, InviteResult, PersonRef, ReadDriver, WithdrawResult, WriteDriver } from "../linkedin/driver";
 export type { RandomSource } from "../linkedin/human";
+import type { Ai } from "../ai/types";
 import type { Db } from "../db/index";
 import type { Driver } from "../linkedin/driver";
 import type { RandomSource } from "../linkedin/human";
@@ -25,6 +26,16 @@ export interface EngineDeps {
   readonly driver: Driver;
   readonly clock: Clock;
   readonly random: RandomSource;
+  /**
+   * The AI that scores prospects. Without it no AI work is picked, and neither is the LinkedIn work
+   * that only feeds it (discovery pages, profile views for scoring).
+   */
+  readonly ai?: Ai;
+  /**
+   * False runs the engine read-only on LinkedIn: no invite, message, follow-up, withdrawal,
+   * connections check or reconcile of those is picked. Default true.
+   */
+  readonly outreach?: boolean;
 }
 
 export interface TickResult {

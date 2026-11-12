@@ -10,6 +10,7 @@ import { setSettings, type SettingsPatch } from "../config/settings";
 import { openDb, type OpenedDb } from "../db/index";
 import { actions, campaigns, eventLog, people, prospects, type CampaignStatus, type ProspectStage } from "../db/schema";
 import { FakeWorld, type KillHook, type MemberSpec, type WorldOptions } from "../linkedin/fake/world";
+import type { Ai, CardScore, CleanedVariables, PersonalisedLine, ProfileScore } from "../ai/types";
 import type { Clock, Driver, Engine, RandomSource } from "./ports";
 import { createEngine } from "./engine";
 
@@ -57,7 +58,13 @@ export interface KitOptions {
   readonly world?: Partial<WorldOptions>;
   /** Replaces driver operations, for results the fake cannot be scripted to give. */
   readonly wrap?: (driver: Driver) => Driver;
+  /** The AI the engine scores with; without it no AI work, profile view for scoring or discovery is picked. */
+  readonly ai?: Ai;
+  /** False runs the engine read-only: no outreach step is picked. Default true. */
+  readonly outreach?: boolean;
 }
+
+type EngineOptions = Pick<KitOptions, "hook" | "wrap" | "ai" | "outreach">;
 
 export interface Kit {
   /** The current connection; `restart` opens a new one on the same file. */
@@ -68,11 +75,11 @@ export interface Kit {
   readonly random: RandomSource;
   engine: Engine;
   /** A new engine (a new process) on the same connection and world, with a new driver handle. */
-  newEngine(options?: Pick<KitOptions, "hook" | "wrap">): Engine;
+  newEngine(options?: EngineOptions): Engine;
   /** Closes the database as a killed process would: every later write of the old engine throws. */
   crash(): void;
   /** Opens the database file again and starts a new engine on it, as a restarted process. */
-  restart(options?: Pick<KitOptions, "hook" | "wrap">): Engine;
+  restart(options?: EngineOptions): Engine;
   settings(patch: SettingsPatch): void;
   close(): void;
 }
@@ -84,10 +91,17 @@ export function createKit(options: KitOptions = {}): Kit {
   const clock = virtualClock();
   const world = new FakeWorld({ start: new Date(START.getTime() - 60 * 24 * HOUR), ...options.world });
   const random = options.random ?? seededRandom(7);
-  const newEngine = (o: Pick<KitOptions, "hook" | "wrap"> = {}): Engine => {
+  const newEngine = (o: EngineOptions = {}): Engine => {
     const handle = world.connect({ clock, random, ...(o.hook === undefined ? {} : { hook: o.hook }) });
     const driver = o.wrap === undefined ? handle.driver : o.wrap(handle.driver);
-    return createEngine({ db: opened.db, driver, clock, random });
+    return createEngine({
+      db: opened.db,
+      driver,
+      clock,
+      random,
+      ...(o.ai === undefined ? {} : { ai: o.ai }),
+      ...(o.outreach === undefined ? {} : { outreach: o.outreach }),
+    });
   };
   const kit: Kit = {
     get opened() {
@@ -100,7 +114,12 @@ export function createKit(options: KitOptions = {}): Kit {
     world,
     random,
     newEngine,
-    engine: newEngine({ ...(options.hook === undefined ? {} : { hook: options.hook }), ...(options.wrap === undefined ? {} : { wrap: options.wrap }) }),
+    engine: newEngine({
+      ...(options.hook === undefined ? {} : { hook: options.hook }),
+      ...(options.wrap === undefined ? {} : { wrap: options.wrap }),
+      ...(options.ai === undefined ? {} : { ai: options.ai }),
+      ...(options.outreach === undefined ? {} : { outreach: options.outreach }),
+    }),
     crash: () => {
       opened.close();
     },
@@ -308,3 +327,67 @@ export async function runUntil(kit: Kit, done: () => boolean, max = 60) {
   if (!done()) throw new Error(`condition not reached in ${max} ticks`);
 }
 
+
+// ---------------------------------------------------------------- a stub AI
+
+export interface StubAiOptions {
+  /** Card score by public id; default 5. The options may be changed while a test runs. */
+  cardScores?: Readonly<Record<string, number>>;
+  /** Profile score by public id; default 8. */
+  profileScores?: Readonly<Record<string, number>>;
+  /** Thrown by every call while set (e.g. an `AiUnavailable`). */
+  failWith?: Error | null;
+  /** What personalise answers; default a line naming the person. */
+  personalise?: (publicId: string) => PersonalisedLine | null;
+}
+
+export interface StubAi extends Ai {
+  /** Each call, in order: the method name and, for scoreCards, how many cards. */
+  readonly calls: { readonly method: keyof Ai; readonly cards?: number }[];
+  readonly options: StubAiOptions;
+}
+
+/** An `Ai` that answers from fixed tables and records its calls. Cleaning keeps the first word of the name and drops a legal suffix. */
+export function stubAi(options: StubAiOptions = {}): StubAi {
+  const calls: StubAi["calls"] = [];
+  const called = (method: keyof Ai, cards?: number) => {
+    calls.push(cards === undefined ? { method } : { method, cards });
+    if (options.failWith != null) throw options.failWith;
+  };
+  return {
+    calls,
+    options,
+    async scoreCards(_brief, cards) {
+      called("scoreCards", cards.length);
+      const value = cards.map((card): CardScore => {
+        const score = options.cardScores?.[card.publicId] ?? 5;
+        return { publicId: card.publicId, score, reason: `card of ${card.fullName} scores ${score}`, openProfile: true };
+      });
+      return { value, model: "stub-cards" };
+    },
+    async scoreProfile(_brief, profile) {
+      called("scoreProfile");
+      const score = options.profileScores?.[profile.publicId] ?? 8;
+      const value: ProfileScore = {
+        score,
+        reason: `profile of ${profile.fullName} scores ${score}`,
+        industry: { value: "construction", source: "headline", confidence: 0.9 },
+        size: { value: "under 50", source: "about", confidence: 0.5 },
+      };
+      return { value, model: "stub-profile" };
+    },
+    async cleanVariables({ fullName, company }) {
+      called("cleanVariables");
+      const value: CleanedVariables = {
+        firstName: fullName.split(" ")[0] ?? null,
+        companyShort: company === null ? null : company.replace(/\s+S\.R\.L\.$/i, ""),
+      };
+      return { value, model: "stub-clean" };
+    },
+    async personalise({ profile }) {
+      called("personalise");
+      const value = options.personalise === undefined ? { line: `Your work at ${profile.currentCompany ?? "your company"} stands out`, evidence: profile.headline ?? "" } : options.personalise(profile.publicId);
+      return { value, model: "stub-personalise" };
+    },
+  };
+}

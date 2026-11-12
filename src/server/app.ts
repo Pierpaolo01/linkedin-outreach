@@ -3,9 +3,13 @@ import fastifyStatic from "@fastify/static";
 import { sql } from "drizzle-orm";
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { z } from "zod";
-import { getSettings } from "../config/settings";
 import type { Db } from "../db/index";
-import { readSession, type SessionCheck, type StoredSession } from "./sessionStore";
+import { registerCampaignRoutes } from "./campaignRoutes";
+import { registerDashboardRoutes } from "./dashboardRoutes";
+import { NO_BODY_ERROR, noBody, sessionJson } from "./http";
+import { registerOpsRoutes, type OpsDeps } from "./opsRoutes";
+import { registerScreenshotRoutes } from "./screenshotRoutes";
+import { readSession, type SessionCheck } from "./sessionStore";
 
 export interface ServerOptions {
   readonly db: Db;
@@ -16,23 +20,16 @@ export interface ServerOptions {
   /** The port the app listens on. Requests must name it in their Host header. */
   readonly port: number;
   readonly logger?: FastifyServerOptions["logger"];
+  /** The clock every write is stamped with. */
+  readonly now?: () => Date;
+  /** Backups, auto-start, keep-awake and the AI test (`opsRoutes.ts`). Left out, those routes are not served. */
+  readonly ops?: OpsDeps;
+  /** The data directory's `screenshots/` folder (`screenshotRoutes.ts`). Left out, no screenshot is served. */
+  readonly screenshotsDir?: string;
 }
 
 const packageJson = z.object({ version: z.string() });
 const VERSION = packageJson.parse(JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"))).version;
-
-/** The check endpoint takes no input; anything sent is a mistake. */
-const noBody = z.union([z.undefined(), z.null(), z.object({}).strict()]);
-
-/** What the API says about the session. `checking` is true while a check runs. */
-function sessionJson(session: StoredSession, checking: boolean) {
-  return {
-    status: session.status,
-    lastCheckedAt: session.lastCheckedAt?.toISOString() ?? null,
-    lastError: session.lastError,
-    checking,
-  };
-}
 
 /**
  * The app's web server: the JSON API and the built dashboard on one port.
@@ -40,7 +37,7 @@ function sessionJson(session: StoredSession, checking: boolean) {
  * header is not this app, so a web page cannot reach it through DNS
  * rebinding. It sends no CORS headers, and refuses writes from other origins.
  */
-export function buildServer({ db, session, uiDir, port, logger = false }: ServerOptions): FastifyInstance {
+export function buildServer({ db, session, uiDir, port, logger = false, now = () => new Date(), ops, screenshotsDir }: ServerOptions): FastifyInstance {
   const app = Fastify({ logger });
   const allowedHosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
   const allowedOrigins = new Set([...allowedHosts].map((host) => `http://${host}`));
@@ -71,7 +68,7 @@ export function buildServer({ db, session, uiDir, port, logger = false }: Server
 
   app.post("/api/session/check", async (request, reply) => {
     if (!noBody.safeParse(request.body).success) {
-      return reply.code(400).send({ error: "This endpoint takes no body" });
+      return reply.code(400).send(NO_BODY_ERROR);
     }
     const outcome = await session.run();
     switch (outcome.kind) {
@@ -88,7 +85,21 @@ export function buildServer({ db, session, uiDir, port, logger = false }: Server
     }
   });
 
-  app.get("/api/settings", async () => getSettings(db));
+  registerCampaignRoutes(app, { db, now });
+  registerDashboardRoutes(app, { db, session, now });
+  if (ops !== undefined) registerOpsRoutes(app, { ...ops, db });
+  if (screenshotsDir !== undefined) registerScreenshotRoutes(app, { screenshotsDir });
+
+  // Every error the API answers is `{ error }`: a request the app could not read (bad JSON, too
+  // large) keeps its 4xx status; anything else is a 500 whose details go to the log only.
+  app.setErrorHandler((error, request, reply) => {
+    const status = typeof error === "object" && error !== null && "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : 500;
+    if (status >= 400 && status < 500) {
+      return reply.code(status).send({ error: error instanceof Error ? error.message : "Bad request" });
+    }
+    request.log.error(error);
+    return reply.code(500).send({ error: "Something went wrong in the app. The log has the details." });
+  });
 
   void app.register(fastifyStatic, { root: uiDir, index: "index.html" });
 

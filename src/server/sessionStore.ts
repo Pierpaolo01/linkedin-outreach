@@ -1,5 +1,7 @@
 import { eq } from "drizzle-orm";
+import { getSettings } from "../config/settings";
 import type { Db } from "../db/index";
+import { isInWorkingWindow } from "../engine/workingWindow";
 import { eventLog, sessionState, type EventLevel, type SessionStatus } from "../db/schema";
 import type { SessionCheckResult, SessionPort } from "./sessionPort";
 
@@ -116,4 +118,28 @@ export function createSessionCheck({
     },
     close: () => port.close(),
   };
+}
+
+export type StartupCheckOutcome = SessionCheckOutcome | { readonly kind: "outside_working_window"; readonly session: StoredSession };
+
+/**
+ * The check `npm start` runs once. With `onlyInWorkingWindow` (the live site) it runs only inside
+ * the working window from the settings; outside it no LinkedIn page is loaded and the stored state
+ * stands. The user's own Re-check is not held by the window: that is his deliberate action.
+ */
+export async function runStartupCheck({
+  db,
+  session,
+  now = () => new Date(),
+  onlyInWorkingWindow,
+}: {
+  db: Db;
+  session: SessionCheck;
+  now?: () => Date;
+  onlyInWorkingWindow: boolean;
+}): Promise<StartupCheckOutcome> {
+  if (onlyInWorkingWindow && !isInWorkingWindow(getSettings(db), now())) {
+    return { kind: "outside_working_window", session: readSession(db) };
+  }
+  return session.run();
 }
