@@ -1,0 +1,64 @@
+@import "tailwindcss" source(".");
+@plugin "daisyui" {
+  themes: false;
+}
+@plugin "daisyui/theme" {
+  name: "outreach";
+  default: true;
+  prefersdark: false;
+  color-scheme: light;
+
+  --color-base-100: #f7f8f5;
+  --color-base-200: #edefea;
+  --color-base-300: #dce0d8;
+  --color-base-content: #1d2521;
+  --color-primary: #2c5e4f;
+  --color-primary-content: #ffffff;
+  --color-secondary: #3d5a6c;
+  --color-secondary-content: #ffffff;
+  --color-accent: #e5ad42;
+  --color-accent-content: #2b1d03;
+  --color-neutral: #26302b;
+  --color-neutral-content: #f2f4f0;
+  --color-info: #33698f;
+  --color-info-content: #ffffff;
+  --color-success: #2f7a4e;
+  --color-success-content: #ffffff;
+  --color-warning: #e5ad42;
+  --color-warning-content: #2b1d03;
+  --color-error: #b3352b;
+  --color-error-content: #ffffff;
+
+  --radius-selector: 1rem;
+  --radius-field: 0.375rem;
+  --radius-box: 0.5rem;
+
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+
+  --border: 1px;
+
+  --depth: 0;
+  --noise: 0;
+}
+
+@theme {
+  --font-sans: "Seravek", "Avenir Next", system-ui, sans-serif;
+}
+
+body {
+  font-feature-settings: "kern";
+  -webkit-font-smoothing: antialiased;
+}
+
+.btn.btn-sm {
+  --fontsize: 0.875rem;
+}
+
+.btn.btn-xs {
+  --fontsize: 0.8125rem;
+}
+
+.nums {
+  font-variant-numeric: tabular-nums lining-nums;
+}

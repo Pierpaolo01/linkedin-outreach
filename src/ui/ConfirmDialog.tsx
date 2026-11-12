@@ -1,0 +1,68 @@
+import { useEffect, useId, useRef, type ReactNode } from "react";
+
+/** A modal question with one action and a way out. Escape or the backdrop count as cancel. */
+export function ConfirmDialog(props: {
+  readonly open: boolean;
+  readonly title: string;
+  readonly children: ReactNode;
+  readonly confirmLabel: string;
+  readonly cancelLabel?: string;
+  readonly tone?: "primary" | "error";
+  readonly busy?: boolean;
+  readonly error?: string | undefined;
+  readonly onConfirm: () => void;
+  readonly onCancel: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const { open } = props;
+
+  useEffect(() => {
+    const dialog = ref.current;
+    if (dialog === null) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      className="modal modal-bottom sm:modal-middle"
+      aria-labelledby={titleId}
+      onClose={() => {
+        if (props.open) props.onCancel();
+      }}
+    >
+      <div className="modal-box max-w-lg">
+        <h2 id={titleId} className="text-lg font-semibold">
+          {props.title}
+        </h2>
+        <div className="mt-3 flex flex-col gap-2">{props.children}</div>
+        {props.error !== undefined && (
+          <p role="alert" className="mt-3 text-sm text-error">
+            {props.error}
+          </p>
+        )}
+        <div className="modal-action">
+          <button type="button" className="btn btn-ghost border-base-300" onClick={props.onCancel} disabled={props.busy}>
+            {props.cancelLabel ?? "Cancel"}
+          </button>
+          <button
+            type="button"
+            className={`btn ${props.tone === "error" ? "btn-error" : "btn-primary"}`}
+            onClick={props.onConfirm}
+            disabled={props.busy}
+          >
+            {props.busy === true && <span className="loading loading-spinner loading-sm" />}
+            {props.confirmLabel}
+          </button>
+        </div>
+      </div>
+      <form method="dialog" className="modal-backdrop">
+        <button type="submit" disabled={props.busy}>
+          Close
+        </button>
+      </form>
+    </dialog>
+  );
+}
