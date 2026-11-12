@@ -1,0 +1,567 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-12T17:03:56Z",
+  "title": "Design System: LinkedIn outreach dashboard",
+  "extensions": {
+    "colorMeta": {
+      "primary": {
+        "role": "primary",
+        "displayName": "Desk Green",
+        "canonical": "#2c5e4f",
+        "tonalRamp": [
+          "oklch(15% 0.024 172)",
+          "oklch(27% 0.043 172)",
+          "oklch(38% 0.054 172)",
+          "oklch(50% 0.060 172)",
+          "oklch(62% 0.059 172)",
+          "oklch(73% 0.053 172)",
+          "oklch(85% 0.040 172)",
+          "oklch(95% 0.024 172)"
+        ]
+      },
+      "primary-content": {
+        "role": "primary",
+        "displayName": "On Desk Green",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(27% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(50% 0.000 90)",
+          "oklch(62% 0.000 90)",
+          "oklch(73% 0.000 90)",
+          "oklch(85% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "accent": {
+        "role": "secondary",
+        "displayName": "Waiting Amber",
+        "canonical": "#e5ad42",
+        "tonalRamp": [
+          "oklch(15% 0.056 80)",
+          "oklch(27% 0.097 80)",
+          "oklch(38% 0.122 80)",
+          "oklch(50% 0.136 80)",
+          "oklch(62% 0.134 80)",
+          "oklch(73% 0.120 80)",
+          "oklch(85% 0.091 80)",
+          "oklch(95% 0.056 80)"
+        ]
+      },
+      "accent-content": {
+        "role": "secondary",
+        "displayName": "On Amber",
+        "canonical": "#2b1d03",
+        "tonalRamp": [
+          "oklch(15% 0.019 80)",
+          "oklch(27% 0.032 80)",
+          "oklch(38% 0.041 80)",
+          "oklch(50% 0.045 80)",
+          "oklch(62% 0.045 80)",
+          "oklch(73% 0.040 80)",
+          "oklch(85% 0.030 80)",
+          "oklch(95% 0.019 80)"
+        ]
+      },
+      "warning": {
+        "role": "secondary",
+        "displayName": "Waiting Amber (warning)",
+        "canonical": "#e5ad42",
+        "tonalRamp": [
+          "oklch(15% 0.056 80)",
+          "oklch(27% 0.097 80)",
+          "oklch(38% 0.122 80)",
+          "oklch(50% 0.136 80)",
+          "oklch(62% 0.134 80)",
+          "oklch(73% 0.120 80)",
+          "oklch(85% 0.091 80)",
+          "oklch(95% 0.056 80)"
+        ]
+      },
+      "warning-content": {
+        "role": "secondary",
+        "displayName": "On Amber (warning)",
+        "canonical": "#2b1d03",
+        "tonalRamp": [
+          "oklch(15% 0.019 80)",
+          "oklch(27% 0.032 80)",
+          "oklch(38% 0.041 80)",
+          "oklch(50% 0.045 80)",
+          "oklch(62% 0.045 80)",
+          "oklch(73% 0.040 80)",
+          "oklch(85% 0.030 80)",
+          "oklch(95% 0.019 80)"
+        ]
+      },
+      "error": {
+        "role": "tertiary",
+        "displayName": "Stop Red",
+        "canonical": "#b3352b",
+        "tonalRamp": [
+          "oklch(15% 0.067 29)",
+          "oklch(27% 0.116 29)",
+          "oklch(38% 0.147 29)",
+          "oklch(50% 0.163 29)",
+          "oklch(62% 0.161 29)",
+          "oklch(73% 0.144 29)",
+          "oklch(85% 0.109 29)",
+          "oklch(95% 0.067 29)"
+        ]
+      },
+      "error-content": {
+        "role": "tertiary",
+        "displayName": "On Stop Red",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(27% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(50% 0.000 90)",
+          "oklch(62% 0.000 90)",
+          "oklch(73% 0.000 90)",
+          "oklch(85% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "success": {
+        "role": "tertiary",
+        "displayName": "Running Green",
+        "canonical": "#2f7a4e",
+        "tonalRamp": [
+          "oklch(15% 0.042 155)",
+          "oklch(27% 0.072 155)",
+          "oklch(38% 0.091 155)",
+          "oklch(50% 0.101 155)",
+          "oklch(62% 0.100 155)",
+          "oklch(73% 0.090 155)",
+          "oklch(85% 0.068 155)",
+          "oklch(95% 0.042 155)"
+        ]
+      },
+      "success-content": {
+        "role": "tertiary",
+        "displayName": "On Running Green",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(27% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(50% 0.000 90)",
+          "oklch(62% 0.000 90)",
+          "oklch(73% 0.000 90)",
+          "oklch(85% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "info": {
+        "role": "tertiary",
+        "displayName": "Finding Blue",
+        "canonical": "#33698f",
+        "tonalRamp": [
+          "oklch(15% 0.034 242)",
+          "oklch(27% 0.059 242)",
+          "oklch(38% 0.075 242)",
+          "oklch(50% 0.083 242)",
+          "oklch(62% 0.082 242)",
+          "oklch(73% 0.074 242)",
+          "oklch(85% 0.056 242)",
+          "oklch(95% 0.034 242)"
+        ]
+      },
+      "info-content": {
+        "role": "tertiary",
+        "displayName": "On Finding Blue",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(27% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(50% 0.000 90)",
+          "oklch(62% 0.000 90)",
+          "oklch(73% 0.000 90)",
+          "oklch(85% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "secondary": {
+        "role": "tertiary",
+        "displayName": "Slate Blue (unused)",
+        "canonical": "#3d5a6c",
+        "tonalRamp": [
+          "oklch(15% 0.018 236)",
+          "oklch(27% 0.032 236)",
+          "oklch(38% 0.040 236)",
+          "oklch(50% 0.045 236)",
+          "oklch(62% 0.045 236)",
+          "oklch(73% 0.040 236)",
+          "oklch(85% 0.030 236)",
+          "oklch(95% 0.018 236)"
+        ]
+      },
+      "secondary-content": {
+        "role": "tertiary",
+        "displayName": "On Slate Blue",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "oklch(15% 0.000 90)",
+          "oklch(27% 0.000 90)",
+          "oklch(38% 0.000 90)",
+          "oklch(50% 0.000 90)",
+          "oklch(62% 0.000 90)",
+          "oklch(73% 0.000 90)",
+          "oklch(85% 0.000 90)",
+          "oklch(95% 0.000 90)"
+        ]
+      },
+      "neutral": {
+        "role": "neutral",
+        "displayName": "Dark Moss",
+        "canonical": "#26302b",
+        "tonalRamp": [
+          "oklch(15% 0.007 164)",
+          "oklch(27% 0.012 164)",
+          "oklch(38% 0.015 164)",
+          "oklch(50% 0.016 164)",
+          "oklch(62% 0.016 164)",
+          "oklch(73% 0.014 164)",
+          "oklch(85% 0.011 164)",
+          "oklch(95% 0.007 164)"
+        ]
+      },
+      "neutral-content": {
+        "role": "neutral",
+        "displayName": "On Dark Moss",
+        "canonical": "#f2f4f0",
+        "tonalRamp": [
+          "oklch(15% 0.002 129)",
+          "oklch(27% 0.004 129)",
+          "oklch(38% 0.005 129)",
+          "oklch(50% 0.006 129)",
+          "oklch(62% 0.006 129)",
+          "oklch(73% 0.005 129)",
+          "oklch(85% 0.004 129)",
+          "oklch(95% 0.002 129)"
+        ]
+      },
+      "base-100": {
+        "role": "neutral",
+        "displayName": "Desk Paper",
+        "canonical": "#f7f8f5",
+        "tonalRamp": [
+          "oklch(15% 0.002 122)",
+          "oklch(27% 0.003 122)",
+          "oklch(38% 0.004 122)",
+          "oklch(50% 0.004 122)",
+          "oklch(62% 0.004 122)",
+          "oklch(73% 0.004 122)",
+          "oklch(85% 0.003 122)",
+          "oklch(95% 0.002 122)"
+        ]
+      },
+      "base-200": {
+        "role": "neutral",
+        "displayName": "Sidebar Sage",
+        "canonical": "#edefea",
+        "tonalRamp": [
+          "oklch(15% 0.003 124)",
+          "oklch(27% 0.005 124)",
+          "oklch(38% 0.006 124)",
+          "oklch(50% 0.007 124)",
+          "oklch(62% 0.007 124)",
+          "oklch(73% 0.006 124)",
+          "oklch(85% 0.005 124)",
+          "oklch(95% 0.003 124)"
+        ]
+      },
+      "base-300": {
+        "role": "neutral",
+        "displayName": "Hairline Sage",
+        "canonical": "#dce0d8",
+        "tonalRamp": [
+          "oklch(15% 0.005 129)",
+          "oklch(27% 0.008 129)",
+          "oklch(38% 0.010 129)",
+          "oklch(50% 0.011 129)",
+          "oklch(62% 0.011 129)",
+          "oklch(73% 0.010 129)",
+          "oklch(85% 0.008 129)",
+          "oklch(95% 0.005 129)"
+        ]
+      },
+      "base-content": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#1d2521",
+        "tonalRamp": [
+          "oklch(15% 0.006 164)",
+          "oklch(27% 0.010 164)",
+          "oklch(38% 0.012 164)",
+          "oklch(50% 0.014 164)",
+          "oklch(62% 0.013 164)",
+          "oklch(73% 0.012 164)",
+          "oklch(85% 0.009 164)",
+          "oklch(95% 0.006 164)"
+        ]
+      },
+      "score-high": {
+        "role": "neutral",
+        "displayName": "Score Mint",
+        "canonical": "#d5e8dc",
+        "tonalRamp": [
+          "oklch(15% 0.011 158)",
+          "oklch(27% 0.018 158)",
+          "oklch(38% 0.023 158)",
+          "oklch(50% 0.026 158)",
+          "oklch(62% 0.025 158)",
+          "oklch(73% 0.023 158)",
+          "oklch(85% 0.017 158)",
+          "oklch(95% 0.011 158)"
+        ]
+      },
+      "score-mid": {
+        "role": "neutral",
+        "displayName": "Score Sand",
+        "canonical": "#f6e3bb",
+        "tonalRamp": [
+          "oklch(15% 0.023 86)",
+          "oklch(27% 0.040 86)",
+          "oklch(38% 0.050 86)",
+          "oklch(50% 0.056 86)",
+          "oklch(62% 0.055 86)",
+          "oklch(73% 0.049 86)",
+          "oklch(85% 0.037 86)",
+          "oklch(95% 0.023 86)"
+        ]
+      },
+      "score-mid-content": {
+        "role": "neutral",
+        "displayName": "Score Umber",
+        "canonical": "#5c3f07",
+        "tonalRamp": [
+          "oklch(15% 0.032 78)",
+          "oklch(27% 0.055 78)",
+          "oklch(38% 0.069 78)",
+          "oklch(50% 0.077 78)",
+          "oklch(62% 0.076 78)",
+          "oklch(73% 0.068 78)",
+          "oklch(85% 0.052 78)",
+          "oklch(95% 0.032 78)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The page title, one per page."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The title of a wizard step."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings, the dialog title, the sidebar's product name."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Funnel counts and Stats percentages, tabular."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Sentences, field labels, lead paragraphs, message text."
+      },
+      "body-sm": {
+        "displayName": "Body small",
+        "purpose": "Tables, hints, secondary lines, the activity log."
+      },
+      "nav": {
+        "displayName": "Navigation",
+        "purpose": "Sidebar items and campaign names in tables."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Captions over quoted texts and wizard step numbers."
+      },
+      "button": {
+        "displayName": "Button",
+        "purpose": "Button text at the small size."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "component-defaults",
+        "value": "daisyUI 5 built-in transitions",
+        "purpose": "Buttons, switches, the drawer, spinners and skeletons. No motion is authored in the project."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "transition-duration: 0s; animation-duration: 0s",
+        "purpose": "Applied to everything under prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one main action on a view: Open queue, Save and continue, Approve all shown.",
+      "html": "<button class=\"ds-btn-primary\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M5 12.5l4.5 4.5L19 7.5\"/></svg>Approve all 8 shown</button>",
+      "css": ".ds-btn-primary { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); font-size: 0.875rem; font-weight: 600; height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; background: var(--color-primary, #2c5e4f); color: var(--color-primary-content, #ffffff); border: 1px solid var(--color-primary, #2c5e4f); } .ds-btn-primary:hover { background: color-mix(in oklab, var(--color-primary, #2c5e4f) 90%, #000); } .ds-btn-primary:focus-visible { outline: 2px solid var(--color-primary, #2c5e4f); outline-offset: 2px; }"
+    },
+    {
+      "name": "Outlined Button",
+      "kind": "button",
+      "refersTo": "button-outlined",
+      "description": "Every secondary action: Back, Pause, Re-check, Back up now.",
+      "html": "<button class=\"ds-btn-outlined\">Pause</button>",
+      "css": ".ds-btn-outlined { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); font-size: 0.875rem; font-weight: 600; height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; background: var(--color-base-100, #f7f8f5); color: var(--color-base-content, #1d2521); border: 1px solid var(--color-base-300, #dce0d8); } .ds-btn-outlined:hover { background: var(--color-base-200, #edefea); } .ds-btn-outlined:focus-visible { outline: 2px solid var(--color-base-content, #1d2521); outline-offset: 2px; }"
+    },
+    {
+      "name": "Score Filter",
+      "kind": "button",
+      "refersTo": "button-selected",
+      "description": "A joined filter; the chosen segment is Dark Moss.",
+      "html": "<div class=\"ds-join\"><button class=\"ds-seg ds-seg-on\">Any</button><button class=\"ds-seg\">5+</button><button class=\"ds-seg\">6+</button><button class=\"ds-seg\">7+</button><button class=\"ds-seg\">8+</button></div>",
+      "css": ".ds-join { display: inline-flex; } .ds-seg { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); font-size: 0.875rem; font-weight: 600; height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; border-radius: 0; background: var(--color-base-100, #f7f8f5); color: var(--color-base-content, #1d2521); border: 1px solid var(--color-base-300, #dce0d8); margin-left: -1px; font-variant-numeric: tabular-nums lining-nums; } .ds-seg:first-child { border-radius: 0.375rem 0 0 0.375rem; margin-left: 0; } .ds-seg:last-child { border-radius: 0 0.375rem 0.375rem 0; } .ds-seg:hover { background: var(--color-base-200, #edefea); } .ds-seg-on, .ds-seg-on:hover { background: var(--color-neutral, #26302b); color: var(--color-neutral-content, #f2f4f0); border-color: var(--color-neutral, #26302b); } .ds-seg:focus-visible { outline: 2px solid var(--color-base-content, #1d2521); outline-offset: 2px; position: relative; }"
+    },
+    {
+      "name": "Sidebar Navigation",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Sidebar items with the amber count badge and a campaign's status dot.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item ds-nav-active\" href=\"#\">Home</a><a class=\"ds-nav-item\" href=\"#\"><span>Approval queue</span><span class=\"ds-count\">8</span></a><a class=\"ds-nav-item\" href=\"#\"><span>Needs review</span><span class=\"ds-count\">2</span></a><a class=\"ds-nav-item ds-nav-sub\" href=\"#\"><span class=\"ds-dot\"></span>Hotel owners, Rome</a></nav>",
+      "css": ".ds-nav { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); width: 14.5rem; padding: 0.75rem; background: var(--color-base-200, #edefea); display: flex; flex-direction: column; gap: 0.125rem; } .ds-nav-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.375rem 0.75rem; border-radius: 0.375rem; font-size: 0.95rem; color: var(--color-base-content, #1d2521); text-decoration: none; } .ds-nav-item:hover { background: color-mix(in oklab, var(--color-base-content, #1d2521) 10%, transparent); } .ds-nav-item:focus-visible { outline: 2px solid var(--color-base-content, #1d2521); outline-offset: 2px; } .ds-nav-active, .ds-nav-active:hover { background: var(--color-neutral, #26302b); color: var(--color-neutral-content, #f2f4f0); } .ds-nav-sub { justify-content: flex-start; font-size: 0.875rem; padding-left: 1.5rem; } .ds-count { background: var(--color-accent, #e5ad42); color: var(--color-accent-content, #2b1d03); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums lining-nums; min-width: 1.25rem; height: 1.25rem; padding: 0 0.375rem; border-radius: 1rem; display: inline-flex; align-items: center; justify-content: center; } .ds-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; background: var(--color-success, #2f7a4e); }"
+    },
+    {
+      "name": "Needs-you Row",
+      "kind": "card",
+      "refersTo": "count-tile",
+      "description": "Home's first block: an amber count tile, a sentence, and the action.",
+      "html": "<div class=\"ds-card\"><div class=\"ds-need\"><span class=\"ds-tile\">8</span><div class=\"ds-need-text\"><p class=\"ds-need-line\">prospects are waiting for your approval.</p><p class=\"ds-need-detail\">5 in Hotel owners, Rome and 3 in Local trades, Milan.</p></div><button class=\"ds-need-btn\">Open queue</button></div></div>",
+      "css": ".ds-card { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); border: 1px solid var(--color-base-300, #dce0d8); border-radius: 0.5rem; background: var(--color-base-100, #f7f8f5); color: var(--color-base-content, #1d2521); } .ds-need { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; padding: 1rem; } .ds-tile { width: 2.75rem; height: 2.75rem; flex-shrink: 0; border-radius: 0.5rem; background: var(--color-accent, #e5ad42); color: var(--color-accent-content, #2b1d03); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums lining-nums; display: flex; align-items: center; justify-content: center; } .ds-need-text { flex: 1 1 12rem; min-width: 0; } .ds-need-line { margin: 0; font-weight: 500; } .ds-need-detail { margin: 0; font-size: 0.875rem; color: color-mix(in oklab, var(--color-base-content, #1d2521) 65%, transparent); } .ds-need-btn { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); font-size: 0.875rem; font-weight: 600; height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; background: var(--color-primary, #2c5e4f); color: var(--color-primary-content, #ffffff); border: 1px solid var(--color-primary, #2c5e4f); } .ds-need-btn:hover { background: color-mix(in oklab, var(--color-primary, #2c5e4f) 90%, #000); } .ds-need-btn:focus-visible { outline: 2px solid var(--color-primary, #2c5e4f); outline-offset: 2px; }"
+    },
+    {
+      "name": "Score Chips",
+      "kind": "chip",
+      "refersTo": "score-chip-high",
+      "description": "A prospect's score: mint from 7, sand from 5, sage below or when not scored.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip ds-chip-high\">9</span><span class=\"ds-chip ds-chip-mid\">6</span><span class=\"ds-chip ds-chip-low\">4</span></div>",
+      "css": ".ds-chips { display: flex; gap: 0.75rem; } .ds-chip { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); width: 2.5rem; height: 2.5rem; border-radius: 0.375rem; font-size: 1.125rem; font-weight: 600; font-variant-numeric: tabular-nums lining-nums; display: flex; align-items: center; justify-content: center; } .ds-chip-high { background: var(--color-score-high, #d5e8dc); color: var(--color-primary, #2c5e4f); } .ds-chip-mid { background: var(--color-score-mid, #f6e3bb); color: var(--color-score-mid-content, #5c3f07); } .ds-chip-low { background: var(--color-base-200, #edefea); color: color-mix(in oklab, var(--color-base-content, #1d2521) 55%, transparent); }"
+    },
+    {
+      "name": "Safety-stop Banner",
+      "kind": "custom",
+      "refersTo": "safety-stop-banner",
+      "description": "The one alarm: a red bar on every page saying what LinkedIn showed and what to do.",
+      "html": "<div class=\"ds-stop\" role=\"alert\"><svg class=\"ds-stop-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"28\" height=\"28\" aria-hidden=\"true\"><path d=\"M8.5 3.5h7l5 5v7l-5 5h-7l-5-5v-7z\"/><path d=\"M12 8v5M12 16.5h.01\"/></svg><div class=\"ds-stop-text\"><p class=\"ds-stop-title\">Safety stop. All LinkedIn activity is stopped.</p><p>LinkedIn is asking for a security check.</p><p>What to do: Complete LinkedIn's check in the app's window, then press Resume.</p><p class=\"ds-stop-when\">Stopped today at 17:52.</p></div><button class=\"ds-stop-btn\">Resume</button></div>",
+      "css": ".ds-stop { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 1rem 2.5rem; background: var(--color-error, #b3352b); color: var(--color-error-content, #ffffff); } .ds-stop-icon { flex-shrink: 0; } .ds-stop-text { flex: 1 1 16rem; min-width: 0; } .ds-stop p { margin: 0; color: color-mix(in oklab, var(--color-error-content, #ffffff) 90%, transparent); } .ds-stop p.ds-stop-title { font-weight: 600; color: var(--color-error-content, #ffffff); } .ds-stop p.ds-stop-when { font-size: 0.875rem; color: color-mix(in oklab, var(--color-error-content, #ffffff) 80%, transparent); } .ds-stop-btn { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); font-size: 0.875rem; font-weight: 600; height: 2rem; padding: 0 0.75rem; border-radius: 0.375rem; display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; background: var(--color-error-content, #ffffff); color: var(--color-error, #b3352b); border: 1px solid color-mix(in oklab, var(--color-error-content, #ffffff) 40%, transparent); } .ds-stop-btn:hover { background: color-mix(in oklab, var(--color-error-content, #ffffff) 90%, var(--color-error, #b3352b)); } .ds-stop-btn:focus-visible { outline: 2px solid var(--color-error-content, #ffffff); outline-offset: 2px; }"
+    },
+    {
+      "name": "Budget Meter",
+      "kind": "custom",
+      "refersTo": "panel",
+      "description": "Today's usage against a budget: green with room, amber and a sentence when spent.",
+      "html": "<ul class=\"ds-usage\"><li><div class=\"ds-usage-row\"><span>Invites</span><span class=\"ds-usage-n\"><b>7</b> of 11</span></div><div class=\"ds-meter\"><div class=\"ds-meter-fill\" style=\"width:64%\"></div></div></li><li><div class=\"ds-usage-row\"><span>Discovery pages</span><span class=\"ds-usage-n\"><b>10</b> of 10</span></div><div class=\"ds-meter\"><div class=\"ds-meter-fill ds-meter-full\" style=\"width:100%\"></div></div><p class=\"ds-usage-note\">Limit reached, resumes tomorrow 09:00</p></li></ul>",
+      "css": ".ds-usage { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); list-style: none; margin: 0; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; border-radius: 0.5rem; background: var(--color-base-200, #edefea); color: var(--color-base-content, #1d2521); } .ds-usage-row { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; } .ds-usage-n { font-size: 0.875rem; font-variant-numeric: tabular-nums lining-nums; color: color-mix(in oklab, var(--color-base-content, #1d2521) 65%, transparent); } .ds-usage-n b { font-weight: 600; color: var(--color-base-content, #1d2521); } .ds-meter { margin-top: 0.375rem; height: 0.375rem; border-radius: 0.5rem; background: color-mix(in oklab, var(--color-base-content, #1d2521) 20%, transparent); overflow: hidden; } .ds-meter-fill { height: 100%; border-radius: 0.5rem; background: var(--color-primary, #2c5e4f); } .ds-meter-full { background: var(--color-warning, #e5ad42); } .ds-usage-note { margin: 0.25rem 0 0; font-size: 0.875rem; color: color-mix(in oklab, var(--color-base-content, #1d2521) 80%, transparent); }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A labelled field: the label at 500 over the control.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ds-name\">Campaign name</label><input id=\"ds-name\" class=\"ds-input\" value=\"Hotel owners, Rome\"></div>",
+      "css": ".ds-field { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); color: var(--color-base-content, #1d2521); max-width: 28rem; } .ds-field-label { display: block; font-weight: 500; } .ds-field-hint { margin: 0; font-size: 0.875rem; color: color-mix(in oklab, var(--color-base-content, #1d2521) 65%, transparent); } .ds-input { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); margin-top: 0.375rem; width: 100%; height: 2.5rem; padding: 0 0.75rem; font-size: 0.875rem; color: var(--color-base-content, #1d2521); background: var(--color-base-100, #f7f8f5); border: 1px solid color-mix(in oklab, var(--color-base-content, #1d2521) 20%, transparent); border-radius: 0.375rem; } .ds-input:focus-visible { outline: 2px solid var(--color-base-content, #1d2521); outline-offset: 2px; border-color: var(--color-base-content, #1d2521); }"
+    },
+    {
+      "name": "Wizard Step Bar",
+      "kind": "custom",
+      "refersTo": "wizard-step-current",
+      "description": "Numbered steps of the campaign wizard; the current one is Dark Moss.",
+      "html": "<ol class=\"ds-steps\"><li><button class=\"ds-step\"><span class=\"ds-step-n\">4</span>Approval</button></li><li><button class=\"ds-step ds-step-here\" aria-current=\"step\"><span class=\"ds-step-n\">5</span>Messages</button></li><li><button class=\"ds-step\"><span class=\"ds-step-n\">6</span>Timings</button></li></ol>",
+      "css": ".ds-steps { list-style: none; margin: 0; padding: 0; width: 13rem; display: flex; flex-direction: column; gap: 0.25rem; } .ds-step { font-family: var(--font-sans, Seravek, 'Avenir Next', system-ui, sans-serif); width: 100%; display: flex; align-items: center; gap: 0.625rem; padding: 0.5rem 0.625rem; border: 0; border-radius: 0.375rem; background: transparent; color: var(--color-base-content, #1d2521); font-size: 0.875rem; text-align: left; cursor: pointer; } .ds-step:hover { background: var(--color-base-200, #edefea); } .ds-step:focus-visible { outline: 2px solid var(--color-base-content, #1d2521); outline-offset: 2px; } .ds-step-n { width: 1.5rem; height: 1.5rem; flex-shrink: 0; border-radius: 9999px; background: var(--color-base-300, #dce0d8); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums lining-nums; display: flex; align-items: center; justify-content: center; } .ds-step-here, .ds-step-here:hover { background: var(--color-neutral, #26302b); color: var(--color-neutral-content, #f2f4f0); } .ds-step-here .ds-step-n { background: var(--color-neutral-content, #f2f4f0); color: var(--color-neutral, #26302b); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Quiet Desk",
+    "overview": "The theme's own comment in `src/ui/index.css` states the idea: a quiet green-grey desk, amber for what waits on the user, red only for a safety stop. The dashboard is a light, flat, single-theme workspace. A sage sidebar sits on the left, the page is warm off-white paper, and almost everything on it is dark ink text, hairline borders and numbers. Colour is spent on meaning: green for the main action and for work that is running, amber for what waits, red for a safety stop.\n\nThe density is that of a working tool. Tables and lists carry real sentences (\"prospects are waiting for your approval.\", \"Limit reached, resumes tomorrow 09:00\") in place of labels and icons. There are five icons in the whole product, no illustrations, no imagery and no logo. There is one typeface in three weights. The user reads, decides and leaves.\n\nThere is no dark theme (`prefersdark: false`, `color-scheme: light`) and no authored motion.",
+    "keyCharacteristics": [
+      "One light theme: off-white page, sage sidebar, hairline borders, no shadows.",
+      "One sans family (Seravek, the macOS system humanist sans) in weights 400, 500 and 600.",
+      "Colour carries status: green runs, amber waits, blue finds, red stops.",
+      "Every status is a dot plus words; colour never stands alone.",
+      "Numbers are tabular everywhere a count, time or score appears.",
+      "Two layouts from one build: a docked sidebar from 1024px, a drawer menu below it; nothing scrolls sideways at 390px."
+    ],
+    "rules": [
+      {
+        "name": "The One Alarm Rule",
+        "body": "A solid Stop Red bar or panel means LinkedIn needs the user: the safety-stop banner, the \"LinkedIn needs you\" banner, and the session card during a stop. A spent budget is amber and a pause is Dark Moss, so neither can be taken for a stop.",
+        "section": "colors"
+      },
+      {
+        "name": "The Amber Waits Rule",
+        "body": "Amber marks something waiting, whether on the user (a count to approve or review) or by itself (a spent budget until tomorrow). It is never the colour of a button.",
+        "section": "colors"
+      },
+      {
+        "name": "The Dot And Words Rule",
+        "body": "A status dot always sits beside its label (\"Running\", \"Paused\", \"Stopped by safety stop\"). No status is shown by colour alone.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Weights Rule",
+        "body": "400 for reading, 500 for a label or the one line that names a row, 600 for headings, names, figures and buttons. Nothing is set at 700 and nothing is uppercase or letter-spaced.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Figures Rule",
+        "body": "Counts, times, scores, budgets and page ranges use tabular lining figures (the `.nums` class), so columns of numbers line up and a changing count does not shift its neighbours.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Desk Rule",
+        "body": "Surfaces are told apart by tone and a 1px hairline, never by a drop shadow.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep one theme: Desk Paper page, Sidebar Sage sidebar and panels, 1px Hairline Sage borders, no shadows.",
+      "Do keep solid Stop Red bars and panels for the safety stop and for \"LinkedIn needs you\", and show a spent budget in amber with a sentence saying when it resumes.",
+      "Do pair every status dot with its words, using the status map.",
+      "Do use the `field` radius (6px) for controls and chips and the `box` radius (8px) for cards, tables and panels.",
+      "Do set every count, time, score and budget in tabular figures.",
+      "Do write status as a plain sentence in the vocabulary of `CONTEXT.md` (prospect, person, campaign, approval queue, needs review, safety stop, budget, working window).",
+      "Do keep one Desk Green primary button per view and make every other action outlined.",
+      "Do keep every page free of sideways scrolling at 390px; a wide table scrolls inside its own box."
+    ],
+    "donts": [
+      "Don't make a spent budget, a pause or a wait look like a safety stop. They are amber or Dark Moss; only a stop is a red bar.",
+      "Don't show a status by colour alone.",
+      "Don't add drop shadows; the theme's depth is 0.",
+      "Don't set text at 700, in uppercase or with letter-spacing; the system uses 400, 500 and 600 in sentence case.",
+      "Don't add a second typeface or load a web font; the dashboard uses the Mac's own Seravek.",
+      "Don't use amber for an action button; amber means waiting."
+    ]
+  }
+}
