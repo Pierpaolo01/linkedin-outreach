@@ -1317,10 +1317,21 @@ test("phone width: Close this to see them, in the approve-all dialog, is a 44px 
 });
 
 test("a campaign's people table says why a person is held, under Needs review, without opening the row", async ({ page }) => {
+  // The first person is shown held (earlier tests move the seeded people on); nobody else carries a reason.
+  await page.route(
+    (url) => /^\/api\/campaigns\/\d+\/prospects$/.test(url.pathname),
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { items: Record<string, unknown>[] };
+      const items = json.items.map((item, index) =>
+        index === 0 ? { ...item, stage: "needs_review", reviewReason: "the invite note could not be written: unresolved variable (company)" } : item.stage === "needs_review" ? { ...item, stage: "approved", reviewReason: null } : item,
+      );
+      await route.fulfill({ response, json: { ...json, items } });
+    },
+  );
   await page.goto("/campaigns/1");
-  const held = page.getByTestId("prospect-row").filter({ hasText: "Hotel Prova Termini" });
+  const held = page.getByTestId("prospect-row").first();
   await expect(held.getByTestId("prospect-stage")).toHaveText("Needs review");
-  await expect(held.getByTestId("prospect-review-reason")).toHaveText("Tried 3 times without a confirmed result.");
-  // Nobody else carries a reason.
+  await expect(held.getByTestId("prospect-review-reason")).toHaveText("The invite note could not be written: unresolved variable (company).");
   await expect(page.getByTestId("prospect-review-reason")).toHaveCount(1);
 });
