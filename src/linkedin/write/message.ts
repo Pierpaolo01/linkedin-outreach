@@ -1,7 +1,7 @@
 /**
  * NOT VERIFIED ON THE LIVE SITE. Built against saved conversations only; nothing here has typed
  * into or sent from the real message box. docs/research/write-operations.md lists what to check
- * before the first real message. Not wired into the app: the worker keeps its read-only driver.
+ * before the first real message.
  *
  * `sendMessage`: open the conversation by the compose URL (decision 16), make sure it is the person
  * asked for, compare the messages shown with the count the caller judged, type, compare again,

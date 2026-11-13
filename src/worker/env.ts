@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 
 /**
- * `npm start`'s environment. There is deliberately no variable that turns sends on: on the live
- * site the engine is read-only in this build (`readOnlyLinkedIn`).
+ * `npm start`'s environment. There is deliberately no variable that turns sends off or on: on the
+ * live site the engine sends (`createLiveLinkedIn`); pause a campaign to stop its sends.
  */
 const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65_535).default(4747),

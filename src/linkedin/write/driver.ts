@@ -1,8 +1,6 @@
 /**
- * NOT VERIFIED ON THE LIVE SITE, and NOT WIRED INTO THE APP: the worker (`src/worker/liveDriver.ts`)
- * keeps its read-only wrapper, whose write operations throw. Nothing may be sent until the user
- * has created a campaign with his own text and approved its prospects, and the checklist in
- * docs/research/write-operations.md has been gone through on the live site.
+ * Wired into the app by `src/worker/liveDriver.ts`, which joins it with the read half under one
+ * shared latch (`sharedLatch`). The live-site checklist is in docs/research/write-operations.md.
  *
  * The write half of the live driver (`WriteDriver` in `../driver.ts`): `sendInvite`, `sendMessage`
  * and `withdrawInvite` over one `WritePage`, with the same latch as the read half: a login wall,

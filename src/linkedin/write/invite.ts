@@ -1,7 +1,7 @@
 /**
  * NOT VERIFIED ON THE LIVE SITE. Built against saved pages and invented dialogs only (the dialogs
  * after Connect are in no capture); docs/research/write-operations.md lists what to check before
- * the first real invitation. Not wired into the app: the worker keeps its read-only driver.
+ * the first real invitation.
  *
  * `sendInvite`: open the profile, make sure it is the person asked for, find Connect (in the top
  * card or under More), choose "Add a note" or "Send without a note" in the dialog, and return

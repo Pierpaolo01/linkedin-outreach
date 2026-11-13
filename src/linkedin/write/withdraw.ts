@@ -1,7 +1,7 @@
 /**
  * NOT VERIFIED ON THE LIVE SITE. Built against the saved sent-invitations page and an invented
  * confirmation dialog; docs/research/write-operations.md lists what to check before the first real
- * withdrawal. Not wired into the app: the worker keeps its read-only driver.
+ * withdrawal.
  *
  * `withdrawInvite` works from the sent-invitations page rather than the profile: that page is
  * saved with its Withdraw control (seen 2026-11-11), while a profile showing Pending is not.
