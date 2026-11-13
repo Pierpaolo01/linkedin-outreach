@@ -1,6 +1,30 @@
 # Invite, message and withdraw on the real site
 
-Written 2026-11-12. **Nothing here has run on the live site.** The three write operations in
+## Live results, 2026-11-13
+
+The invite has run on the live site (campaign flow only, English interface, free account). Three
+invitations with a note went out and were confirmed by Pending on the profile: ledger rows 38
+(Connect in the top card), 33 and 35 (Connect under More). Before that, six attempts sent nothing,
+each stopped by a check; each led to a fix in PR #30:
+
+| Seen | Fix |
+| --- | --- |
+| The invite dialog is drawn inside an open shadow root (`#interop-outlet`), left out of `page.content()` | `writePageFor` inlines open shadow roots in the HTML it reads (`contentWithShadowRoots`) |
+| A free account's note box takes 200 characters ("217/200", Send disabled) and shows "N personalized invitations remaining for this month" (3 in November) | Note limit 200, AI line 140; a longer note, frozen ones included, is held for review before anything loads (decision 88). No free note left, or a box that does not hold the note, is held for review (decision 89) |
+| The note box read back as empty while it held the note: LinkedIn's elements come from another realm, where `instanceof HTMLTextAreaElement` is false | `value()` reads by tag name |
+| Two founders' profiles read as Follow only; Connect was in the More menu, rendered only once clicked | The engine lets the invite open More (decision 91) |
+| "{{ai_line}}, would like" rendered "business., would" | The AI line's closing stop is dropped before punctuation (decision 90) |
+
+Checklist items now seen: 1 (Connect opens a dialog over the profile, no navigation), 2 (More menu
+holds Connect), 3 ("Add a note" / "Send without a note", wording as expected), 4 (limit is 200, not
+300), 8 (Pending shown after Send), 17 and 18 (one visible copy; well within 15 s). Still open: 5
+(the upsell once no free note is left: the phrases in `noteQuotaPhrases` are unverified; an
+unrecognised screen is `Unexpected`, held as unknown), 6, 7, 9–16. One profile showed no member id
+on the invite step and was held for review; why is not known yet.
+
+## As written before the live run
+
+Written 2026-11-12. **Nothing here had run on the live site.** The three write operations in
 `src/linkedin/write/` were built and tested against saved pages and invented dialogs only. They are
 not wired into the app: `src/worker/liveDriver.ts` keeps its read-only wrapper, whose writes throw.
 No invitation, message or withdrawal may go out until the user has created a campaign with his own
