@@ -1,11 +1,29 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { listActivity, listReview, resolveReview, toApiError } from "../api";
-import { RESOLVE_STAGES, type ResolveStage, type ReviewItem } from "../apiSchemas";
+import type { ResolveStage, ReviewItem } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatScore, formatWhen, plural } from "../format";
+import { ActionError, Announce, EmptyState, errorProps, FieldError, focusFirstError, focusInView, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows } from "../formParts";
 import { IconExternal } from "../icons";
 import { useLoad } from "../useLoad";
+import { failure, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
+
+/** The choices in two groups: carry on from a step of the sequence (in its order), or take them out. */
+const CHOICE_GROUPS: readonly { readonly caption: string; readonly stages: readonly ResolveStage[] }[] = [
+  { caption: "Carry on from where they are", stages: ["approved", "invited", "accepted", "message_sent"] },
+  { caption: "Take them out", stages: ["stopped", "rejected"] },
+];
+
+/** The choice that matches the "So far" line: the step the person has reached. Null when none of them does. */
+function reachedStage(item: ReviewItem): ResolveStage | null {
+  if (item.followUpSentAt !== null) return null;
+  if (item.firstMessageSentAt !== null) return "message_sent";
+  if (item.acceptanceObservedAt !== null) return "accepted";
+  if (item.invitedAt !== null) return "invited";
+  if (item.approvedAt !== null) return "approved";
+  return null;
+}
 
 /** Every choice, in plain words. Nothing is chosen until the user picks one: the app never decides for them. */
 const CHOICE_LABEL: Readonly<Record<ResolveStage, string>> = {
@@ -52,6 +70,9 @@ function holdOf(item: ReviewItem): string {
   ]);
 }
 
+/** The empty state's id: it takes the focus when the last person held has been decided. */
+const EMPTY_ID = "review-empty";
+
 /** Needs review: people the app would not decide on by itself, each with the reason and what the user can do. */
 export function NeedsReview() {
   const { home, refresh } = useAppData();
@@ -68,6 +89,20 @@ export function NeedsReview() {
   const [gone, setGone] = useState<ReadonlyMap<number, string>>(new Map());
   const [checkedFor, setCheckedFor] = useState(loaded.data);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  /**
+   * Where the focus goes once a decided person's card has left: the next card (or the one before, when it was the
+   * last), or the empty state when nobody is left. The Confirm that was pressed went with the card.
+   */
+  const focusTo = useRef<number | null>(null);
+  const [decisions, setDecisions] = useState(0);
+  const list = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (decisions === 0) return;
+    const id = focusTo.current;
+    const card = id === null ? null : list.current?.querySelector<HTMLElement>(`[data-review-id="${id}"]`);
+    const target = card ?? document.getElementById(EMPTY_ID);
+    if (target !== null && target !== undefined) focusInView(target);
+  }, [decisions]);
 
   if (loaded.data !== checkedFor) {
     setCheckedFor(loaded.data);
@@ -87,35 +122,23 @@ export function NeedsReview() {
 
   return (
     <>
-      <PageHeader title="Needs review" aside={loaded.data === undefined ? undefined : `${plural(items.length, "person", "people")} held`} />
-      <p className="mt-2 max-w-2xl text-base-content/75">
-        The app stopped short with these people rather than guess. Nothing more happens to them until you choose.
-      </p>
-      {notice !== undefined && (
-        <p role="status" className="mt-3 text-sm text-primary">
-          {notice}
-        </p>
-      )}
+      <PageHeader
+        title="Needs review"
+        aside={loaded.data === undefined ? undefined : `${plural(items.length, "person", "people")} held`}
+        lead="The app stopped short with these people rather than guess. Nothing more happens to them until you choose."
+      />
+      <Announce>{notice !== undefined && <p className="mb-group text-sm text-primary">{notice}</p>}</Announce>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <div role="alert" className="mt-5 flex flex-wrap items-center gap-3 rounded-box border border-error/40 bg-error/5 px-4 py-4">
-          <p className="text-error">Could not load the people held for review: {loaded.error.message}</p>
-          <button type="button" className="btn btn-sm" onClick={loaded.reload}>
-            Try again
-          </button>
-        </div>
+        <LoadError what="the people held for review" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="mt-5 flex flex-col gap-3" aria-label="Loading">
-          <div className="skeleton h-40 w-full" />
-          <div className="skeleton h-40 w-full" />
-        </div>
+        <SkeletonRows rows={2} rowClassName="h-96" />
       ) : items.length === 0 ? (
-        <div className="mt-5 rounded-box border border-base-300 px-5 py-6" data-testid="review-empty">
-          <p className="font-medium">Nobody is held for review.</p>
-          <p className="mt-1 text-base-content/65">When the app is unsure what happened with a person, it holds them here instead of guessing.</p>
-        </div>
+        <EmptyState title="Nobody is held for review." testId="review-empty" id={EMPTY_ID}>
+          When the app is unsure what happened with a person, it holds them here instead of guessing.
+        </EmptyState>
       ) : (
-        <ul className="mt-5 divide-y divide-base-300 rounded-box border border-base-300">
-          {items.map((item) => (
+        <ul ref={list} className="divide-y divide-base-300 rounded-box border border-base-300">
+          {items.map((item, index) => (
             <ReviewCard
               key={item.id}
               item={item}
@@ -123,6 +146,8 @@ export function NeedsReview() {
               onResolved={(stage) => {
                 setGone((map) => new Map(map).set(item.id, holdOf(item)));
                 setNotice(`${item.person.fullName} ${CHOICE_DONE[stage]}.`);
+                focusTo.current = (items[index + 1] ?? items[index - 1])?.id ?? null;
+                setDecisions((n) => n + 1);
                 refresh();
                 // A fresh answer, asked for after the resolve, no longer lists them and so lets a later hold show.
                 loaded.reload();
@@ -140,95 +165,139 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
   const [choice, setChoice] = useState<ResolveStage | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
+  /** The server's word on the note, under the note's box. */
+  const [noteError, setNoteError] = useState<string | undefined>(undefined);
+  /** Counts notes the app refused, so each refusal moves the focus to the note once its mark has rendered. */
+  const [noteRefusals, setNoteRefusals] = useState(0);
+  const card = useRef<HTMLLIElement>(null);
   const noteId = useId();
+
+  // A refused note: the note box takes the focus, as a refused field does in every form.
+  useEffect(() => {
+    if (noteRefusals > 0 && card.current !== null) focusFirstError(card.current);
+  }, [noteRefusals]);
   const choiceName = useId();
   const now = new Date();
   const { person } = item;
+  const reached = reachedStage(item);
 
   const resolve = (to: ResolveStage) => {
     setBusy(true);
     setError(undefined);
+    setNoteError(undefined);
     resolveReview(item.id, { stage: to, note: note.trim() === "" ? null : note.trim() })
       .then(() => onResolved(to))
-      .catch((failure: unknown) => {
-        const apiError = toApiError(failure);
-        setError(apiError.fields["note"] ?? apiError.message);
+      .catch((failed: unknown) => {
+        const apiError = toApiError(failed);
+        const onNote = apiError.fields["note"];
+        if (onNote !== undefined) {
+          setNoteError(onNote);
+          setNoteRefusals((n) => n + 1);
+        } else setError(failure(`Nothing was decided. ${person.fullName} is still held for review; press Confirm again.`, apiError));
       })
       .finally(() => setBusy(false));
   };
 
   return (
-    <li className="grid gap-x-8 gap-y-4 px-4 py-5 lg:grid-cols-[minmax(0,1fr)_22rem]" data-testid="review-item" aria-label={person.fullName}>
+    <li
+      ref={card}
+      // Takes the focus from the script after the person before it was decided (no tab stop of its own).
+      tabIndex={-1}
+      className="grid gap-x-section gap-y-block p-card lg:grid-cols-[minmax(0,1fr)_22rem]"
+      data-testid="review-item"
+      data-review-id={item.id}
+      aria-label={person.fullName}
+    >
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{person.fullName}</h2>
-          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 text-sm text-base-content/75 link-hover">
+          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-6 items-center gap-1 text-sm text-base-content link-hover max-lg:-my-2.5 max-lg:min-h-11">
             LinkedIn profile
             <IconExternal />
             <span className="sr-only">(opens in your browser)</span>
           </a>
         </div>
         {person.headline !== null && <p className="text-sm">{person.headline}</p>}
-        <p className="text-sm text-base-content/65">
+        <p className="text-sm text-muted">
           In {item.campaignName}
           {heldAt === undefined ? "" : `, held ${formatWhen(heldAt, timeZone, now)}`}.
         </p>
-        <p className="mt-3 rounded-field bg-accent/20 px-3 py-2">
+        <Notice tone="waits" className="mt-group">
           <span className="font-medium">Why: </span>
           {item.reviewReason === null ? "The app did not record a reason." : asSentence(item.reviewReason)}
-        </p>
-        <p className="mt-2 text-sm" data-testid="review-score">
+        </Notice>
+        <p className="mt-group text-sm" data-testid="review-score">
           {item.score === null ? (
-            <span className="text-base-content/75">Not scored</span>
+            <span className="text-base-content">Not scored</span>
           ) : (
             <>
               <span className="nums font-medium">Score {formatScore(item.score)} of 10</span>
-              {item.scoreReason !== null && <span className="text-base-content/75">: {item.scoreReason}</span>}
+              {item.scoreReason !== null && <span className="text-base-content">: {item.scoreReason}</span>}
             </>
           )}
         </p>
-        <p className="mt-1 text-sm text-base-content/75">So far: {progress(item, timeZone, now)}</p>
+        <p className="mt-1 text-sm text-base-content">So far: {progress(item, timeZone, now)}</p>
         {item.screenshotUrl !== null && <Screenshot url={item.screenshotUrl} name={person.fullName} />}
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-4">
         <fieldset className="text-sm">
-          <legend className="mb-1.5 font-medium">What should happen next</legend>
-          <div className="flex flex-col gap-1.5">
-            {RESOLVE_STAGES.map((stage) => (
-              <label key={stage} className="flex cursor-pointer items-start gap-2">
-                <input
-                  type="radio"
-                  className="radio radio-sm mt-0.5"
-                  name={choiceName}
-                  value={stage}
-                  checked={choice === stage}
-                  disabled={busy}
-                  onChange={() => setChoice(stage)}
-                />
-                <span>{CHOICE_LABEL[stage]}</span>
-              </label>
+          <legend className="mb-2 font-medium">What should happen next</legend>
+          <div className="flex flex-col gap-3">
+            {CHOICE_GROUPS.map((group) => (
+              <div key={group.caption} role="group" aria-label={group.caption}>
+                <p className="mb-1 text-caption text-muted" aria-hidden="true">
+                  {group.caption}
+                </p>
+                <div className="flex flex-col">
+                  {group.stages.map((stage) => (
+                    <label key={stage} className="flex cursor-pointer items-start gap-2 py-1 max-lg:py-3">
+                      <input
+                        type="radio"
+                        className="radio radio-sm radio-primary mt-0.5"
+                        name={choiceName}
+                        value={stage}
+                        checked={choice === stage}
+                        disabled={busy}
+                        onChange={() => setChoice(stage)}
+                      />
+                      <span>
+                        {CHOICE_LABEL[stage]}
+                        {stage === reached && <span className="ml-1.5 text-muted">(where they are now)</span>}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </fieldset>
         <label className="flex flex-col gap-1 text-sm" htmlFor={noteId}>
-          <span>Note for the activity log (optional)</span>
+          <span>
+            <span className="font-medium">Note for the activity log</span> (optional)
+          </span>
           <textarea
             id={noteId}
-            className="textarea textarea-sm w-full bg-base-100"
+            className={`textarea textarea-sm w-full bg-base-100 ${noteError === undefined ? "" : "textarea-error"}`}
             rows={2}
             maxLength={2000}
             value={note}
-            onChange={(event) => setNote(event.target.value)}
+            onChange={(event) => {
+              setNote(event.target.value);
+              setNoteError(undefined);
+            }}
             placeholder="For example: checked on LinkedIn, the invite went out"
+            {...errorProps(noteId, noteError)}
           />
         </label>
+        <FieldError controlId={noteId} message={noteError} />
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             className="btn btn-sm btn-primary"
             disabled={busy || choice === null}
+            aria-busy={busy}
             onClick={() => {
               if (choice !== null) resolve(choice);
             }}
@@ -236,13 +305,9 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
             {busy && <span className="loading loading-spinner loading-xs" />}
             Confirm
           </button>
-          {choice === null && <p className="text-xs text-base-content/60">Choose what should happen first.</p>}
+          {choice === null && <p className="text-sm text-muted">Choose what should happen first.</p>}
         </div>
-        {error !== undefined && (
-          <p role="alert" className="text-sm text-error">
-            {error}
-          </p>
-        )}
+        <ActionError message={error} takeFocus />
       </div>
     </li>
   );
@@ -266,14 +331,14 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
 
   if (missing) {
     return (
-      <p className="mt-3 text-sm text-base-content/65" data-testid="screenshot-missing">
+      <p className="mt-group text-sm text-muted" data-testid="screenshot-missing">
         A screenshot was saved, but the app could not show it.
       </p>
     );
   }
 
   return (
-    <div className="mt-3">
+    <figure className="mt-group">
       <button
         type="button"
         className="block overflow-hidden rounded-field border border-base-300 hover:border-base-content/40"
@@ -288,22 +353,32 @@ function Screenshot({ url, name }: { readonly url: string; readonly name: string
           onError={() => setMissing(true)}
         />
       </button>
+      {/* The button's name already says this to a screen reader; the caption is for the eye. */}
+      <figcaption className="mt-1 text-caption text-muted" aria-hidden="true">
+        What the app saw. Open at full size.
+      </figcaption>
       <dialog ref={ref} className="modal" aria-labelledby={titleId} onClose={() => setOpen(false)}>
-        <div className="modal-box max-h-[92vh] w-11/12 max-w-6xl">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        {/* The box stays 16px clear of the window's edges; a tall screenshot scrolls under the fixed title row. */}
+        <div className="modal-box flex max-h-viewer w-11/12 max-w-6xl flex-col overflow-hidden">
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
             <h3 id={titleId} className="font-semibold">
               Screenshot: {name}
             </h3>
-            <button type="button" className="btn btn-sm btn-ghost border-base-300" onClick={() => setOpen(false)}>
+            <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} onClick={() => setOpen(false)}>
               Close
             </button>
           </div>
-          <img src={url} alt={alt} className="h-auto w-full" />
+          <div className="min-h-0 overflow-y-auto">
+            <img src={url} alt={alt} className="h-auto w-full" />
+          </div>
         </div>
+        {/* As in the confirm dialog: a click outside closes it; the keyboard has Escape and Close, so this is no tab stop. */}
         <form method="dialog" className="modal-backdrop">
-          <button type="submit">Close</button>
+          <button type="submit" tabIndex={-1} aria-hidden="true">
+            Close
+          </button>
         </form>
       </dialog>
-    </div>
+    </figure>
   );
 }

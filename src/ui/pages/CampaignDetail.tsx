@@ -1,24 +1,54 @@
-import { Fragment, useId, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { getCampaign, listCampaignProspects, pauseCampaign, prospectsCsvUrl, resumeCampaign, setDoNotContact, toApiError, updateCampaign } from "../api";
 import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone } from "../format";
-import { LoadError, Pager, SwitchRow } from "../formParts";
-import { IconExternal } from "../icons";
+import {
+  ActionError,
+  Announce,
+  DEF_LIST,
+  DEF_TERM,
+  EmptyState,
+  FilledText,
+  focusFirstError,
+  focusInView,
+  HALTED_PAUSE,
+  haltedBy,
+  LoadError,
+  Notice,
+  Pager,
+  ScoreChip,
+  SECONDARY_BUTTON,
+  SectionHead,
+  SkeletonRows,
+  StatusLine,
+  SwitchRow,
+  TOOLBAR,
+} from "../formParts";
+import { IconChevron, IconExternal } from "../icons";
+import { NBSP, tabTitle, unbroken } from "../format";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { discoveryWaitSentence, formatNext, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextStepWords, PAUSABLE, stageWords } from "../words";
+import { discoveryWaitSentence, failure, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextActionWhen, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords, toggleFailure, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const PAGE_SIZE = 25;
-const SCORE_CHIP = {
-  high: "bg-score-high text-primary",
-  mid: "bg-score-mid text-score-mid-content",
-  low: "bg-base-200 text-base-content/55",
-} as const;
 type Stage = (typeof PROSPECT_STAGES)[number];
+
+/*
+ * The People table needs a box of 58rem (`--container-people`) for its seven columns. In a narrower box each
+ * person is one block of four lines: name (with score and Profile at the right); headline and company, muted and the
+ * full width of the block; stage in Ink, and the next action when there is one; the reason, muted. So the block reads
+ * in steps: who (semibold), what they do (muted), where they are (Ink), why (muted).
+ * The column names are not shown there: the explicit roles keep the table's semantics when its parts are laid out
+ * as a grid, so every cell keeps its column's name. Until the box is 66rem (`--container-people-wide`) the table
+ * hides its Company column from the eye, header and cells together (screen readers keep it), and prints the
+ * company after the headline as the block does, so Person and the reason are not squeezed to three or four lines.
+ * When nobody on the shown page has a next action, the Next action column is hidden from the eye the same way, so the
+ * reason gets its width instead of a column of dashes.
+ */
+const STACK_CELL = "@max-people:min-w-0 @max-people:border-0 @max-people:p-0";
 
 /** One campaign: its funnel and status, its people with stage and score, and its messages and timings. */
 export function CampaignDetail({ id }: { readonly id: string }) {
@@ -31,7 +61,7 @@ export function CampaignDetail({ id }: { readonly id: string }) {
     return (
       <>
         <PageHeader title="Campaign" />
-        <LoadError what="the campaign" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the campaign" error={loaded.error} onRetry={loaded.reload} />
       </>
     );
   }
@@ -39,8 +69,11 @@ export function CampaignDetail({ id }: { readonly id: string }) {
     return (
       <>
         <PageHeader title="Campaign" />
-        <div className="skeleton mt-6 h-24 w-full" />
-        <div className="skeleton mt-6 h-72 w-full" />
+        <div role="status" aria-label="Loading">
+          <div className="skeleton h-6 w-72 max-w-full" aria-hidden="true" />
+          <div className="skeleton mt-group h-20 w-full" aria-hidden="true" />
+          <SkeletonRows quiet rows={4} rowClassName="h-12" className="mt-section" />
+        </div>
       </>
     );
   }
@@ -49,10 +82,15 @@ export function CampaignDetail({ id }: { readonly id: string }) {
 
 function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly onChanged: () => void }) {
   const { home, refresh, timeZone } = useAppData();
+  // The tab says which campaign this is (the route only knows "Campaign" until it has loaded).
+  useEffect(() => {
+    document.title = tabTitle(campaign.name.trim() === "" ? "Untitled campaign" : campaign.name);
+  }, [campaign.name]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const wait = home?.campaigns.find((c) => c.id === campaign.id)?.discoveryWait ?? null;
-  const halted = home?.safetyStop != null && PAUSABLE.has(campaign.status);
+  const stopped = home?.safetyStop != null;
+  const halted = haltedBy(campaign.status, stopped);
 
   const toggle = () => {
     setBusy(true);
@@ -62,21 +100,18 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
         onChanged();
         refresh();
       })
-      .catch((failure: unknown) => setError(toApiError(failure).message))
+      .catch((failed: unknown) => setError(toggleFailure({ name: undefined, resuming: campaign.status === "paused", said: toApiError(failed) })))
       .finally(() => setBusy(false));
   };
 
   return (
     <>
-      <PageHeader title={campaign.name} aside={<a href={prospectsCsvUrl(campaign.id)} className="link text-sm link-hover">Download its people as CSV</a>} />
+      <PageHeader title={campaign.name} />
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <p className="flex items-center gap-2 font-medium" data-testid="campaign-status">
-          <span className={`status ${halted ? "status-error" : CAMPAIGN_STATUS_DOT[campaign.status]}`} aria-hidden="true" />
-          {halted ? "Stopped by safety stop" : CAMPAIGN_STATUS_LABEL[campaign.status]}
-        </p>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <StatusLine status={campaign.status} safetyStop={stopped} className="gap-2 font-medium" testId="campaign-status" />
         {(PAUSABLE.has(campaign.status) || campaign.status === "paused") && (
-          <button type="button" className="btn btn-sm btn-ghost border-base-300" disabled={busy} onClick={toggle}>
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm ${halted ? HALTED_PAUSE : ""}`} disabled={busy} aria-busy={busy} onClick={toggle}>
             {busy && <span className="loading loading-spinner loading-xs" />}
             {campaign.status === "paused" ? "Resume" : "Pause"}
           </button>
@@ -86,28 +121,24 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
             Continue setting up
           </Link>
         )}
-        <p className="text-sm text-base-content/65">
-          {campaign.discoverySource === "search" ? `From ${campaign.sourceUrls.length === 1 ? "a people search" : `${campaign.sourceUrls.length} people searches`}` : "From LinkedIn's recommendations"}
+        <p className="text-sm text-muted">
+          {campaign.discoverySource === "search" ? `From ${campaign.sourceUrls.length === 1 ? "a people search" : `${campaign.sourceUrls.length}${NBSP}people searches`}` : "From LinkedIn’s recommendations"}
           {campaign.autoApprove ? ". Auto-approve is on" : ""}.
         </p>
       </div>
-      {wait !== null && <p className="mt-2 text-sm text-base-content/80">{discoveryWaitSentence(wait, timeZone)}</p>}
-      {error !== undefined && (
-        <p role="alert" className="mt-3 rounded-box bg-error/10 px-3 py-2 text-sm text-error">
-          {error}
-        </p>
-      )}
+      {wait !== null && <p className="mt-2 text-sm text-base-content">{discoveryWaitSentence({ wait, timeZone, safetyStop: stopped })}</p>}
+      <ActionError message={error} className="mt-group" takeFocus />
 
-      <ol className="mt-6 grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
+      <ol className="mt-group grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
         {FUNNEL.map((step) => (
           <li key={step} className="bg-base-100 px-4 py-3">
             <p className="nums text-2xl font-semibold">{campaign.funnel[step]}</p>
-            <p className="text-sm text-base-content/65">{FUNNEL_LABEL[step]}</p>
+            <p className="text-sm text-muted">{FUNNEL_LABEL[step]}</p>
           </li>
         ))}
       </ol>
 
-      <People campaign={campaign} />
+      <People campaign={campaign} safetyStop={stopped} />
       <MessagesAndTimings campaign={campaign} onSaved={onChanged} />
     </>
   );
@@ -115,7 +146,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
 
 // ------------------------------------------------------------ people
 
-function People({ campaign }: { readonly campaign: Campaign }) {
+function People({ campaign, safetyStop }: { readonly campaign: Campaign; readonly safetyStop: boolean }) {
   const { timeZone } = useAppData();
   const [stage, setStage] = useState<Stage | null>(null);
   const [page, setPage] = useState(1);
@@ -129,13 +160,18 @@ function People({ campaign }: { readonly campaign: Campaign }) {
   );
   const now = new Date();
   const items = loaded.data?.items ?? [];
+  /** When a person's next step is planned, as the column says it; undefined when nothing is planned for them. */
+  const whenOf = (p: Prospect) => (p.nextActionAt === null ? undefined : nextActionWhen({ at: p.nextActionAt, stage: p.stage, timeZone, now, safetyStop }));
+  const quietNext = items.every((p) => whenOf(p) === undefined);
 
   return (
-    <section className="mt-8" aria-labelledby="people">
-      <h2 id="people" className="text-lg font-semibold">
-        People
-      </h2>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 px-3 py-3">
+    <section className="mt-section" aria-labelledby="people">
+      <SectionHead id="people" title="People">
+        <a href={prospectsCsvUrl(campaign.id)} className="link inline-flex min-h-6 items-center text-sm link-hover max-lg:-my-2.5 max-lg:min-h-11">
+          Download as CSV
+        </a>
+      </SectionHead>
+      <div className={`${TOOLBAR} mb-group`}>
         <label htmlFor={filterId} className="text-sm">
           Stage
         </label>
@@ -156,52 +192,55 @@ function People({ campaign }: { readonly campaign: Campaign }) {
             </option>
           ))}
         </select>
-        <span className="nums text-sm text-base-content/65">{loaded.data === undefined ? "" : `${loaded.data.total} ${loaded.data.total === 1 ? "person" : "people"}`}</span>
+        <span className="nums text-sm text-muted">{loaded.data === undefined ? "" : `${loaded.data.total} ${loaded.data.total === 1 ? "person" : "people"}`}</span>
       </div>
 
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the people" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the people" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton mt-4 h-64 w-full" />
+        <SkeletonRows rows={4} rowClassName="h-12" />
       ) : items.length === 0 ? (
-        <div className="mt-4 rounded-box border border-base-300 px-5 py-6" data-testid="people-empty">
-          <p className="font-medium">{stage === null ? "Nobody found yet." : `Nobody at the stage ${stageWords(stage).toLowerCase()}.`}</p>
-          <p className="mt-1 text-base-content/65">
-            {stage === null ? "People appear here as the campaign finds them." : "Choose another stage, or every stage."}
-          </p>
-        </div>
+        <EmptyState title={stage === null ? "Nobody found yet." : `Nobody at the stage ${stageWords(stage).toLowerCase()}.`} testId="people-empty">
+          {stage === null ? "People appear here as the campaign finds them." : "Choose another stage, or every stage."}
+        </EmptyState>
       ) : (
         <>
-          <div className="mt-4 overflow-x-auto rounded-box border border-base-300">
-            <table className="table table-sm text-sm" data-testid="people-table">
-              <thead>
-                <tr className="text-base-content/65">
-                  <th className="font-medium">Person</th>
-                  <th className="font-medium">Company</th>
-                  <th className="font-medium">Stage</th>
-                  <th className="font-medium">Score</th>
-                  <th className="min-w-[16rem] font-medium">Why the AI scored them so</th>
-                  <th className="font-medium">Next action</th>
-                  <th>
+          <div className="@container overflow-x-auto rounded-box border border-base-300">
+            <table role="table" className="table table-sm @max-people:block" data-testid="people-table" aria-labelledby="people">
+              <thead role="rowgroup" className="@max-people:sr-only">
+                <tr role="row" className="text-muted">
+                  <th role="columnheader" scope="col" className="font-medium">Person</th>
+                  <th role="columnheader" scope="col" className="font-medium @max-people-wide:sr-only">
+                    Company
+                  </th>
+                  <th role="columnheader" scope="col" className="font-medium">Stage</th>
+                  <th role="columnheader" scope="col" className="font-medium">Score</th>
+                  <th role="columnheader" scope="col" className="min-w-56 font-medium">Why the AI scored them so</th>
+                  {/* Wide enough for the longest time phrase ("Tomorrow at 23:38") on one line beside the reason. */}
+                  <th role="columnheader" scope="col" className={`font-medium ${quietNext ? "sr-only" : "min-w-36"}`}>
+                    Next action
+                  </th>
+                  <th role="columnheader" scope="col">
                     <span className="sr-only">LinkedIn profile</span>
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody role="rowgroup" className="@max-people:block">
                 {items.map((p) => (
                   <Fragment key={p.id}>
                     <ProspectRow
                       prospect={p}
                       campaign={campaign}
                       open={open === p.id}
+                      quietNext={quietNext}
                       onToggle={() => setOpen((current) => (current === p.id ? null : p.id))}
                       timeZone={timeZone}
-                      now={now}
+                      when={whenOf(p)}
                     />
                     {open === p.id && (
-                      <tr>
-                        <td colSpan={7} className="bg-base-200/60 px-4 py-4">
-                          <ProspectDetail prospect={p} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
+                      <tr role="row" className="@max-people:block">
+                        <td role="cell" colSpan={7} className="animate-appear bg-base-200/60 p-4 @max-people:block">
+                          <ProspectDetail prospect={p} campaign={campaign} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
                         </td>
                       </tr>
                     )}
@@ -229,54 +268,133 @@ function ProspectRow(props: {
   readonly prospect: Prospect;
   readonly campaign: Campaign;
   readonly open: boolean;
+  /** Nobody on the shown page has a next action: the column is for screen readers only. */
+  readonly quietNext: boolean;
   readonly onToggle: () => void;
   readonly timeZone: string;
-  readonly now: Date;
+  /** When the next step is planned (`nextActionWhen`); undefined when nothing is planned for this person. */
+  readonly when: string | undefined;
 }) {
-  const { prospect: p, campaign, timeZone, now } = props;
+  const { prospect: p, campaign } = props;
   const next = nextStepWords(p.stage, campaign);
+  const { when } = props;
   const stopped = p.stopReason === "replied" ? " (they replied)" : p.stopReason === "manual_takeover" ? " (you messaged them yourself)" : "";
+  const { headline, company } = p.person;
+  /** The block prints the company after the headline unless the headline already says it. */
+  const companyAfter = company !== null && company !== "" && !(headline ?? "").includes(company);
   return (
-    <tr data-testid="prospect-row" className={props.open ? "bg-base-200/60" : ""}>
-      <td className="min-w-[12rem] py-3">
-        <button type="button" className="text-left font-semibold hover:underline" aria-expanded={props.open} onClick={props.onToggle}>
-          {p.person.fullName}
-        </button>
-        {p.person.headline !== null && <p className="text-base-content/75">{p.person.headline}</p>}
-        {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/15 text-error">Do not contact</span>}
+    <tr
+      role="row"
+      data-testid="prospect-row"
+      className={`@max-people:grid @max-people:grid-cols-[auto_minmax(0,1fr)_auto_auto] @max-people:items-start @max-people:gap-x-3 @max-people:gap-y-1.5 @max-people:px-4 @max-people:py-3 @max-people:not-last:border-b @max-people:not-last:border-base-300 ${props.open ? "bg-base-200/60" : ""}`}
+    >
+      <th role="rowheader" scope="row" className={`min-w-52 text-left font-normal ${STACK_CELL} @max-people:col-span-4 @max-people:col-start-1 @max-people:row-start-1`}>
+        {/* In the block the score and Profile sit at the right of this line only (28px chip, 12px gaps, Profile), so the headline under it runs the full width. */}
+        <div className="@max-people:min-h-7 @max-people:pr-29">
+          <button
+            type="button"
+            className="inline-flex min-h-6 items-center gap-1 text-left font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11"
+            aria-expanded={props.open}
+            onClick={props.onToggle}
+          >
+            {p.person.fullName}
+            <IconChevron
+              className={`size-3.5 shrink-0 text-muted transition-transform duration-(--duration-appear) ease-settle ${props.open ? "rotate-90" : ""}`}
+            />
+          </button>
+        </div>
+        {headline !== null && (
+          <p className="text-base-content @max-people:text-muted">
+            {headline}
+            {companyAfter && (
+              <span className="hidden text-muted @max-people-wide:inline" aria-hidden="true">
+                {" "}
+                · {company}
+              </span>
+            )}
+          </p>
+        )}
+        {headline === null && company !== null && (
+          <p className="hidden @max-people:text-muted @max-people-wide:block" aria-hidden="true">
+            {company}
+          </p>
+        )}
+        {p.person.doNotContact && <span className="badge badge-sm mt-1 border-0 bg-error/10 text-caption text-error">Do not contact</span>}
+      </th>
+      {/* In the block, and in a table narrower than 66rem, the company follows the headline (once, when the headline does not already name it). */}
+      <td role="cell" className={`${STACK_CELL} @max-people-wide:sr-only`}>
+        {company ?? <span className="text-muted">Unknown</span>}
       </td>
-      <td>{p.person.company ?? <span className="text-base-content/45">Unknown</span>}</td>
-      <td className="whitespace-nowrap" data-testid="prospect-stage">
-        {stageWords(p.stage)}
-        {stopped}
-      </td>
-      <td>
-        <span
-          className={`nums inline-flex size-7 items-center justify-center rounded-field font-semibold ${SCORE_CHIP[scoreTone(p.score)]}`}
-          aria-label={p.score === null ? "Not scored" : `Score ${formatScore(p.score)} of 10`}
-        >
-          {p.score === null ? "–" : formatScore(p.score)}
+      <td role="cell" className={`whitespace-nowrap ${STACK_CELL} @max-people:col-start-1 @max-people:row-start-2`}>
+        <span data-testid="prospect-stage">
+          <StageWords stage={p.stage} extra={stopped} replied={p.stopReason === "replied"} />
         </span>
       </td>
-      <td className="text-base-content/85">{p.scoreReason ?? <span className="text-base-content/45">Not scored yet</span>}</td>
-      <td className="min-w-[9rem]">
-        {p.nextActionAt === null ? (
-          <span className="text-base-content/45">Nothing planned</span>
+      <td role="cell" className={`${STACK_CELL} @max-people:col-start-3 @max-people:row-start-1 @max-people:self-start`}>
+        <ScoreChip score={p.score} size="sm" />
+      </td>
+      <td role="cell" className={`text-base-content @max-people:text-muted ${STACK_CELL} @max-people:col-span-4 @max-people:col-start-1 @max-people:row-start-3`}>
+        {p.scoreReason ?? <span className="text-muted">Not scored yet</span>}
+      </td>
+      <td
+        role="cell"
+        className={`${STACK_CELL} @max-people:col-span-3 @max-people:col-start-2 @max-people:row-start-2 ${props.quietNext ? "sr-only" : when === undefined ? "@max-people:sr-only" : ""}`}
+      >
+        {when === undefined ? (
+          <span className="text-muted">
+            <span aria-hidden="true">–</span>
+            <span className="sr-only">Nothing planned</span>
+          </span>
         ) : (
-          <>
+          <div className="@max-people:flex @max-people:flex-wrap @max-people:gap-x-1.5">
+            <span className="hidden text-muted @max-people:inline" aria-hidden="true">
+              Next:
+            </span>
             {next !== undefined && <p>{next}</p>}
-            <p className="text-base-content/65">{formatNext(p.nextActionAt, timeZone, now)}</p>
-          </>
+            <p className="whitespace-nowrap text-muted" data-testid="next-action-when">
+              {when}
+            </p>
+          </div>
         )}
       </td>
-      <td>
-        <a href={p.person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex items-center gap-1 whitespace-nowrap text-base-content/75 link-hover">
+      <td role="cell" className={`${STACK_CELL} @max-people:col-start-4 @max-people:row-start-1 @max-people:self-start`}>
+        <a
+          href={p.person.profileUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="link inline-flex min-h-6 items-center gap-1 whitespace-nowrap text-base-content link-hover max-lg:-my-2.5 max-lg:min-h-11"
+        >
           Profile
           <IconExternal />
           <span className="sr-only">of {p.person.fullName} on LinkedIn (opens in your browser)</span>
         </a>
       </td>
     </tr>
+  );
+}
+
+/**
+ * Stages that wait on the user lead the column; stages where the sequence is over step back, except a sequence
+ * stopped because the person replied: that is the outcome the campaign is for, so it stays in Ink.
+ */
+const WAITING_STAGES: ReadonlySet<Stage> = new Set<Stage>(["pending_approval", "needs_review"]);
+const CLOSED_STAGES: ReadonlySet<Stage> = new Set<Stage>(["rejected", "withdrawn", "stopped", "completed"]);
+
+function StageWords({ stage, extra, replied }: { readonly stage: Stage; readonly extra: string; readonly replied: boolean }) {
+  if (WAITING_STAGES.has(stage)) {
+    return (
+      <span className="inline-flex items-center gap-1.5 font-medium">
+        <span className="status status-warning" aria-hidden="true" />
+        {stageWords(stage)}
+        {extra}
+      </span>
+    );
+  }
+  return (
+    <span className={CLOSED_STAGES.has(stage) && !(stage === "stopped" && replied) ? "text-muted" : ""}>
+      {stageWords(stage)}
+      {extra}
+    </span>
   );
 }
 
@@ -303,10 +421,11 @@ function history(p: Prospect): readonly { readonly label: string; readonly at: s
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }
 
-function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospect: Prospect; readonly timeZone: string; readonly onChanged: () => void }) {
+function ProspectDetail(props: { readonly prospect: Prospect; readonly campaign: Campaign; readonly timeZone: string; readonly onChanged: () => void }) {
+  const { prospect: p, campaign, timeZone, onChanged } = props;
   const [doNotContact, setDnc] = useState(p.person.doNotContact);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const switchId = useId();
 
   const change = (on: boolean) => {
@@ -315,61 +434,71 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
     setDnc(on);
     setDoNotContact(p.person.id, on)
       .then(onChanged)
-      .catch((failure: unknown) => {
+      .catch((failed: unknown) => {
         setDnc(!on);
-        setError(`Could not change it: ${toApiError(failure).message}`);
+        setError(failure(`Do not contact was not ${on ? "turned on" : "turned off"}. The switch is back as it was; press it again.`, toApiError(failed)));
       })
       .finally(() => setBusy(false));
   };
 
+  // Each text with the campaign's template for it, so the filled-in values are set apart (plain if it was edited since).
   const texts = [
-    ["Invite note", p.texts.inviteNote, p.invitedAt === null ? "Not invited yet." : "Invited without a note."],
-    ["First message", p.texts.firstMessage, "Not sent yet."],
-    ["Follow-up", p.texts.followUp, "Not sent."],
+    ["Invite note", p.texts.inviteNote, campaign.inviteNote, p.invitedAt === null ? "Not invited yet." : "Invited without a note."],
+    ["First message", p.texts.firstMessage, campaign.firstMessage, "Not sent yet."],
+    ["Follow-up", p.texts.followUp, campaign.followUp, "Not sent."],
   ] as const;
 
   return (
-    <div className="grid gap-x-8 gap-y-5 lg:grid-cols-[minmax(0,1fr)_17rem]" data-testid="prospect-detail">
-      <div className="min-w-0">
+    // From 1024px the texts and Do not contact share the left column and History the right, top-aligned, so neither column
+    // leaves a block of empty space; the second row takes what History needs beyond the texts. On a phone: texts, History,
+    // then Do not contact, in the order of the page.
+    <div
+      className="grid gap-x-section gap-y-block lg:grid-cols-[minmax(0,1fr)_17rem] lg:grid-rows-[auto_1fr]"
+      data-testid="prospect-detail"
+    >
+      <div className="min-w-0 lg:col-start-1 lg:row-start-1">
         <h3 className="font-semibold">Texts as sent</h3>
         <dl className="mt-2 flex flex-col gap-3">
-          {texts.map(([label, text, none]) => (
+          {texts.map(([label, text, template, none]) => (
             <div key={label}>
-              <dt className="text-xs text-base-content/55">{label}</dt>
-              <dd className={`whitespace-pre-line ${text === null ? "text-base-content/55" : "border-l-2 border-base-300 pl-3"}`}>{text ?? none}</dd>
+              <dt className="text-caption text-muted">{label}</dt>
+              {text === null ? (
+                <dd className="text-muted">{none}</dd>
+              ) : (
+                <dd className="border-l-2 border-base-300 pl-3 whitespace-pre-line wrap-break-word" data-testid="sent-text">
+                  <FilledText text={text} template={template} />
+                </dd>
+              )}
             </div>
           ))}
         </dl>
-        {p.reviewReason !== null && <p className="mt-3 rounded-field bg-accent/20 px-3 py-2">Held for review: {p.reviewReason.replace(/_/g, " ")}</p>}
+        {p.reviewReason !== null && (
+          <Notice tone="waits" className="mt-group">
+            Held for review: {p.reviewReason.replace(/_/g, " ")}
+          </Notice>
+        )}
       </div>
-      <div className="flex flex-col gap-4">
-        <div>
-          <h3 className="font-semibold">History</h3>
-          <ol className="mt-2 flex flex-col gap-1.5">
-            {history(p).map((e) => (
-              <li key={e.label} className="grid grid-cols-[6.5rem_1fr] gap-2">
-                <span className="nums text-base-content/60">{formatStamp(e.at, timeZone)}</span>
-                <span>{e.label}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div className="rounded-box border border-base-300 bg-base-100 px-3 py-3">
-          <SwitchRow
-            id={switchId}
-            label="Do not contact"
-            tone="warning"
-            checked={doNotContact}
-            disabled={busy}
-            onChange={change}
-            hint="The app never invites or messages this person, in any campaign."
-          />
-          {error !== undefined && (
-            <p role="alert" className="mt-2 text-sm text-error">
-              {error}
-            </p>
-          )}
-        </div>
+      <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+        <h3 className="font-semibold">History</h3>
+        <ol className="mt-2 flex flex-col gap-1.5">
+          {history(p).map((e) => (
+            <li key={e.label} className="grid grid-cols-[6.5rem_1fr] gap-2">
+              <span className="nums text-muted">{formatStamp(e.at, timeZone)}</span>
+              <span>{e.label}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <div className="self-start rounded-box border border-base-300 bg-base-100 px-3 py-3 lg:col-start-1 lg:row-start-2 lg:max-w-xl lg:justify-self-start" data-testid="dnc-card">
+        <SwitchRow
+          id={switchId}
+          label="Do not contact"
+          checked={doNotContact}
+          disabled={busy}
+          onChange={change}
+          hint="The app never invites or messages this person, in any campaign."
+        />
+        <ActionError message={error} className="mt-2" takeFocus />
       </div>
     </div>
   );
@@ -377,23 +506,18 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
 
 // ------------------------------------------------------------ messages and timings
 
-const POLICY_WORDS = { calendar: "every day counts", working_days: "only working days count" } as const;
-
 function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign; readonly onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   const live = LIVE.has(campaign.status);
 
   return (
-    <section className="mt-10" aria-labelledby="messages-timings">
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="messages-timings" className="text-lg font-semibold">
-          Messages and timings
-        </h2>
+    <section className="mt-section" aria-labelledby="messages-timings">
+      <SectionHead id="messages-timings" title="Messages and timings">
         {live && !editing && (
           <button
             type="button"
-            className="btn btn-sm border-base-300 bg-base-100"
+            className={`${SECONDARY_BUTTON} btn-sm`}
             onClick={() => {
               setNotice(undefined);
               setEditing(true);
@@ -402,12 +526,8 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
             Edit messages and timings
           </button>
         )}
-      </div>
-      {notice !== undefined && (
-        <p role="status" className="mt-3 text-sm text-primary">
-          {notice}
-        </p>
-      )}
+      </SectionHead>
+      <Announce>{notice !== undefined && <p className="mb-group text-sm text-primary">{notice}</p>}</Announce>
       {editing ? (
         <LiveEdit
           campaign={campaign}
@@ -419,28 +539,28 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
           }}
         />
       ) : (
-        <div className="mt-3 rounded-box border border-base-300 px-4 py-4">
+        <div className="rounded-box border border-base-300 p-card">
           {!live && (
-            <p className="mb-3 text-sm text-base-content/65">
+            <p className="mb-group text-sm text-muted">
               {campaign.status === "draft" ? "A draft is changed in its setup steps." : `A${campaign.status === "archived" ? "n archived" : " finished"} campaign cannot be changed.`}
             </p>
           )}
-          <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[12rem_minmax(0,1fr)]">
-            <dt className="text-base-content/65">Invite note</dt>
-            <dd className="whitespace-pre-line">{campaign.inviteNote === null || campaign.inviteNote === "" ? <span className="text-base-content/55">No note</span> : campaign.inviteNote}</dd>
-            <dt className="text-base-content/65">First message</dt>
-            <dd className="whitespace-pre-line">{campaign.firstMessage === "" ? <span className="text-base-content/55">Not written</span> : campaign.firstMessage}</dd>
-            <dt className="text-base-content/65">Follow-up</dt>
+          <dl className={`${DEF_LIST} text-sm`} data-testid="messages-list">
+            <dt className={`${DEF_TERM} text-muted`}>Invite note</dt>
+            <dd className="whitespace-pre-line">{campaign.inviteNote === null || campaign.inviteNote === "" ? <span className="text-muted">No note</span> : campaign.inviteNote}</dd>
+            <dt className={`${DEF_TERM} text-muted`}>First message</dt>
+            <dd className="whitespace-pre-line">{campaign.firstMessage === "" ? <span className="text-muted">Not written</span> : campaign.firstMessage}</dd>
+            <dt className={`${DEF_TERM} text-muted`}>Follow-up</dt>
             <dd className="whitespace-pre-line" data-testid="current-follow-up">
-              {campaign.followUp === "" ? <span className="text-base-content/55">No follow-up</span> : campaign.followUp}
+              {campaign.followUp === "" ? <span className="text-muted">No follow-up</span> : campaign.followUp}
             </dd>
-            <dt className="text-base-content/65">AI-written line</dt>
+            <dt className={`${DEF_TERM} text-muted`}>AI-written line</dt>
             <dd>{campaign.aiPersonalise ? "On" : "Off"}</dd>
-            <dt className="text-base-content/65">Waits</dt>
+            <dt className={`${DEF_TERM} text-muted`}>Waits</dt>
             <dd>
-              First message {campaign.acceptToMessageMinHours} to {campaign.acceptToMessageMaxHours} hours after they accept; follow-up{" "}
-              {campaign.followUpDelayMinHours} to {campaign.followUpDelayMaxHours} hours after that; {POLICY_WORDS[campaign.delayPolicy]}. Unaccepted
-              invites are withdrawn after {campaign.withdrawAfterDays} days.
+              First message {unbroken(`${campaign.acceptToMessageMinHours} to ${campaign.acceptToMessageMaxHours} hours`)} after they accept; follow-up{" "}
+              {unbroken(`${campaign.followUpDelayMinHours} to ${campaign.followUpDelayMaxHours} hours`)} after that; {POLICY_WORDS[campaign.delayPolicy]}. Unaccepted
+              invites are withdrawn after {unbroken(`${campaign.withdrawAfterDays} days`)}.
             </dd>
           </dl>
         </div>
@@ -449,11 +569,26 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
   );
 }
 
+/** The id of the live edit's summary, which takes the focus when a refused save has no field to mark. */
+const LIVE_EDIT_ERROR_ID = "live-edit-error";
+
 function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign; readonly onCancel: () => void; readonly onSaved: (notice: string) => void }) {
   const [form, setForm] = useState<CampaignForm>(() => formFromCampaign(campaign));
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | Failure | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  /** Counts refused saves, so each one moves the focus once its marks have rendered. */
+  const [refusals, setRefusals] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+
+  // A refused save: the first field it marked takes the focus, in view, as in the wizard and Settings; with no field
+  // marked (the request failed), the summary above Save changes takes it.
+  useEffect(() => {
+    if (refusals === 0 || box.current === null) return;
+    if (focusFirstError(box.current)) return;
+    const summary = document.getElementById(LIVE_EDIT_ERROR_ID);
+    if (summary !== null) focusInView(summary);
+  }, [refusals]);
 
   const set: SetField = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -464,38 +599,42 @@ function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign
     const { fields, errors: local } = toFields(form, LIVE_KEYS);
     if (Object.keys(local).length > 0) {
       setErrors(local);
-      setError("Some fields need attention. They are marked below.");
+      setError("Nothing was saved: some fields need attention. Fix the ones marked above, then press Save changes again.");
+      setRefusals((n) => n + 1);
       return;
     }
     setSaving(true);
     setError(undefined);
     updateCampaign(campaign.id, fields)
       .then((result) => onSaved(result.notice ?? "Saved."))
-      .catch((failure: unknown) => {
-        const apiError = toApiError(failure);
+      .catch((failed: unknown) => {
+        const apiError = toApiError(failed);
         setErrors(apiError.fields);
-        setError(Object.keys(apiError.fields).length > 0 ? `${apiError.message}. They are marked below.` : apiError.message);
+        setError(
+          Object.keys(apiError.fields).length > 0
+            ? "Nothing was saved: some fields need attention. Fix the ones marked above, then press Save changes again."
+            : failure("Nothing was saved. Your changes are still on this page; press Save changes again.", apiError),
+        );
+        setRefusals((n) => n + 1);
       })
       .finally(() => setSaving(false));
   };
 
   return (
-    <div className="mt-3 rounded-box border border-base-300 px-4 py-5" data-testid="live-edit">
-      <p className="mb-5 rounded-field bg-accent/20 px-3 py-2">Edits apply only to steps not yet sent. Texts already sent stay as they were.</p>
+    <div ref={box} className="rounded-box border border-base-300 p-card" data-testid="live-edit">
+      <Notice tone="note" className="mb-block">
+        Edits apply only to steps not yet sent. Texts already sent stay as they were.
+      </Notice>
       <MessageFields campaignId={campaign.id} form={form} set={set} errors={errors} />
-      <h3 className="mt-8 mb-4 font-semibold">Timings</h3>
+      <h3 className="mt-section mb-group font-semibold">Timings</h3>
       <TimingFields form={form} set={set} errors={errors} />
-      {error !== undefined && (
-        <p role="alert" className="mt-5 text-sm text-error">
-          {error}
-        </p>
-      )}
-      <div className="mt-6 flex gap-3">
-        <button type="button" className="btn btn-sm btn-primary" disabled={saving} onClick={save}>
+      <ActionError message={error} className="mt-block" id={LIVE_EDIT_ERROR_ID} testId="live-edit-error" />
+      <div className="mt-block flex gap-3">
+        <button type="button" className="btn btn-sm btn-primary" disabled={saving} aria-busy={saving} onClick={save}>
           {saving && <span className="loading loading-spinner loading-xs" />}
           Save changes
         </button>
-        <button type="button" className="btn btn-sm btn-ghost border-base-300" disabled={saving} onClick={onCancel}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving} onClick={onCancel}>
           Cancel
         </button>
       </div>

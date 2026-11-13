@@ -3,9 +3,9 @@ import { listActivity, listCampaigns } from "../api";
 import type { ActivityItem, Page } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formatToday } from "../format";
-import { LoadError, Pager } from "../formParts";
+import { ActivityMessage, CampaignSelect, LevelMark, EmptyState, LoadError, Pager, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { useLoad } from "../useLoad";
-import { formatStamp, plainMessage } from "../words";
+import { formatStamp } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const PAGE_SIZE = 50;
@@ -56,10 +56,13 @@ export function Activity() {
 
   return (
     <>
-      <PageHeader title="Activity log" aside={formatToday(timeZone, new Date())} />
-      <p className="mt-2 max-w-2xl text-base-content/75">Everything the app did and noticed, newest first. Times are in {timeZone.replace(/_/g, " ")}.</p>
+      <PageHeader
+        title="Activity log"
+        aside={formatToday(timeZone, new Date())}
+        lead={`Everything the app did and noticed, newest first. Times are in ${timeZone.replace(/_/g, " ")}.`}
+      />
 
-      <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-box bg-base-200 px-3 py-3">
+      <div className={`${TOOLBAR} mb-group`}>
         <div className="join" role="group" aria-label="Show">
           {(
             [
@@ -71,7 +74,7 @@ export function Activity() {
               key={value}
               type="button"
               aria-pressed={level === value}
-              className={`btn join-item btn-sm ${level === value ? "btn-neutral" : "bg-base-100"}`}
+              className={`${level === value ? "btn btn-neutral" : SECONDARY_BUTTON} join-item btn-sm`}
               onClick={() => {
                 setLevel(value);
                 setPage(1);
@@ -81,41 +84,34 @@ export function Activity() {
             </button>
           ))}
         </div>
-        <label htmlFor={campaignFilter} className="text-sm">
-          Campaign
-        </label>
-        <select
-          id={campaignFilter}
-          className="select select-sm w-auto max-w-[16rem] bg-base-100"
-          value={campaignId ?? ""}
-          onChange={(event) => {
-            setCampaignId(event.target.value === "" ? null : Number(event.target.value));
-            setPage(1);
-          }}
-        >
-          <option value="">All campaigns</option>
-          {(campaigns.data?.campaigns ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        {/* The label and its select wrap to the next line together. */}
+        <div className="inline-flex flex-wrap items-center gap-x-4 gap-y-3">
+          <label htmlFor={campaignFilter} className="text-sm">
+            Campaign
+          </label>
+          <CampaignSelect
+            id={campaignFilter}
+            campaigns={campaigns.data?.campaigns ?? []}
+            value={campaignId}
+            onChange={(id) => {
+              setCampaignId(id);
+              setPage(1);
+            }}
+          />
+        </div>
       </div>
 
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the activity log" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton mt-4 h-72 w-full" />
+        <SkeletonRows rows={6} rowClassName="h-5" />
       ) : items.length === 0 ? (
-        <div className="mt-4 rounded-box border border-base-300 px-5 py-6" data-testid="activity-empty">
-          <p className="font-medium">{level === "problems" ? "No warnings or errors." : "Nothing in the log yet."}</p>
-          <p className="mt-1 text-base-content/65">
-            {level === "problems" ? "When something goes wrong or needs a look, it is listed here." : "Each invite, message and check is listed here."}
-          </p>
-        </div>
+        <EmptyState title={level === "problems" ? "No warnings or errors." : "Nothing in the log yet."} testId="activity-empty">
+          {level === "problems" ? "When something goes wrong or needs a look, it is listed here." : "Each invite, message and check is listed here."}
+        </EmptyState>
       ) : (
         <>
-          <ol className="mt-4 divide-y divide-base-300 rounded-box border border-base-300" data-testid="activity-list">
+          <ol className="divide-y divide-base-300 rounded-box border border-base-300" data-testid="activity-list">
             {items.map((item) => {
               const campaign = item.campaignId === null ? undefined : names.get(item.campaignId);
               return (
@@ -123,17 +119,18 @@ export function Activity() {
                   key={item.id}
                   data-testid="activity-line"
                   data-level={item.level}
-                  className={`grid gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm sm:grid-cols-[7rem_minmax(0,1fr)_12rem] ${
-                    item.level === "warning" ? "shadow-[inset_3px_0_0_0_var(--color-warning)]" : item.level === "error" ? "shadow-[inset_3px_0_0_0_var(--color-error)]" : ""
-                  }`}
+                  className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm sm:grid-cols-[7rem_minmax(0,1fr)_12rem]"
                 >
-                  <span className="nums text-base-content/60">{formatStamp(item.at, timeZone)}</span>
-                  <span className={item.level === "error" ? "text-error" : ""}>
-                    {item.level === "warning" && <span className="mr-1.5 font-medium">Warning:</span>}
-                    {item.level === "error" && <span className="mr-1.5 font-medium">Error:</span>}
-                    {plainMessage(item.message)}
+                  {/*
+                   * A warning's triangle or an error's dot ends the time column, so every line's text starts at one edge.
+                   * One line high and at the top of the row, so the time and its mark sit on a wrapped message's first line.
+                   */}
+                  <span className="nums flex h-lh items-center gap-2 self-start text-muted sm:justify-between">
+                    {formatStamp(item.at, timeZone)}
+                    <LevelMark level={item.level} />
                   </span>
-                  <span className="truncate text-base-content/60 sm:text-right">{campaign ?? ""}</span>
+                  <ActivityMessage level={item.level} message={item.message} campaign={campaign} campaignShown={campaign !== undefined} />
+                  <span className="truncate text-muted sm:text-right">{campaign ?? ""}</span>
                 </li>
               );
             })}

@@ -4,39 +4,49 @@ import type { SafetyStop, Session } from "../apiSchemas";
 
 export interface SessionView {
   readonly label: string;
-  /** daisyUI status colour for the light. */
-  readonly light: "status-success" | "status-warning" | "status-error" | "status-neutral";
+  /** The window's state as a full sentence (without its full stop), for the red session card during a safety stop. */
+  readonly window: string;
+  /**
+   * The light's daisyUI classes. It agrees with the banner: red whenever the red "LinkedIn needs you" bar shows (the
+   * user must act), green when logged in, and the hollow ring of a campaign that is not working for a quiet state that
+   * needs nothing from the user (not checked yet, LinkedIn's search limit reached).
+   */
+  readonly light: "status-success" | "status-error" | "status-neutral status-hollow";
   /** When the session needs the user: what to do, shown in a red banner. */
   readonly problem?: string;
 }
 
 const VIEWS: Readonly<Record<Session["status"], SessionView>> = {
-  ok: { label: "Connected", light: "status-success" },
+  ok: { label: "Logged in", window: "The dedicated window is still logged in", light: "status-success" },
   logged_out: {
     label: "Logged out",
-    light: "status-warning",
+    window: "The dedicated window is logged out",
+    light: "status-error",
     problem: "Log in to LinkedIn in the dedicated window, then press Re-check.",
   },
   checkpoint: {
     label: "Checkpoint",
+    window: "The dedicated window shows a security check",
     light: "status-error",
     problem: "LinkedIn is asking for a security check in the dedicated window. Complete it there yourself, then press Re-check.",
   },
   restricted: {
     label: "Restricted",
+    window: "The dedicated window shows a restriction or warning",
     light: "status-error",
     problem:
       "LinkedIn shows a restriction or warning on the account. Read it in the dedicated window and do not try to get past it. Press Re-check once LinkedIn has lifted it.",
   },
-  search_capped: { label: "Search limit reached", light: "status-warning" },
-  unknown: { label: "Not checked yet", light: "status-neutral" },
+  search_capped: { label: "Search limit reached", window: "The dedicated window is still logged in, and LinkedIn’s search limit is reached", light: "status-neutral status-hollow" },
+  unknown: { label: "Not checked yet", window: "The dedicated window has not been checked yet", light: "status-neutral status-hollow" },
 };
 
 export function sessionView(session: Session): SessionView {
   if (session.status === "unknown" && session.lastCheckedAt !== null) {
     return {
       label: "Unknown",
-      light: "status-neutral",
+      window: "The dedicated window could not be checked",
+      light: "status-error",
       problem: "The last check could not tell whether LinkedIn is logged in. Make sure the dedicated window shows LinkedIn, then press Re-check.",
     };
   }

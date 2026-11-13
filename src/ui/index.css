@@ -2,7 +2,11 @@
 @plugin "daisyui" {
   themes: false;
 }
-/* The dashboard's one theme: a quiet green-grey desk, amber for what waits on the user, red only for a safety stop. */
+/*
+ * The dashboard's one theme: a quiet green-grey desk, amber for what waits on the user. Red is for what went wrong or
+ * would destroy: filled red (a solid bar, a dot) only for a safety stop and what raises it ("LinkedIn needs you"),
+ * Stop Red text and edges for a field's error and a failed action, and the solid red button of a destructive confirm.
+ */
 @plugin "daisyui/theme" {
   name: "outreach";
   default: true;
@@ -15,8 +19,6 @@
   --color-base-content: #1d2521;
   --color-primary: #2c5e4f;
   --color-primary-content: #ffffff;
-  --color-secondary: #3d5a6c;
-  --color-secondary-content: #ffffff;
   --color-accent: #e5ad42;
   --color-accent-content: #2b1d03;
   --color-neutral: #26302b;
@@ -45,30 +47,270 @@
 
 @theme {
   --font-sans: "Seravek", "Avenir Next", system-ui, sans-serif;
+
+  /* Sizes outside Tailwind's scale, named once. */
+  --text-title: 1.75rem; /* the page title */
+  --text-title--line-height: 1.25;
+  --text-nav: 0.95rem; /* sidebar items, and a campaign's name in a table */
+  --text-caption: 0.8125rem; /* extra-small buttons, and the small caption over a quoted text */
+  --text-caption--line-height: 1.125rem;
+  --container-page: 1180px; /* the page column */
+
+  /*
+   * The box widths from which a table has room for all its columns (container queries on the table's box).
+   * Below them a campaign table drops its six funnel columns for one sentence, and the People and Stats
+   * tables show one block per row. Measured from the tables' own content, not from the viewport.
+   */
+  --container-funnel: 45rem;
+  --container-people: 58rem;
+  /* From this box the People table also shows Company as a column; between 58rem and here the company follows the headline. */
+  --container-people-wide: 66rem;
+  --container-stats: 50rem;
+  /* The approval queue's five columns (score, person, reason, texts, buttons); below it the phone's stacked row. */
+  --container-queue: 56rem;
+  /* The box width from which the Messages fields show their preview beside the form (19rem) instead of below it. */
+  --container-preview: 44rem;
+
+  /*
+   * The page rhythm, named once: each relationship has one step.
+   * section: between the sections of a page, and between the columns of a split layout (32px).
+   * block: after the title block, and between the fields of a form (24px).
+   * group: from a heading, a lead, a toolbar or a status line to the content it introduces (12px).
+   * card: inside a card, a Settings section or an empty state (20px).
+   */
+  --spacing-section: 2rem;
+  --spacing-block: 1.5rem;
+  --spacing-group: 0.75rem;
+  --spacing-card: 1.25rem;
+  /* The tallest a viewer dialog grows (the Needs review screenshot): the window less 16px above and below. */
+  --spacing-viewer: calc(100dvh - 2rem);
+
+  /*
+   * Text has two tones: Ink (base-content) and Muted. Muted is solid, not an opacity, so it measures the same
+   * everywhere: 5.88:1 on base-100, 5.41 on base-200, 5.60 on an open row's tint, 4.69 on base-300.
+   */
+  --color-muted: #5b625d;
+  /* The edge of a field, an unchecked radio or switch, and a meter's track: 3:1 on base-100, base-200 and the row tint. */
+  --color-control: #818683;
+  /* Amber as a dot: dark enough to read as a shape (3:1 and over) beside its words. Amber means "waits for you". */
+  --color-warning-strong: #a8700f;
+
+  /*
+   * Motion, for state changes only: nothing moves on page load or for decoration. One deceleration (quartic
+   * ease-out) and two lengths. Every one is off under reduced motion (the rule at the end of this file).
+   * leave: a decided approval row folds away, so the rows below close the gap instead of jumping (150ms).
+   * appear: what a click opened (a person's detail, the next wizard step) fades in, and the row's chevron turns (120ms).
+   */
+  --ease-settle: cubic-bezier(0.25, 1, 0.5, 1);
+  --duration-leave: 150ms;
+  --duration-appear: 120ms;
+  --animate-row-leave: row-leave var(--duration-leave) var(--ease-settle) forwards;
+  --animate-appear: appear var(--duration-appear) var(--ease-settle);
+
+  @keyframes row-leave {
+    from {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+    to {
+      grid-template-rows: 0fr;
+      opacity: 0;
+    }
+  }
+  @keyframes appear {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /*
+   * Score chips, filled to empty and never amber or red: Score Mint from 7 (Desk Green number, 5.82:1), a sage grey
+   * from 5 (Hairline Sage fill, Ink number, 11.72:1), and below 5 or unscored Desk Paper inside a Hairline Sage edge
+   * (Ink, 14.71:1).
+   */
   --color-score-high: #d5e8dc;
-  --color-score-mid: #f6e3bb;
-  --color-score-mid-content: #5c3f07;
+  --color-score-mid: #dce0d8;
+  --color-score-low-edge: #dce0d8;
 }
 
 body {
   font-feature-settings: "kern";
   -webkit-font-smoothing: antialiased;
+  /* An underline (a link on hover) clears the descenders instead of cutting them. */
+  text-underline-offset: 0.2em;
+}
+
+/* Selected text takes the palette's mint, not the browser's blue. */
+::selection {
+  background-color: var(--color-score-high);
+  color: var(--color-base-content);
+}
+
+/*
+ * A paragraph never ends on one short word ("follow-" / "up."). Only the wrap style: the `text-wrap` shorthand would
+ * also set the wrap mode back to "wrap" and, unlayered, beat every `whitespace-nowrap` on a paragraph (a time in the
+ * People table broke as "today at" / "07:38").
+ */
+p {
+  text-wrap-style: pretty;
 }
 
 .btn.btn-sm {
-  --fontsize: 0.875rem;
+  --fontsize: var(--text-sm);
 }
 
 .btn.btn-xs {
-  --fontsize: 0.8125rem;
+  --fontsize: var(--text-caption);
+}
+
+/*
+ * A button whose action is running (a confirm dialog's) keeps its fill and its focus: it is aria-disabled, which daisyUI
+ * draws as disabled, but it is not off, it is busy. Its words and spinner say so; a press is ignored in the script.
+ */
+.btn[aria-busy="true"][aria-disabled="true"] {
+  --btn-bg: var(--btn-color, var(--color-base-200));
+  --btn-border: var(--btn-bg);
+  pointer-events: auto;
+  cursor: progress;
+  color: var(--btn-fg);
+  background-color: var(--btn-bg);
+}
+
+/* A small field, select or textarea shows its value at the size of the sentence and the buttons beside it (14px), not daisyUI's 12px. */
+.input.input-sm,
+.select.select-sm,
+.textarea.textarea-sm {
+  --font-size-min: var(--text-sm);
+}
+
+/* Below 1024px an extra-small button is a 44px target (see the utilities layer), so it takes the small size's text and padding. */
+@media (width < 64rem) {
+  .btn.btn-xs {
+    --fontsize: var(--text-sm);
+    --btn-p: 0.75rem;
+  }
 }
 
 .nums {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
+/* Example text in a field is muted text, not a fainter third tone. */
+.input::placeholder,
+.input ::placeholder,
+.textarea::placeholder {
+  color: var(--color-muted);
+  opacity: 1;
+}
+
+/* A control's edge at rest is its only boundary, so it reaches 3:1. Focus, error and checked keep daisyUI's colours. */
+.input:not(:focus, :focus-within, :disabled, .input-error),
+.select:not(:focus, :disabled, .select-error),
+.textarea:not(:focus, :disabled, .textarea-error),
+.radio:not(:checked, :disabled) {
+  border-color: var(--color-control);
+}
+.toggle:not(:checked, :disabled, .toggle-error) {
+  --input-color: var(--color-control);
+}
+
+/* A waiting dot uses the darker amber: the theme's amber is 1.9:1 on the page. */
+.status-warning {
+  background-color: var(--color-warning-strong);
+  color: var(--color-warning-strong);
+}
+
+/* A campaign that is not working (draft, paused, completed, archived) is a ring, so its dot differs by shape, not only hue. */
+.status.status-hollow {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+/* On the current menu item (Dark Moss) every dot is light ink: no status hue reaches 3:1 there. Its words are in the link's name. */
+.menu .menu-active .status {
+  background-color: var(--color-neutral-content);
+  color: var(--color-neutral-content);
+}
+
+/*
+ * One focus indicator: a 2px Ink outline (14.7:1 on Desk Paper, 13.5:1 on Sidebar Sage) on everything that takes focus
+ * from the keyboard. Buttons, fields, switches and radios keep daisyUI's own 2px outline in the same family. A menu
+ * item draws it inside its box (its neighbours are 2px away); on the current item (Dark Moss) it is light ink (12.3:1).
+ * One exception: an approval row draws a 2px Dark Moss ring inside its edge (`ring-inset`, pages/Approvals.tsx), as the
+ * rows touch each other and an outline outside would be cut by the next row.
+ */
+:where(a:not(.btn), summary, [tabindex="0"]:not([role="row"])):focus-visible {
+  outline: 2px solid var(--color-base-content);
+  outline-offset: 2px;
+}
+.menu li > a:focus-visible {
+  outline: 2px solid var(--color-base-content);
+  outline-offset: -2px;
+}
+.menu li > a.menu-active:focus-visible {
+  outline-color: var(--color-neutral-content);
+}
+/* A skip link waits above the top edge and slides into the corner when the keyboard reaches it. */
+.skip-link {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 50;
+  translate: 0 -200%;
+}
+.skip-link:focus {
+  translate: 0 0;
+}
+/* A page or wizard-step heading, or the page itself, takes focus only from a script (after a link, a skip link or a step change): no ring. */
+:where(h1, h2, main)[tabindex="-1"]:focus {
+  outline: none;
+}
+
+/* A folded part draws the app's chevron (the Disclosure in formParts.tsx), never the browser's triangle. */
+summary {
+  list-style: none;
+}
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/*
+ * One table density: 14px rows with 12px above and below each body cell. daisyUI sits in a sublayer of
+ * `utilities`, so these rules beat it; their zero specificity lets a cell's own utility (the opened row) still win.
+ */
+@layer utilities {
+  :where(.table-sm tbody tr) {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+  :where(.table-sm tbody) :where(th, td) {
+    padding-block: 0.75rem;
+  }
+
+  /*
+   * Below 1024px (the drawer layout) every control is a 44px target: buttons, fields and the menu's items,
+   * with an extra-small button in a row growing to the small one. From 1024px the desk keeps its pointer
+   * density. Switches and radios reach 44px through their label rows (formParts.tsx and the radio lists).
+   */
+  @media (width < 64rem) {
+    :where(.btn, .input, .select, .menu li > a) {
+      min-height: 2.75rem;
+    }
+    /* A taller menu item keeps its words in the middle of its box. */
+    :where(.menu li > a) {
+      align-content: center;
+    }
+    /* 16px in a field, so a phone does not zoom the page when the field takes focus. */
+    :where(.input, .select, .textarea) {
+      font-size: 1rem;
+    }
+  }
+}
+
+/* Loaders keep turning (daisyUI already slows them under reduced motion): a still spinner reads as a stuck app. */
 @media (prefers-reduced-motion: reduce) {
-  *,
+  *:not(.loading),
   *::before,
   *::after {
     transition-duration: 0s !important;

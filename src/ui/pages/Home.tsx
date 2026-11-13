@@ -1,22 +1,16 @@
 import { useState } from "react";
 import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, resumeCampaign, toApiError } from "../api";
-import type { Budget, BudgetKind, Campaign, Home as HomeData, Settings } from "../apiSchemas";
+import type { BudgetKind, Campaign, Home as HomeData } from "../apiSchemas";
 import { useAppData } from "../appData";
-import {
-  CAMPAIGN_STATUS_DOT,
-  CAMPAIGN_STATUS_LABEL,
-  formatResume,
-  formatShort,
-  formatToday,
-  joinWords,
-} from "../format";
-import { LoadError } from "../formParts";
+import { formatShort, formatToday, joinWords, unbroken } from "../format";
+import { ActionError, ActivityMessage, EmptyState, LevelMark, HALTED_PAUSE, haltedBy, LoadError, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
+import { budgetNote, FUNNEL, FUNNEL_LABEL, PAUSABLE, toggleFailure, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
-/** Home: what needs the user, the campaigns, today's usage against each limit, and what the app did. */
+/** Home: what needs the user, the campaigns, today's usage against each budget, and what the app did. */
 export function Home() {
   const { home, homeError, refresh, timeZone } = useAppData();
   const now = new Date();
@@ -24,24 +18,51 @@ export function Home() {
     <>
       <PageHeader title="Home" aside={formatToday(timeZone, now)} />
       {home === undefined && homeError !== undefined ? (
-        <LoadError what="Home" message={homeError.message} onRetry={refresh} />
+        <LoadError what="Home" error={homeError} onRetry={refresh} />
       ) : home === undefined ? (
-        <div className="mt-10 flex justify-center">
-          <span className="loading loading-dots loading-md" aria-label="Loading" />
-        </div>
+        <HomeLoading />
       ) : (
-        <div className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1fr)_21rem]">
-          <div className="flex min-w-0 flex-col gap-8">
+        <div className="grid gap-section xl:grid-cols-[minmax(0,1fr)_21rem]">
+          <div className="flex min-w-0 flex-col gap-section">
             <NeedsYou home={home} />
             <Campaigns home={home} />
           </div>
-          <div className="flex min-w-0 flex-col gap-8">
+          <div className="flex min-w-0 flex-col gap-section">
             <Usage home={home} />
             <RecentActivity home={home} />
           </div>
         </div>
       )}
     </>
+  );
+}
+
+/** Home's shape while it loads: each section's block at about its final height, so nothing jumps when the data arrives. */
+function HomeLoading() {
+  const heading = <div className="skeleton mb-group h-7 w-40" />;
+  return (
+    <div role="status" aria-label="Loading" className="grid gap-section xl:grid-cols-[minmax(0,1fr)_21rem]">
+      <div className="flex min-w-0 flex-col gap-section" aria-hidden="true">
+        <div>
+          {heading}
+          <SkeletonRows quiet rows={2} rowClassName="h-13" />
+        </div>
+        <div>
+          {heading}
+          <SkeletonRows quiet rows={4} rowClassName="h-16" />
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-col gap-section" aria-hidden="true">
+        <div>
+          {heading}
+          <div className="skeleton h-96 w-full" />
+        </div>
+        <div>
+          {heading}
+          <div className="skeleton h-42 w-full" />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -63,9 +84,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
 
   return (
     <section aria-labelledby="needs-you">
-      <h2 id="needs-you" className="mb-3 text-lg font-semibold">
-        Needs you
-      </h2>
+      <SectionHead id="needs-you" title="Needs you" />
       <div className="divide-y divide-base-300 rounded-box border border-base-300 bg-base-100" data-testid="needs-you">
         {pendingApproval === 0 && needsReview === 0 ? (
           <div className="flex items-center gap-4 px-4 py-4">
@@ -74,7 +93,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
             </span>
             <div>
               <p className="font-medium">Nothing needs you right now.</p>
-              <p className="text-sm text-base-content/65">New prospects to approve and people held for review will show up here.</p>
+              <p className="text-sm text-muted">New prospects to approve and people held for review will show up here.</p>
             </div>
           </div>
         ) : (
@@ -82,7 +101,7 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
             {pendingApproval > 0 && (
               <NeedRow
                 count={pendingApproval}
-                sentence={`${pendingApproval === 1 ? "prospect is" : "prospects are"} waiting for your approval.`}
+                sentence={pendingApproval === 1 ? "Prospect waiting for your approval" : "Prospects waiting for your approval"}
                 detail={approvalDetail}
                 action="Open queue"
                 to="/approvals"
@@ -92,9 +111,9 @@ function NeedsYou({ home }: { readonly home: HomeData }) {
             {needsReview > 0 && (
               <NeedRow
                 count={needsReview}
-                sentence={`${needsReview === 1 ? "person is" : "people are"} held for review.`}
+                sentence={needsReview === 1 ? "Person held for review" : "People held for review"}
                 detail={reviewDetail}
-                action="Open"
+                action="Open review"
                 to="/review"
               />
             )}
@@ -116,19 +135,19 @@ function NeedRow(props: {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-4">
       <span
-        className="nums flex size-11 shrink-0 items-center justify-center rounded-box bg-accent text-xl font-semibold text-accent-content"
+        className="nums flex h-11 min-w-11 shrink-0 items-center justify-center rounded-box bg-accent px-1.5 text-xl font-semibold text-accent-content"
         aria-hidden="true"
       >
         {props.count}
       </span>
       <div className="min-w-0 flex-1 basis-48">
-        <p className="font-medium">
+        <p className="font-semibold">
           <span className="sr-only">{props.count} </span>
           {props.sentence}
         </p>
-        {props.detail !== undefined && <p className="text-sm text-base-content/65">{props.detail}</p>}
+        {props.detail !== undefined && <p className="text-sm text-muted">{props.detail}</p>}
       </div>
-      <Link to={props.to} className={`btn btn-sm ${props.primary === true ? "btn-primary" : ""}`}>
+      <Link to={props.to} className={`${props.primary === true ? "btn btn-sm btn-primary" : `${SECONDARY_BUTTON} btn-sm`} max-sm:w-full`}>
         {props.action}
       </Link>
     </div>
@@ -137,24 +156,13 @@ function NeedRow(props: {
 
 // ------------------------------------------------------------ campaigns
 
-const PAUSABLE = new Set<Campaign["status"]>(["finding", "awaiting_approval", "running"]);
-const FUNNEL = ["found", "approved", "invited", "accepted", "messaged", "replied"] as const;
-const FUNNEL_LABEL: Readonly<Record<(typeof FUNNEL)[number], string>> = {
-  found: "Found",
-  approved: "Approved",
-  invited: "Invited",
-  accepted: "Accepted",
-  messaged: "Messaged",
-  replied: "Replied",
-};
-
 function Campaigns({ home }: { readonly home: HomeData }) {
   const { refresh } = useAppData();
   // Reload the funnels whenever Home's campaigns or counts change.
   const key = `${home.campaigns.map((c) => `${c.id}:${c.status}`).join(",")}|${home.needsYou.pendingApproval}`;
   const loaded = useLoad(listCampaigns, key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const stopped = home.safetyStop !== null;
 
   const campaigns = (loaded.data?.campaigns ?? []).filter((c) => c.status !== "archived");
@@ -167,81 +175,76 @@ function Campaigns({ home }: { readonly home: HomeData }) {
         loaded.reload();
         refresh();
       })
-      .catch((failure: unknown) => setError(`Could not change ${campaign.name}: ${toApiError(failure).message}`))
+      .catch((failed: unknown) => setError(toggleFailure({ name: campaign.name, resuming: campaign.status === "paused", said: toApiError(failed) })))
       .finally(() => setBusyId(null));
   };
 
   return (
     <section aria-labelledby="home-campaigns">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 id="home-campaigns" className="text-lg font-semibold">
-          Campaigns
-        </h2>
-        <Link to="/campaigns" className="link text-sm link-hover">
+      <SectionHead id="home-campaigns" title="Campaigns">
+        <Link to="/campaigns" className="link inline-flex min-h-6 items-center text-sm link-hover max-lg:-my-2.5 max-lg:min-h-11">
           All campaigns
         </Link>
-      </div>
-      {error !== undefined && (
-        <p role="alert" className="mb-3 rounded-box bg-error/10 px-3 py-2 text-sm text-error">
-          {error}
-        </p>
-      )}
+      </SectionHead>
+      <ActionError message={error} className="mb-group" takeFocus />
       {loaded.status === "error" && loaded.data === undefined ? (
-        <p className="rounded-box border border-base-300 px-4 py-4 text-sm text-error">Could not load the campaigns: {loaded.error.message}</p>
+        <LoadError what="the campaigns" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-40 w-full" />
+        <SkeletonRows rows={4} rowClassName="h-16" />
       ) : campaigns.length === 0 ? (
-        <div className="rounded-box border border-base-300 px-4 py-5">
-          <p className="font-medium">No campaigns yet.</p>
-          <p className="text-sm text-base-content/65">A campaign finds people, scores them and, once you approve them, invites and messages them.</p>
-          <Link to="/campaigns/new" className="btn btn-sm btn-primary mt-3">
-            Create a campaign
-          </Link>
-        </div>
+        <EmptyState
+          title="No campaigns yet."
+          action={
+            <Link to="/campaigns/new" className="btn btn-sm btn-primary">
+              Create a campaign
+            </Link>
+          }
+        >
+          A campaign finds people, scores them and, once you approve them, invites and messages them.
+        </EmptyState>
       ) : (
-        <div className="overflow-x-auto rounded-box border border-base-300">
-          <table className="table table-sm text-sm">
-            <thead>
-              <tr className="text-base-content/65">
-                <th className="font-medium">Campaign</th>
+        <div className="@container overflow-x-auto rounded-box border border-base-300">
+          {/* Below the funnel width the rows are one column: the lone "Campaign" header is for screen readers only. */}
+          <table role="table" className="table table-sm" aria-labelledby="home-campaigns">
+            <thead role="rowgroup" className="@max-funnel:sr-only">
+              <tr role="row" className="text-muted">
+                <th role="columnheader" scope="col" className="font-medium">Campaign</th>
                 {FUNNEL.map((step) => (
-                  <th key={step} className="hidden text-right font-medium md:table-cell">
+                  <th key={step} role="columnheader" scope="col" className="hidden text-right font-medium @funnel:table-cell">
                     {FUNNEL_LABEL[step]}
                   </th>
                 ))}
-                <th>
+                <th role="columnheader" scope="col">
                   <span className="sr-only">Pause or resume</span>
                 </th>
               </tr>
             </thead>
-            <tbody className="nums">
+            <tbody role="rowgroup" className="nums">
               {campaigns.map((c) => {
-                const halted = stopped && PAUSABLE.has(c.status);
+                const halted = haltedBy(c.status, stopped);
                 return (
-                  <tr key={c.id}>
-                    <td className="py-3 md:min-w-[10.5rem]">
-                      <Link to={`/campaigns/${c.id}`} className="text-[0.95rem] font-semibold hover:underline">
+                  <tr key={c.id} role="row">
+                    <th role="rowheader" scope="row" className="text-left font-normal @funnel:min-w-42">
+                      <Link to={`/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11">
                         {c.name}
                       </Link>
-                      <p className="mt-0.5 flex items-center gap-1.5 text-sm text-base-content/65">
-                        <span className={`status ${halted ? "status-error" : CAMPAIGN_STATUS_DOT[c.status]}`} aria-hidden="true" />
-                        {halted ? "Stopped by safety stop" : CAMPAIGN_STATUS_LABEL[c.status]}
+                      <StatusLine status={c.status} safetyStop={stopped} className="mt-0.5 text-sm text-muted" />
+                      <p className="mt-0.5 text-sm text-muted @funnel:hidden">
+                        {unbroken(`${c.funnel.found} found`)}, {unbroken(`${c.funnel.invited} invited`)}, {unbroken(`${c.funnel.replied} replied`)}
                       </p>
-                      <p className="mt-0.5 text-sm text-base-content/65 md:hidden">
-                        {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
-                      </p>
-                    </td>
+                    </th>
                     {FUNNEL.map((step) => (
-                      <td key={step} className="hidden text-right text-sm md:table-cell">
+                      <td key={step} role="cell" className="hidden text-right @funnel:table-cell">
                         {c.funnel[step]}
                       </td>
                     ))}
-                    <td className="text-right">
+                    <td role="cell" className="text-right">
                       {(PAUSABLE.has(c.status) || c.status === "paused") && (
                         <button
                           type="button"
-                          className="btn btn-xs btn-ghost border-base-300"
+                          className={`${SECONDARY_BUTTON} btn-xs ${halted ? HALTED_PAUSE : ""}`}
                           disabled={busyId === c.id}
+                          aria-busy={busyId === c.id}
                           onClick={() => toggle(c)}
                           aria-label={`${c.status === "paused" ? "Resume" : "Pause"} ${c.name}`}
                         >
@@ -272,45 +275,39 @@ const BUDGET_LABEL: Readonly<Record<BudgetKind, string>> = {
 };
 const BUDGET_ORDER = ["invite", "message", "profile_view", "discovery_page", "withdraw"] as const satisfies readonly BudgetKind[];
 
-function usageNote(kind: BudgetKind, budget: Budget, settings: Settings | undefined, timeZone: string, now: Date): string | undefined {
-  // A spent budget is never "paused": pausing is the user's choice on one campaign. It may be spent
-  // below today's number when the week's invite limit or LinkedIn's own limit blocks invites.
-  if (!budget.open) return `Limit reached${budget.resumesAt === null ? "" : `, resumes ${formatResume(budget.resumesAt, timeZone, now)}`}`;
-  if (kind === "invite" && settings !== undefined && settings.warmUp.enabled && budget.limit < settings.limits.invitesPerDay) {
-    return `Warm-up: today's allowance, rising to ${settings.limits.invitesPerDay} a day`;
-  }
-  return undefined;
-}
-
 function Usage({ home }: { readonly home: HomeData }) {
   const { settings, timeZone } = useAppData();
   const now = new Date();
+  const warmUpTarget = settings?.warmUp.enabled === true ? settings.limits.invitesPerDay : undefined;
   return (
     <section aria-labelledby="home-usage">
-      <h2 id="home-usage" className="mb-3 text-lg font-semibold">
-        Today&rsquo;s usage
-      </h2>
+      <SectionHead id="home-usage" title="Today’s usage" />
       <ul className="flex flex-col gap-4 rounded-box bg-base-200 p-4" data-testid="usage">
         {BUDGET_ORDER.map((kind) => {
           const budget = home.usage[kind];
           const full = !budget.open;
-          const note = usageNote(kind, budget, settings, timeZone, now);
+          const note = budgetNote({ kind, budget, warmUpTarget, timeZone, now });
           return (
             <li key={kind} data-testid={`usage-${kind}`}>
               <div className="flex items-baseline justify-between gap-3">
                 <span>{BUDGET_LABEL[kind]}</span>
                 <span className="nums text-sm">
                   <span className="font-semibold">{budget.used}</span>
-                  <span className="text-base-content/65"> of {budget.limit}</span>
+                  <span className="text-muted"> of {budget.limit}</span>
                 </span>
               </div>
+              {/*
+               * A spent budget is quiet (not a problem): its meter is the control tone, lighter than the green bars and the
+               * muted words, never amber. Its track is Desk Paper, so a meter spent below its number (the week's invite
+               * budget, LinkedIn's own limit) still meets 3:1 against the track; the control-tone edge meets 3:1 on the card.
+               */}
               <progress
-                className={`progress mt-1.5 h-1.5 ${full ? "progress-warning" : "progress-primary"}`}
+                className={`progress mt-1.5 h-2 border border-control ${full ? "bg-base-100 text-control" : "bg-base-300 progress-primary"}`}
                 value={Math.min(budget.used, budget.limit)}
                 max={Math.max(budget.limit, 1)}
                 aria-label={`${BUDGET_LABEL[kind]}: ${budget.used} of ${budget.limit} used today`}
               />
-              {note !== undefined && <p className={`mt-1 text-sm ${full ? "text-base-content/80" : "text-base-content/65"}`}>{note}</p>}
+              {note !== undefined && <p className="mt-1 text-sm text-muted">{note}</p>}
             </li>
           );
         })}
@@ -328,30 +325,31 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
   const loaded = useLoad(() => listActivity({ pageSize: 6 }), key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const now = new Date();
   const items = loaded.data?.items ?? [];
+  // Home's lines show no campaign beside them, so a line keeps its campaign's name (in quotes).
+  const names = new Map(home.campaigns.map((c) => [c.id, c.name]));
   return (
     <section aria-labelledby="home-activity">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 id="home-activity" className="text-lg font-semibold">
-          What the app did
-        </h2>
-        <Link to="/activity" className="link text-sm link-hover">
+      <SectionHead id="home-activity" title="What the app did">
+        <Link to="/activity" className="link inline-flex min-h-6 items-center text-sm link-hover max-lg:-my-2.5 max-lg:min-h-11">
           Activity log
         </Link>
-      </div>
+      </SectionHead>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <p className="text-sm text-error">Could not load the activity log: {loaded.error.message}</p>
+        <LoadError what="the activity log" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton h-28 w-full" />
+        <div role="status" aria-label="Loading" className="skeleton h-42 w-full" />
       ) : items.length === 0 ? (
-        <p className="text-sm text-base-content/65">Nothing yet. Each invite, message and check will be listed here.</p>
+        <p className="text-sm text-muted">Nothing yet. Each invite, message and check will be listed here.</p>
       ) : (
         <ol className="flex flex-col gap-2.5 text-sm">
           {items.map((item) => (
-            <li key={item.id} className="grid grid-cols-[3.25rem_1fr] gap-2">
-              <span className="nums text-base-content/60">{formatShort(item.at, timeZone, now)}</span>
-              <span className={item.level === "error" ? "text-error" : item.level === "warning" ? "text-base-content/70" : ""}>
-                {item.message.replace(/_/g, " ")}
+            <li key={item.id} className="grid grid-cols-[4rem_1fr] gap-2">
+              {/* One line high and at the top of the row, so the time and its mark sit on the message's first line when it wraps. */}
+              <span className="nums flex h-lh items-center justify-between gap-1.5 self-start text-muted">
+                {formatShort(item.at, timeZone, now)}
+                <LevelMark level={item.level} />
               </span>
+              <ActivityMessage level={item.level} message={item.message} campaign={item.campaignId === null ? undefined : names.get(item.campaignId)} />
             </li>
           ))}
         </ol>

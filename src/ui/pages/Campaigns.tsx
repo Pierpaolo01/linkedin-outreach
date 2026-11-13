@@ -2,13 +2,13 @@ import { useState } from "react";
 import { archiveCampaign, listCampaigns, pauseCampaign, resumeCampaign, toApiError } from "../api";
 import type { Campaign, DiscoveryWait } from "../apiSchemas";
 import { useAppData } from "../appData";
+import { unbroken } from "../format";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, plural } from "../format";
-import { LoadError } from "../formParts";
+import { ActionError, EmptyState, HALTED_PAUSE, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
-import { PageHeader } from "./PageHeader";
+import { campaignsSummary, discoveryWaitSentence, failure, FUNNEL, FUNNEL_LABEL, PAUSABLE, toggleFailure, type Failure } from "../words";
+import { PAGE_TITLE_ID, PageHeader } from "./PageHeader";
 
 /** Every campaign: status, funnel counts, Pause or Resume, Archive. Archived ones are listed apart. */
 export function Campaigns() {
@@ -17,10 +17,10 @@ export function Campaigns() {
   const key = `${(home?.campaigns ?? []).map((c) => `${c.id}:${c.status}`).join(",")}|${home?.needsYou.pendingApproval ?? ""}`;
   const loaded = useLoad(listCampaigns, key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const [archiving, setArchiving] = useState<Campaign | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
-  const [archiveError, setArchiveError] = useState<string | undefined>(undefined);
+  const [archiveError, setArchiveError] = useState<Failure | undefined>(undefined);
   const [showArchived, setShowArchived] = useState(false);
 
   const all = loaded.data?.campaigns ?? [];
@@ -37,7 +37,7 @@ export function Campaigns() {
         loaded.reload();
         refresh();
       })
-      .catch((failure: unknown) => setError(`Could not change ${campaign.name}: ${toApiError(failure).message}`))
+      .catch((failed: unknown) => setError(toggleFailure({ name: campaign.name, resuming: campaign.status === "paused", said: toApiError(failed) })))
       .finally(() => setBusyId(null));
   };
 
@@ -51,44 +51,34 @@ export function Campaigns() {
         loaded.reload();
         refresh();
       })
-      .catch((failure: unknown) => setArchiveError(toApiError(failure).message))
+      .catch((failed: unknown) => setArchiveError(failure("The campaign was not archived. Nothing changed; press Archive again, or Cancel to keep it.", toApiError(failed))))
       .finally(() => setArchiveBusy(false));
   };
-
-  const running = current.filter((c) => c.status === "running").length;
 
   return (
     <>
       <PageHeader
         title="Campaigns"
-        aside={loaded.data === undefined ? undefined : `${plural(current.length, "campaign", "campaigns")}, ${running} running`}
+        aside={loaded.data === undefined ? undefined : campaignsSummary(current.map((c) => c.status), stopped)}
+        lead="Each campaign finds people, scores them against who you said fits, and invites and messages the ones you approve."
+        action={
+          <Link to="/campaigns/new" className="btn btn-sm btn-primary">
+            New campaign
+          </Link>
+        }
       />
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-base-content/75">
-          Each campaign finds people, scores them against who you said fits, and invites and messages the ones you approve.
-        </p>
-        <Link to="/campaigns/new" className="btn btn-sm btn-primary">
-          New campaign
-        </Link>
-      </div>
 
-      {error !== undefined && (
-        <p role="alert" className="mt-4 rounded-box bg-error/10 px-3 py-2 text-sm text-error">
-          {error}
-        </p>
-      )}
+      <ActionError message={error} className="mb-group" takeFocus />
 
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the campaigns" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
-        <div className="skeleton mt-5 h-48 w-full" />
+        <SkeletonRows rows={4} rowClassName="h-16" />
       ) : current.length === 0 ? (
-        <div className="mt-5 rounded-box border border-base-300 px-5 py-6">
-          <p className="font-medium">No campaigns yet.</p>
-          <p className="mt-1 text-base-content/65">Start one with New campaign. Nothing is sent until you approve the people it finds.</p>
-        </div>
+        <EmptyState title="No campaigns yet.">Start one with New campaign. Nothing is sent until you approve the people it finds.</EmptyState>
       ) : (
         <CampaignTable
+          labelledBy={PAGE_TITLE_ID}
           campaigns={current}
           waits={waits}
           stopped={stopped}
@@ -102,16 +92,13 @@ export function Campaigns() {
       )}
 
       {archived.length > 0 && (
-        <section className="mt-8" aria-labelledby="archived-campaigns">
-          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <h2 id="archived-campaigns" className="text-lg font-semibold">
-              Archived
-            </h2>
-            <button type="button" className="link text-sm link-hover" aria-expanded={showArchived} onClick={() => setShowArchived((open) => !open)}>
+        <section className="mt-section" aria-labelledby="archived-campaigns">
+          <SectionHead id="archived-campaigns" title="Archived">
+            <button type="button" className="link mr-auto inline-flex min-h-6 items-center text-sm link-hover max-lg:min-h-11" aria-expanded={showArchived} onClick={() => setShowArchived((open) => !open)}>
               {showArchived ? "Hide" : `Show ${archived.length}`}
             </button>
-          </div>
-          {showArchived && <CampaignTable campaigns={archived} waits={new Map()} stopped={false} busyId={null} onToggle={() => undefined} />}
+          </SectionHead>
+          {showArchived && <CampaignTable labelledBy="archived-campaigns" campaigns={archived} waits={new Map()} stopped={false} busyId={null} onToggle={() => undefined} />}
         </section>
       )}
 
@@ -119,6 +106,7 @@ export function Campaigns() {
         open={archiving !== null}
         title={`Archive ${archiving?.name ?? "this campaign"}?`}
         confirmLabel="Archive"
+        busyLabel="Archiving…"
         tone="error"
         busy={archiveBusy}
         error={archiveError}
@@ -126,7 +114,7 @@ export function Campaigns() {
         onCancel={() => setArchiving(null)}
       >
         <p>The campaign stops for good: nobody more is found, invited or messaged for it. This cannot be undone.</p>
-        <p className="text-base-content/75">Its people, the texts sent and the activity log stay. Anyone it contacted is still never contacted again.</p>
+        <p className="text-base-content">Its people, the texts sent and the activity log stay. Anyone it contacted is still never contacted again.</p>
       </ConfirmDialog>
     </>
   );
@@ -139,61 +127,63 @@ function CampaignTable(props: {
   readonly busyId: number | null;
   readonly onToggle: (campaign: Campaign) => void;
   readonly onArchive?: (campaign: Campaign) => void;
+  /** The id of the heading that names the table. */
+  readonly labelledBy: string;
 }) {
   const { timeZone } = useAppData();
   return (
-    <div className="mt-5 overflow-x-auto rounded-box border border-base-300">
-      <table className="table table-sm text-sm" data-testid="campaigns-table">
-        <thead>
-          <tr className="text-base-content/65">
-            <th className="font-medium">Campaign</th>
+    // Below the funnel width each campaign is one block: its name, status and counts, then its actions in one row
+    // under them, so every name starts at the same height. The explicit roles keep the table's semantics there.
+    <div className="@container overflow-x-auto rounded-box border border-base-300">
+      <table role="table" className="table table-sm @max-funnel:block" data-testid="campaigns-table" aria-labelledby={props.labelledBy}>
+        <thead role="rowgroup" className="@max-funnel:sr-only">
+          <tr role="row" className="text-muted">
+            <th role="columnheader" scope="col" className="font-medium">Campaign</th>
             {FUNNEL.map((step) => (
-              <th key={step} className="hidden text-right font-medium md:table-cell">
+              <th key={step} role="columnheader" scope="col" className="hidden text-right font-medium @funnel:table-cell">
                 {FUNNEL_LABEL[step]}
               </th>
             ))}
-            <th>
-              <span className="sr-only">Actions</span>
+            <th role="columnheader" scope="col">
+              <span className="sr-only">Change the campaign</span>
             </th>
           </tr>
         </thead>
-        <tbody className="nums">
+        <tbody role="rowgroup" className="nums @max-funnel:block">
           {props.campaigns.map((c) => {
-            const halted = props.stopped && PAUSABLE.has(c.status);
+            const halted = haltedBy(c.status, props.stopped);
             const wait = props.waits.get(c.id) ?? null;
             const busy = props.busyId === c.id;
             return (
-              <tr key={c.id} data-testid="campaign-row">
-                <td className="py-3 md:min-w-[14rem]">
-                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="text-[0.95rem] font-semibold hover:underline">
+              <tr key={c.id} role="row" data-testid="campaign-row" className="@max-funnel:block">
+                <th role="rowheader" scope="row" className="text-left font-normal @funnel:min-w-42 @max-funnel:block @max-funnel:border-b-0">
+                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-sm text-base-content/65" data-testid="campaign-status">
-                    <span className={`status ${halted ? "status-error" : CAMPAIGN_STATUS_DOT[c.status]}`} aria-hidden="true" />
-                    {halted ? "Stopped by safety stop" : CAMPAIGN_STATUS_LABEL[c.status]}
+                  <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-muted" testId="campaign-status" />
+                  {wait !== null && <p className="mt-1 text-sm text-base-content @funnel:max-w-sm">{discoveryWaitSentence({ wait, timeZone, safetyStop: props.stopped })}</p>}
+                  <p className="mt-0.5 text-sm text-muted @funnel:hidden">
+                    {unbroken(`${c.funnel.found} found`)}, {unbroken(`${c.funnel.invited} invited`)}, {unbroken(`${c.funnel.replied} replied`)}
                   </p>
-                  {wait !== null && <p className="mt-1 max-w-sm text-sm text-base-content/80">{discoveryWaitSentence(wait, timeZone)}</p>}
-                  <p className="mt-0.5 text-sm text-base-content/65 md:hidden">
-                    {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
-                  </p>
-                </td>
+                </th>
                 {FUNNEL.map((step) => (
-                  <td key={step} className="hidden text-right text-sm md:table-cell">
+                  <td key={step} role="cell" className="hidden text-right @funnel:table-cell">
                     {c.funnel[step]}
                   </td>
                 ))}
-                <td className="text-right">
-                  <div className="flex flex-wrap justify-end gap-1.5">
+                <td role="cell" className="text-right @max-funnel:block @max-funnel:pt-0">
+                  <div className="flex flex-wrap justify-end gap-1.5 @max-funnel:justify-start">
                     {c.status === "draft" && (
-                      <Link to={`/campaigns/${c.id}/edit`} className="btn btn-xs btn-ghost border-base-300">
+                      <Link to={`/campaigns/${c.id}/edit`} className={`${SECONDARY_BUTTON} btn-xs`}>
                         Continue setting up
                       </Link>
                     )}
                     {(PAUSABLE.has(c.status) || c.status === "paused") && (
                       <button
                         type="button"
-                        className="btn btn-xs btn-ghost border-base-300"
+                        className={`${SECONDARY_BUTTON} btn-xs ${halted ? HALTED_PAUSE : ""}`}
                         disabled={busy}
+                        aria-busy={busy}
                         onClick={() => props.onToggle(c)}
                         aria-label={`${c.status === "paused" ? "Resume" : "Pause"} ${c.name}`}
                       >
@@ -204,7 +194,7 @@ function CampaignTable(props: {
                     {props.onArchive !== undefined && (
                       <button
                         type="button"
-                        className="btn btn-xs btn-ghost text-base-content/70"
+                        className={`${QUIET_BUTTON} btn-xs`}
                         onClick={() => props.onArchive?.(c)}
                         aria-label={`Archive ${c.name}`}
                       >

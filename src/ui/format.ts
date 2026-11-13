@@ -5,6 +5,14 @@ import type { Settings } from "./apiSchemas";
 
 const LOCALE = "en-GB";
 
+/** A no-break space: a date, a time or a count with its unit is one phrase that never breaks across lines. */
+export const NBSP = "\u00a0";
+
+/** The words of one date, time or count joined so the phrase never breaks inside itself ("1 December 2026", "today at 10:42"). */
+export function unbroken(phrase: string): string {
+  return phrase.replace(/\s+/g, NBSP);
+}
+
 function dayKey(at: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
@@ -26,11 +34,15 @@ export function formatClock(iso: string, timeZone: string): string {
 export function formatShort(iso: string, timeZone: string, now: Date): string {
   const at = new Date(iso);
   if (dayOffset(at, timeZone, now) === 0) return formatClock(iso, timeZone);
-  return new Intl.DateTimeFormat(LOCALE, { timeZone, day: "numeric", month: "short" }).format(at);
+  return unbroken(new Intl.DateTimeFormat(LOCALE, { timeZone, day: "numeric", month: "short" }).format(at));
 }
 
-/** "today at 10:42", "yesterday at 10:42", "on 9 Nov at 10:42". */
+/** "today at 10:42", "yesterday at 10:42", "on 9 Nov at 10:42": one phrase that never breaks across lines. */
 export function formatWhen(iso: string, timeZone: string, now: Date): string {
+  return unbroken(whenWords(iso, timeZone, now));
+}
+
+function whenWords(iso: string, timeZone: string, now: Date): string {
   const at = new Date(iso);
   const clock = formatClock(iso, timeZone);
   const offset = dayOffset(at, timeZone, now);
@@ -41,8 +53,12 @@ export function formatWhen(iso: string, timeZone: string, now: Date): string {
   return `on ${date} at ${clock}`;
 }
 
-/** "tomorrow 09:00", "Monday 09:00", "16 Nov 09:00": when a spent budget opens again. */
+/** "tomorrow 09:00", "Monday 09:00", "16 Nov 09:00": when a spent budget opens again, as one phrase that never breaks. */
 export function formatResume(iso: string, timeZone: string, now: Date): string {
+  return unbroken(resumeWords(iso, timeZone, now));
+}
+
+function resumeWords(iso: string, timeZone: string, now: Date): string {
   const at = new Date(iso);
   const clock = formatClock(iso, timeZone);
   const offset = dayOffset(at, timeZone, now);
@@ -55,7 +71,7 @@ export function formatResume(iso: string, timeZone: string, now: Date): string {
 
 /** "Thursday 12 November". */
 export function formatToday(timeZone: string, now: Date): string {
-  return new Intl.DateTimeFormat(LOCALE, { timeZone, weekday: "long", day: "numeric", month: "long" }).format(now);
+  return unbroken(new Intl.DateTimeFormat(LOCALE, { timeZone, weekday: "long", day: "numeric", month: "long" }).format(now));
 }
 
 export function formatScore(score: number): string {
@@ -75,16 +91,48 @@ export function joinWords(words: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
 }
 
+/** "5 campaigns": the count and its unit never break apart. */
 export function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
+  return `${n}${NBSP}${n === 1 ? one : many}`;
 }
 
 /** A fragment from the engine as a sentence: capital first letter, no underscores, a full stop. */
 export function asSentence(text: string): string {
   const clean = text.replace(/_/g, " ").trim();
   if (clean === "") return clean;
-  const capital = clean.charAt(0).toUpperCase() + clean.slice(1);
-  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+  return withStop(clean.charAt(0).toUpperCase() + clean.slice(1));
+}
+
+/** A straight apostrophe between two letters ("LinkedIn's"), which the app shows as the typographic one. */
+const STRAIGHT_APOSTROPHE = /(?<=\p{L})'(?=\p{L})/gu;
+
+/** A straight double quote that opens a quotation: at the start, or after a space or an opening bracket or dash. */
+const OPENING_DOUBLE = /(^|[\s([{\u2013\u2014])"/gu;
+
+/**
+ * The typographic apostrophe (’) in place of the straight one between letters, and “ ” in place of straight double
+ * quotes: the server's own words keep the straight ones (D-10). Only the server's lines pass here, never a template or
+ * a text that is sent, which are shown exactly as they are.
+ */
+export function typographic(text: string): string {
+  return text.replace(STRAIGHT_APOSTROPHE, "\u2019").replace(OPENING_DOUBLE, "$1\u201c").replaceAll('"', "\u201d");
+}
+
+/** A name the dashboard quotes itself: “Local trades, Milan”. */
+export function quoted(name: string): string {
+  return `\u201c${name}\u201d`;
+}
+
+/**
+ * A line that ends as a sentence does: with exactly one full stop, unless it already ends with "!", "?", "…" or a
+ * full stop. A trailing comma, colon or semicolon gives way to the full stop; a run of full stops becomes one. Every
+ * line from the server passes here (a log line, an error, a field's message), so its apostrophes become typographic too.
+ */
+export function withStop(text: string): string {
+  const clean = typographic(text.trim());
+  if (clean === "") return clean;
+  if (/[!?…]$/.test(clean)) return clean;
+  return `${clean.replace(/[\s.,;:]+$/, "")}.`;
 }
 
 export const CAMPAIGN_STATUS_LABEL: Readonly<Record<CampaignStatus, string>> = {
@@ -98,13 +146,13 @@ export const CAMPAIGN_STATUS_LABEL: Readonly<Record<CampaignStatus, string>> = {
 };
 
 export const CAMPAIGN_STATUS_DOT: Readonly<Record<CampaignStatus, string>> = {
-  draft: "status-neutral",
+  draft: "status-neutral status-hollow",
   finding: "status-info",
   awaiting_approval: "status-warning",
   running: "status-success",
-  paused: "status-neutral",
-  completed: "status-neutral",
-  archived: "status-neutral",
+  paused: "status-neutral status-hollow",
+  completed: "status-neutral status-hollow",
+  archived: "status-neutral status-hollow",
 };
 
 export const STAGE_LABEL: Readonly<Record<ProspectStage, string>> = {
@@ -127,7 +175,7 @@ const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const WEEKDAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
 
 /** "Mon to Fri" for a run of days, else "Mon, Wed and Fri". */
-function formatDays(days: readonly number[]): string {
+export function formatDays(days: readonly number[]): string {
   const sorted = [...days].sort((a, b) => a - b);
   const first = sorted[0];
   const last = sorted.at(-1);
@@ -137,13 +185,9 @@ function formatDays(days: readonly number[]): string {
   return joinWords(sorted.map((d) => WEEKDAYS[d - 1] ?? ""));
 }
 
-/** "Working Mon to Fri, 09:00 to 18:00". */
-export function formatWorkingHours(settings: Settings): string {
-  return `Working ${formatDays(settings.workingDays)}, ${settings.workingHours.start} to ${settings.workingHours.end}`;
-}
 
 /** Whether the working window is open now, and if not, when it next opens ("tomorrow at 09:00"). */
-export function workingNow(settings: Settings, now: Date): { readonly open: true; readonly until: string } | { readonly open: false; readonly next: string } {
+export function workingNow(settings: Pick<Settings, "timeZone" | "workingDays" | "workingHours">, now: Date): { readonly open: true; readonly until: string } | { readonly open: false; readonly next: string } {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: settings.timeZone,
     weekday: "short",
@@ -156,10 +200,13 @@ export function workingNow(settings: Settings, now: Date): { readonly open: true
   const { start, end } = settings.workingHours;
   const isDay = (isoDay: number) => settings.workingDays.includes(isoDay);
   if (isDay(weekday) && clock >= start && clock < end) return { open: true, until: end };
-  if (isDay(weekday) && clock < start) return { open: false, next: `today at ${start}` };
+  if (isDay(weekday) && clock < start) return { open: false, next: unbroken(`today at ${start}`) };
   for (let ahead = 1; ahead <= 7; ahead += 1) {
     const day = ((weekday - 1 + ahead) % 7) + 1;
-    if (isDay(day)) return { open: false, next: ahead === 1 ? `tomorrow at ${start}` : `${WEEKDAYS_LONG[day - 1] ?? ""} at ${start}` };
+    if (isDay(day)) return { open: false, next: unbroken(ahead === 1 ? `tomorrow at ${start}` : `${WEEKDAYS_LONG[day - 1] ?? ""} at ${start}`) };
   }
   return { open: false, next: "on the next working day" };
 }
+
+/** The browser tab's title for a page named `name`. */
+export const tabTitle = (name: string) => `${name} | LinkedIn outreach`;

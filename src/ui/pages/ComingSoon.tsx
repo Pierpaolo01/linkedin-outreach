@@ -1,3 +1,4 @@
+import { EmptyState, SECONDARY_BUTTON } from "../formParts";
 import { Link } from "../router";
 import { PageHeader } from "./PageHeader";
 
@@ -6,13 +7,17 @@ export function ComingSoon({ title, about, lead = "This page is coming in the ne
   return (
     <>
       <PageHeader title={title} />
-      <div className="mt-6 max-w-xl rounded-box border border-base-300 px-5 py-5">
-        <p className="font-medium">{lead}</p>
-        <p className="mt-1 text-base-content/70">{about}</p>
-        <Link to="/" className="btn btn-sm mt-4 border-base-300 bg-base-100">
-          Back to Home
-        </Link>
-      </div>
+      <EmptyState
+        className="max-w-xl"
+        title={lead}
+        action={
+          <Link to="/" className={`${SECONDARY_BUTTON} btn-sm`}>
+            Back to Home
+          </Link>
+        }
+      >
+        {about}
+      </EmptyState>
     </>
   );
 }

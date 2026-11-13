@@ -54,3 +54,25 @@ export function IconExternal({ className = "size-3.5" }: IconProps) {
     </svg>
   );
 }
+
+/** Points right when a row is closed; turned a quarter down when it is open. */
+export function IconChevron({ className = "size-3.5" }: IconProps) {
+  return (
+    <svg {...base} className={className}>
+      <path d="M9.5 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+/**
+ * A warning in a log: a triangle with "!", at the size of the smallest icons here so its stroke weighs the same. Its own
+ * shape, so it is never read as a campaign's status dot or ring.
+ */
+export function IconWarning({ className = "size-3.5", testId }: IconProps & { readonly testId?: string }) {
+  return (
+    <svg {...base} className={className} data-testid={testId}>
+      <path d="M10.3 4.2a2 2 0 0 1 3.4 0l7.6 13.2a2 2 0 0 1-1.7 3H4.4a2 2 0 0 1-1.7-3z" />
+      <path d="M12 9.5v4.5M12 17.2h.01" />
+    </svg>
+  );
+}

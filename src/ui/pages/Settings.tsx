@@ -1,13 +1,13 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { backUpNow, getOps, prospectsCsvUrl, testAi, toApiError, updateSettings } from "../api";
 import { AI_PROVIDERS, type AiProvider, type AiTest, type BackupResult, type Ops, type Settings as SettingsData, type SettingsPatch } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatWhen } from "../format";
-import { FieldError, LoadError, SwitchRow } from "../formParts";
+import { ActionError, Announce, describedByError, Disclosure, errorProps, FieldError, focusFirstError, hintIdOf, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
 import { sessionView } from "../shell/sessionView";
 import { useRecheck } from "../shell/useRecheck";
 import { useLoad, type Loaded } from "../useLoad";
-import { formatBytes, formatDate } from "../words";
+import { failure, formatBytes, formatDate, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
 // ------------------------------------------------------------ the form
@@ -37,6 +37,18 @@ interface Form {
 }
 
 const COOLDOWN = "inviteLimitCooldownDays";
+/** The settings whose number boxes have a line on what they are for (a budget's row, a pace group's lead): it describes them. */
+const HINTED: ReadonlySet<string> = new Set([
+  "limits.invitesPerDay",
+  "limits.invitesPerWeek",
+  "limits.messagesPerDay",
+  "limits.profileViewsPerDay",
+  "limits.discoveryPagesPerDay",
+  "limits.withdrawalsPerDay",
+  COOLDOWN,
+  "actionGapSeconds",
+  "breaks",
+]);
 
 function toForm(s: SettingsData): Form {
   const numbers: Record<string, string> = { [COOLDOWN]: String(s.inviteLimitCooldownDays) };
@@ -122,13 +134,29 @@ const RULE_WORDS: Readonly<Record<string, string>> = {
   "expected HH:MM, 24-hour": "Write the time as hours and minutes, 24-hour.",
   "days must not repeat": "Each day can be chosen once.",
 };
+/** A refused save, whether the page or the app found the problem: one sentence for one fact, as the live edit says it. */
+const REFUSED = "Nothing was saved: some settings need attention. Fix the marked ones, then press Save settings again.";
+
 const words = (message: string) => RULE_WORDS[message] ?? asSentence(message);
+
+/**
+ * The two controls a rule of the app's on a group is about ("min must not exceed max" on `actionGapSeconds`): the rule
+ * is about the pair, so both are marked, and the first takes the focus. Empty for any other message.
+ */
+function pairOf(group: string, message: string): readonly string[] {
+  if (message === "end must be after start") return [`${group}.start`, `${group}.end`];
+  const exceeds = /^(\w+) must not exceed (\w+)$/.exec(message);
+  return exceeds?.[1] === undefined || exceeds[2] === undefined ? [] : [`${group}.${exceeds[1]}`, `${group}.${exceeds[2]}`];
+}
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const PROVIDER_LABEL: Readonly<Record<AiProvider, string>> = {
-  claude_cli: "Claude Code on this Mac (the claude command)",
+  claude_cli: "Claude Code on this Mac",
   anthropic_api: "Anthropic API, with your API key",
 };
+
+/** The id of a setting's control (or of a group's error line), from its path: "limits.invitesPerDay" is "setting-limits-invitesPerDay". */
+const fieldId = (path: string) => `setting-${path.replaceAll(".", "-")}`;
 
 // ------------------------------------------------------------ the page
 
@@ -139,9 +167,9 @@ export function Settings() {
       <>
         <PageHeader title="Settings" />
         {settingsError === undefined ? (
-          <div className="skeleton mt-6 h-96 w-full" />
+          <SkeletonRows rows={4} rowClassName="h-16" className="max-w-3xl" />
         ) : (
-          <LoadError what="the settings" message={settingsError.message} onRetry={refreshSettings} />
+          <LoadError what="the settings" error={settingsError} onRetry={refreshSettings} />
         )}
       </>
     );
@@ -153,10 +181,24 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
   const [base, setBase] = useState(settings);
   const [form, setForm] = useState<Form>(() => toForm(settings));
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  /** The controls marked by a rule on their pair, by the group the rule arrived on (`pairOf`). */
+  const [pairs, setPairs] = useState<ReadonlyMap<string, readonly string[]>>(new Map());
   const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string } | undefined>(undefined);
+  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string; readonly detail?: string | undefined } | undefined>(undefined);
   const ops = useLoad(getOps, "ops");
+  /** How many saves failed with nothing to mark: each one moves the focus to the save bar's message (Save settings was off while it ran). */
+  const [failedSaves, setFailedSaves] = useState(0);
+  const resultLine = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (failedSaves > 0) resultLine.current?.focus({ preventScroll: true });
+  }, [failedSaves]);
   const ids = { zone: useId(), start: useId(), end: useId(), model: useId(), provider: useId(), warm: useId(), awake: useId() };
+  /** How many saves were refused with marked fields: each one moves the focus to the first of them, once they show. */
+  const [refusals, setRefusals] = useState(0);
+  const fields = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (refusals > 0 && fields.current !== null) focusFirstError(fields.current);
+  }, [refusals]);
 
   const pending = toPatch(form, base);
   const dirty = Object.keys(pending.patch).length > 0 || Object.keys(pending.errors).length > 0;
@@ -166,14 +208,20 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
     setForm((f) => ({ ...f, ...next }));
     setResult(undefined);
     setErrors((e) => Object.fromEntries(Object.entries(e).filter(([path]) => !paths.some((p) => path === p || path.startsWith(`${p}.`) || p.startsWith(`${path}.`)))));
+    // A change to either control of a pair answers the rule on the pair.
+    setPairs((map) => new Map([...map].filter(([group]) => !paths.some((p) => p === group || p.startsWith(`${group}.`)))));
   };
+  /** A control is marked when it is wrong itself, or when a rule on its pair is broken. */
+  const invalid = (path: string) => errors[path] !== undefined || [...pairs.values()].some((paths) => paths.includes(path));
   const setNumber = (path: string) => (value: string) => change({ numbers: { ...form.numbers, [path]: value } }, path);
 
   const save = () => {
     const built = toPatch(form, base);
     if (Object.keys(built.errors).length > 0) {
       setErrors(built.errors);
-      setResult({ ok: false, text: "Some settings need attention. They are marked." });
+      setPairs(new Map());
+      setResult({ ok: false, text: REFUSED });
+      setRefusals((n) => n + 1);
       return;
     }
     setSaving(true);
@@ -183,317 +231,401 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         setBase(next);
         setForm(toForm(next));
         setErrors({});
+        setPairs(new Map());
         setResult({ ok: true, text: "Settings saved." });
         onSaved();
       })
-      .catch((failure: unknown) => {
-        const error = toApiError(failure);
+      .catch((failed: unknown) => {
+        const error = toApiError(failed);
         setErrors(Object.fromEntries(Object.entries(error.fields).map(([path, message]) => [path, words(message)])));
-        setResult({ ok: false, text: Object.keys(error.fields).length > 0 ? "Nothing was saved: some settings are not valid. They are marked." : error.message });
+        setPairs(new Map(Object.entries(error.fields).flatMap(([path, message]) => (pairOf(path, message).length === 0 ? [] : [[path, pairOf(path, message)] as const]))));
+        if (Object.keys(error.fields).length > 0) {
+          setResult({ ok: false, text: REFUSED });
+          setRefusals((n) => n + 1);
+        } else {
+          setResult({ ok: false, ...failure("Nothing was saved. Your changes are still on this page; press Save settings again.", error) });
+          setFailedSaves((n) => n + 1);
+        }
       })
       .finally(() => setSaving(false));
   };
 
-  const num = (path: string, label: string, width = "w-20") => (
+  /** The error line of a group of fields (a range, the hours) is named after the group's first path. */
+  const GROUPS: Readonly<Record<string, readonly string[]>> = {
+    warmUp: ["warmUp", "warmUp.invitesStartPerDay", "warmUp.invitesIncreasePerDay"],
+    actionGapSeconds: ["actionGapSeconds", "actionGapSeconds.min", "actionGapSeconds.max"],
+    breaks: ["breaks", "breaks.minutesMin", "breaks.minutesMax", "breaks.everyActionsMin", "breaks.everyActionsMax"],
+    workingHours: ["workingHours", "workingHours.start", "workingHours.end"],
+  };
+  const groupOf = (path: string) => Object.keys(GROUPS).find((group) => path.startsWith(`${group}.`)) ?? path;
+  /** The first message for any of these paths (a range's check arrives on the group). */
+  const errorOf = (...paths: string[]) => paths.map((p) => errors[p]).find((m) => m !== undefined);
+  const groupError = (group: string) => errorOf(...(GROUPS[group] ?? [group]));
+  /**
+   * A number box: marked invalid by its own error or its pair's (`invalid`); while marked, described by its group's
+   * error line, then by the line on what it is for: its own (a budget's row) or its group's (`hintOf`, the path whose
+   * hint it shares). A valid box beside a wrong one is not described by the other's error.
+   */
+  const num = (path: string, label: string, { width = "w-20", hintOf = path }: { readonly width?: string; readonly hintOf?: string } = {}) => (
     <input
+      id={fieldId(path)}
       aria-label={label}
+      aria-invalid={invalid(path) || undefined}
+      {...describedByError(fieldId(groupOf(path)), invalid(path) ? groupError(groupOf(path)) : undefined, { hint: HINTED.has(hintOf) ? hintIdOf(fieldId(hintOf)) : undefined })}
       inputMode="numeric"
-      className={`input input-sm ${width} bg-base-100 nums ${errors[path] === undefined ? "" : "input-error"}`}
+      className={`input input-sm ${width} bg-base-100 nums ${invalid(path) ? "input-error" : ""}`}
       value={form.numbers[path] ?? ""}
       onChange={(event) => setNumber(path)(event.target.value)}
     />
   );
-  /** The first message for any of these paths (a range's check arrives on the group). */
-  const errorOf = (...paths: string[]) => paths.map((p) => errors[p]).find((m) => m !== undefined);
-
   const timeZones = Intl.supportedValuesOf("timeZone");
 
   return (
     <>
-      <PageHeader title="Settings" />
-      <p className="mt-2 max-w-2xl text-base-content/75">These apply to the whole app and to every campaign.</p>
+      <PageHeader title="Settings" lead="These apply to the whole app and to every campaign." />
 
-      <div className="mt-6 flex max-w-3xl flex-col gap-6 pb-4">
-        <LinkedInWindow />
+      <div ref={fields} className="flex max-w-3xl flex-col gap-section pb-4">
+        <Group title="How the app works on LinkedIn">
+          <LinkedInWindow />
 
-        <Section title="Working hours" lead="The app acts on LinkedIn only on these days and between these times.">
-          <div className="flex flex-col gap-5">
-            <div>
-              <label htmlFor={ids.zone} className="block font-medium">
-                Time zone
-              </label>
-              <input
-                id={ids.zone}
-                list={`${ids.zone}-list`}
-                className={`input mt-1.5 w-full max-w-sm bg-base-100 ${errors["timeZone"] === undefined ? "" : "input-error"}`}
-                value={form.timeZone}
-                onChange={(event) => change({ timeZone: event.target.value }, "timeZone")}
-              />
-              <datalist id={`${ids.zone}-list`}>
-                {timeZones.map((zone) => (
-                  <option key={zone} value={zone} />
-                ))}
-              </datalist>
-              <FieldError message={errors["timeZone"]} />
-            </div>
-            <fieldset className="min-w-0">
-              <legend className="font-medium">Working days</legend>
-              <div className="mt-1.5 grid max-w-md grid-cols-7 gap-1">
-                {DAYS.map((day, i) => {
-                  const iso = i + 1;
-                  const on = form.workingDays.includes(iso);
-                  return (
-                    <button
-                      key={day}
-                      type="button"
-                      aria-pressed={on}
-                      className={`btn min-w-0 px-0 ${on ? "btn-neutral" : "border-base-300 bg-base-100"}`}
-                      onClick={() => change({ workingDays: on ? form.workingDays.filter((d) => d !== iso) : [...form.workingDays, iso] }, "workingDays")}
-                    >
-                      {day}
-                    </button>
-                  );
-                })}
-              </div>
-              <FieldError message={errorOf("workingDays")} />
-            </fieldset>
-            <fieldset>
-              <legend className="font-medium">Hours</legend>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <span>From</span>
+          <Section title="Working window" lead="The app acts on LinkedIn only on these days and between these times.">
+            <div className="flex flex-col gap-block">
+              <div>
+                <label htmlFor={ids.zone} className="block font-medium">
+                  Time zone
+                </label>
                 <input
-                  id={ids.start}
-                  type="time"
-                  aria-label="Start of the working day"
-                  className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.start"] === undefined ? "" : "input-error"}`}
-                  value={form.start}
-                  onChange={(event) => change({ start: event.target.value }, "workingHours")}
+                  id={ids.zone}
+                  list={`${ids.zone}-list`}
+                  className={`input mt-1.5 w-full max-w-sm bg-base-100 ${errors["timeZone"] === undefined ? "" : "input-error"}`}
+                  value={form.timeZone}
+                  onChange={(event) => change({ timeZone: event.target.value }, "timeZone")}
+                  {...errorProps(ids.zone, errors["timeZone"])}
                 />
-                <span>to</span>
-                <input
-                  id={ids.end}
-                  type="time"
-                  aria-label="End of the working day"
-                  className={`input input-sm w-32 bg-base-100 nums ${errors["workingHours.end"] === undefined && errors["workingHours"] === undefined ? "" : "input-error"}`}
-                  value={form.end}
-                  onChange={(event) => change({ end: event.target.value }, "workingHours")}
-                />
+                <datalist id={`${ids.zone}-list`}>
+                  {timeZones.map((zone) => (
+                    <option key={zone} value={zone} />
+                  ))}
+                </datalist>
+                <FieldError controlId={ids.zone} message={errors["timeZone"]} />
               </div>
-              <FieldError message={errorOf("workingHours", "workingHours.start", "workingHours.end")} />
-            </fieldset>
-          </div>
-        </Section>
-
-        <Section title="Daily limits" lead="Shared by all campaigns. When a limit is reached, that kind of work waits for the next day by itself.">
-          <p className="mb-5 rounded-field bg-accent/20 px-3 py-2 text-sm">
-            What you do by hand on LinkedIn also counts. LinkedIn sees one account, so the invites and messages you send yourself add to the
-            app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these limits.
-          </p>
-          <div className="flex flex-col divide-y divide-base-300">
-            <LimitRow control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
-            <LimitRow
-              control={num("limits.invitesPerWeek", "Invites per week")}
-              label="Invites per week"
-              hint="A ceiling for the calendar week, so several full days do not add up to too many."
-              error={errorOf("limits.invitesPerWeek")}
-            />
-            <LimitRow control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow-ups together." error={errorOf("limits.messagesPerDay")} />
-            <LimitRow
-              control={num("limits.profileViewsPerDay", "Profile views per day")}
-              label="Profile views per day"
-              hint="Profiles the app opens to score people."
-              error={errorOf("limits.profileViewsPerDay")}
-            />
-            <LimitRow
-              control={num("limits.discoveryPagesPerDay", "Discovery pages per day")}
-              label="Discovery pages per day"
-              hint="Search and recommendation pages loaded to find people."
-              error={errorOf("limits.discoveryPagesPerDay")}
-            />
-            <LimitRow
-              control={num("limits.withdrawalsPerDay", "Withdrawals per day")}
-              label="Withdrawals per day"
-              hint="Old invites nobody accepted, withdrawn in a day."
-              error={errorOf("limits.withdrawalsPerDay")}
-            />
-            <LimitRow
-              control={num(COOLDOWN, "Days invites stay off")}
-              label="Days invites stay off"
-              hint="After LinkedIn says you have sent too many invites, the app sends none for this many days, even after you resume."
-              error={errorOf(COOLDOWN)}
-            />
-          </div>
-        </Section>
-
-        <Section title="Warm-up and pace" lead="How quickly the app builds up, and how it spaces its actions so they look like a person at work.">
-          <div className="flex flex-col gap-5">
-            <div>
-              <SwitchRow
-                id={ids.warm}
-                label="Warm-up"
-                checked={form.warmUpEnabled}
-                onChange={(on) => change({ warmUpEnabled: on }, "warmUp")}
-                hint="Starts with few invites a day and adds more each day until it reaches the daily limit."
-              />
-              {form.warmUpEnabled && (
-                <div className="mt-3 flex flex-wrap items-center gap-2 pl-14 text-sm">
-                  <span>Start at</span>
-                  {num("warmUp.invitesStartPerDay", "Warm-up: invites on the first day")}
-                  <span>invites a day and add</span>
-                  {num("warmUp.invitesIncreasePerDay", "Warm-up: invites added each day")}
-                  <span>each day.</span>
+              <fieldset className="min-w-0" {...describedByError(fieldId("workingDays"), errorOf("workingDays"))}>
+                <legend className="font-medium">Working days</legend>
+                <div className="mt-1.5 grid max-w-md grid-cols-4 gap-1 sm:grid-cols-7">
+                  {DAYS.map((day, i) => {
+                    const iso = i + 1;
+                    const on = form.workingDays.includes(iso);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        aria-pressed={on}
+                        className={`${on ? "btn btn-neutral" : SECONDARY_BUTTON} min-w-0 px-0`}
+                        onClick={() => change({ workingDays: on ? form.workingDays.filter((d) => d !== iso) : [...form.workingDays, iso] }, "workingDays")}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-              <FieldError message={errorOf("warmUp", "warmUp.invitesStartPerDay", "warmUp.invitesIncreasePerDay")} />
+                <FieldError controlId={fieldId("workingDays")} message={errorOf("workingDays")} />
+              </fieldset>
+              <fieldset>
+                <legend className="font-medium">Hours</legend>
+                <div className="mt-1.5 grid max-w-md grid-cols-2 gap-3 sm:flex sm:items-center sm:gap-2">
+                  <span className="flex min-w-0 items-center gap-2">
+                  <span>From</span>
+                  <input
+                    id={ids.start}
+                    type="time"
+                    aria-label="Start of the working day"
+                    aria-invalid={invalid("workingHours.start") || undefined}
+                    {...describedByError(fieldId("workingHours"), invalid("workingHours.start") ? groupError("workingHours") : undefined)}
+                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${invalid("workingHours.start") ? "input-error" : ""}`}
+                    value={form.start}
+                    onChange={(event) => change({ start: event.target.value }, "workingHours")}
+                  />
+                  </span>
+                  <span className="flex min-w-0 items-center gap-2">
+                  <span>to</span>
+                  <input
+                    id={ids.end}
+                    type="time"
+                    aria-label="End of the working day"
+                    aria-invalid={invalid("workingHours.end") || undefined}
+                    {...describedByError(fieldId("workingHours"), invalid("workingHours.end") ? groupError("workingHours") : undefined)}
+                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${invalid("workingHours.end") ? "input-error" : ""}`}
+                    value={form.end}
+                    onChange={(event) => change({ end: event.target.value }, "workingHours")}
+                  />
+                  </span>
+                </div>
+                <FieldError controlId={fieldId("workingHours")} message={groupError("workingHours")} />
+              </fieldset>
             </div>
-            <div>
-              <p className="font-medium">Gap between actions</p>
-              <p className="text-sm text-base-content/65">A random wait between two actions on LinkedIn.</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
-                <span>Between</span>
-                {num("actionGapSeconds.min", "Shortest gap in seconds")}
-                <span>and</span>
-                {num("actionGapSeconds.max", "Longest gap in seconds")}
-                <span>seconds.</span>
-              </div>
-              <FieldError message={errorOf("actionGapSeconds", "actionGapSeconds.min", "actionGapSeconds.max")} />
-            </div>
-            <div>
-              <p className="font-medium">Breaks</p>
-              <p className="text-sm text-base-content/65">A longer pause now and then, as a person would take.</p>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
-                <span>A break of</span>
-                {num("breaks.minutesMin", "Shortest break in minutes")}
-                <span>to</span>
-                {num("breaks.minutesMax", "Longest break in minutes")}
-                <span>minutes every</span>
-                {num("breaks.everyActionsMin", "Fewest actions between breaks")}
-                <span>to</span>
-                {num("breaks.everyActionsMax", "Most actions between breaks")}
-                <span>actions.</span>
-              </div>
-              <FieldError message={errorOf("breaks", "breaks.minutesMin", "breaks.minutesMax", "breaks.everyActionsMin", "breaks.everyActionsMax")} />
-            </div>
-          </div>
-        </Section>
+          </Section>
 
-        <Section title="Keep the Mac awake" lead="A Mac that sleeps stops the app. This keeps it awake only when there is work to do.">
-          <SwitchRow
-            id={ids.awake}
-            label="Keep the Mac awake while a campaign is working"
-            checked={form.keepAwake}
-            onChange={(on) => change({ keepAwake: on }, "keepAwake")}
-            hint="Only inside your working hours, while a campaign is finding people or running. The screen can still turn off."
-          />
-          <p className="mt-2 text-sm text-base-content/75" data-testid="keep-awake-now">
-            {ops.data === undefined ? "" : ops.data.keepAwake.active ? "Keeping the Mac awake right now." : "Not keeping the Mac awake right now."}
-          </p>
-        </Section>
-
-        <Section title="AI" lead="The AI scores the people each campaign finds and, if you turn it on, writes the personal line.">
-          <div className="flex flex-col gap-4">
-            <div>
-              <label htmlFor={ids.provider} className="block font-medium">
-                Which AI
-              </label>
-              <select
-                id={ids.provider}
-                className="select mt-1.5 w-full max-w-sm bg-base-100"
-                value={form.provider}
-                onChange={(event) => {
-                  const provider = AI_PROVIDERS.find((p) => p === event.target.value);
-                  if (provider !== undefined) change({ provider }, "ai");
-                }}
-              >
-                {AI_PROVIDERS.map((p) => (
-                  <option key={p} value={p}>
-                    {PROVIDER_LABEL[p]}
-                  </option>
-                ))}
-              </select>
-              <FieldError message={errorOf("ai", "ai.provider")} />
-            </div>
-            <div>
-              <label htmlFor={ids.model} className="block font-medium">
-                Model
-              </label>
-              <p className="text-sm text-base-content/65">Leave it empty to use the provider&rsquo;s default.</p>
-              <input
-                id={ids.model}
-                className="input mt-1.5 w-full max-w-sm bg-base-100"
-                value={form.model}
-                onChange={(event) => change({ model: event.target.value }, "ai")}
+          <Section title="Budgets" lead="Shared by all campaigns. When a budget is spent, that kind of work waits and resumes by itself.">
+            <Notice tone="note" className="mb-block text-sm">
+              What you do by hand on LinkedIn also counts. LinkedIn sees one account, so the invites and messages you send yourself add to the
+              app&rsquo;s, and the app cannot count them. If you also invite or message people yourself, lower these budgets.
+            </Notice>
+            <div className="flex flex-col divide-y divide-base-300">
+              <LimitRow path="limits.invitesPerDay" control={num("limits.invitesPerDay", "Invites per day")} label="Invites per day" hint="Connection invites sent in a day." error={errorOf("limits.invitesPerDay")} />
+              <LimitRow
+                path="limits.invitesPerWeek"
+                control={num("limits.invitesPerWeek", "Invites per week")}
+                label="Invites per week"
+                hint="A ceiling for the calendar week, so several full days do not add up to too many."
+                error={errorOf("limits.invitesPerWeek")}
               />
-              <FieldError message={errorOf("ai.model")} />
+              <LimitRow path="limits.messagesPerDay" control={num("limits.messagesPerDay", "Messages per day")} label="Messages per day" hint="First messages and follow‑ups together." /* a non-breaking hyphen: never "follow-" / "ups" */ error={errorOf("limits.messagesPerDay")} />
+              <LimitRow
+                path="limits.profileViewsPerDay"
+                control={num("limits.profileViewsPerDay", "Profile views per day")}
+                label="Profile views per day"
+                hint="Profiles the app opens to score people."
+                error={errorOf("limits.profileViewsPerDay")}
+              />
+              <LimitRow
+                path="limits.discoveryPagesPerDay"
+                control={num("limits.discoveryPagesPerDay", "Discovery pages per day")}
+                label="Discovery pages per day"
+                hint="Search and recommendation pages loaded to find people."
+                error={errorOf("limits.discoveryPagesPerDay")}
+              />
+              <LimitRow
+                path="limits.withdrawalsPerDay"
+                control={num("limits.withdrawalsPerDay", "Withdrawals per day")}
+                label="Withdrawals per day"
+                hint="Old invites nobody accepted, withdrawn in a day."
+                error={errorOf("limits.withdrawalsPerDay")}
+              />
             </div>
-            <AiTestButton blocked={aiDirty} />
-          </div>
-        </Section>
+            {/*
+             * Not an allowance per day or week but a cool-down after LinkedIn's own limit: set apart from the budgets by a
+             * hairline with twice the rows' space on each side, inside the same card.
+             */}
+            <div className="mt-block border-t border-base-300 pt-block" data-testid="cooldown-row">
+              <LimitRow
+                path={COOLDOWN}
+                control={num(COOLDOWN, "Days invites stay off")}
+                label="Days invites stay off"
+                hint="After LinkedIn says you have sent too many invites, the app sends none for this many days, even after you resume."
+                error={errorOf(COOLDOWN)}
+              />
+            </div>
+          </Section>
 
-        <Backups ops={ops} />
-        <AutoStart ops={ops} />
+          <Section title="Warm-up and pace" lead="How quickly the app builds up, and how it spaces its actions so they look like a person at work.">
+            <div className="flex flex-col gap-block">
+              <div>
+                <SwitchRow
+                  id={ids.warm}
+                  label="Warm-up"
+                  checked={form.warmUpEnabled}
+                  onChange={(on) => change({ warmUpEnabled: on }, "warmUp")}
+                  hint="Starts with few invites a day and adds more each day until it reaches the daily invite budget."
+                />
+                {form.warmUpEnabled && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm sm:pl-13">
+                    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                      Start at {num("warmUp.invitesStartPerDay", "Warm-up: invites on the first day")} invites a day
+                    </span>
+                    <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                      and add {num("warmUp.invitesIncreasePerDay", "Warm-up: invites added each day")} each day.
+                    </span>
+                  </div>
+                )}
+                <FieldError controlId={fieldId("warmUp")} message={groupError("warmUp")} />
+              </div>
+              <div>
+                <p className="font-medium">Gap between actions</p>
+                <p id={hintIdOf(fieldId("actionGapSeconds"))} className="text-sm text-muted">
+                  A random wait between two actions on LinkedIn.
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    Between {num("actionGapSeconds.min", "Shortest gap in seconds", { hintOf: "actionGapSeconds" })}
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    and {num("actionGapSeconds.max", "Longest gap in seconds", { hintOf: "actionGapSeconds" })} seconds.
+                  </span>
+                </div>
+                <FieldError controlId={fieldId("actionGapSeconds")} message={groupError("actionGapSeconds")} />
+              </div>
+              <div>
+                <p className="font-medium">Breaks</p>
+                <p id={hintIdOf(fieldId("breaks"))} className="text-sm text-muted">
+                  A longer rest now and then, as a person would take.
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    A break of {num("breaks.minutesMin", "Shortest break in minutes", { hintOf: "breaks" })}
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    to {num("breaks.minutesMax", "Longest break in minutes", { hintOf: "breaks" })} minutes
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    every {num("breaks.everyActionsMin", "Fewest actions between breaks", { hintOf: "breaks" })}
+                  </span>
+                  <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                    to {num("breaks.everyActionsMax", "Most actions between breaks", { hintOf: "breaks" })} actions.
+                  </span>
+                </div>
+                <FieldError controlId={fieldId("breaks")} message={groupError("breaks")} />
+              </div>
+            </div>
+          </Section>
+        </Group>
 
-        <Section title="Export" lead="Every prospect of every campaign, with stage, score, dates and the texts sent, for a spreadsheet.">
-          <a href={prospectsCsvUrl()} className="btn btn-sm border-base-300 bg-base-100" download>
-            Download all prospects (CSV)
-          </a>
-        </Section>
+        <Group title="The app on this Mac">
+          <Section title="Keep the Mac awake" lead="A Mac that sleeps stops the app. This keeps it awake only when there is work to do.">
+            <SwitchRow
+              id={ids.awake}
+              label="Keep the Mac awake while a campaign is working"
+              checked={form.keepAwake}
+              onChange={(on) => change({ keepAwake: on }, "keepAwake")}
+              hint="Only inside your working window, while a campaign is finding people or running. The screen can still turn off."
+            />
+            <p className="mt-2 text-sm text-base-content" data-testid="keep-awake-now">
+              {ops.data === undefined ? "" : ops.data.keepAwake.active ? "Keeping the Mac awake right now." : "Not keeping the Mac awake right now."}
+            </p>
+          </Section>
+
+          <Section title="AI" lead="The AI scores the people each campaign finds and, if you turn it on, writes the personal line.">
+            <div className="flex flex-col gap-block">
+              <div>
+                <label htmlFor={ids.provider} className="block font-medium">
+                  Which AI
+                </label>
+                <p id={hintIdOf(ids.provider)} className="text-sm text-muted">
+                  Claude Code is the claude command on this Mac.
+                </p>
+                <select
+                  id={ids.provider}
+                  className={`select mt-1.5 w-full max-w-sm bg-base-100 ${errorOf("ai", "ai.provider") === undefined ? "" : "select-error"}`}
+                  value={form.provider}
+                  {...errorProps(ids.provider, errorOf("ai", "ai.provider"), { hint: hintIdOf(ids.provider) })}
+                  onChange={(event) => {
+                    const provider = AI_PROVIDERS.find((p) => p === event.target.value);
+                    if (provider !== undefined) change({ provider }, "ai");
+                  }}
+                >
+                  {AI_PROVIDERS.map((p) => (
+                    <option key={p} value={p}>
+                      {PROVIDER_LABEL[p]}
+                    </option>
+                  ))}
+                </select>
+                <FieldError controlId={ids.provider} message={errorOf("ai", "ai.provider")} />
+              </div>
+              <div>
+                <label htmlFor={ids.model} className="block font-medium">
+                  Model
+                </label>
+                <p id={hintIdOf(ids.model)} className="text-sm text-muted">
+                  Leave it empty to use the provider&rsquo;s default.
+                </p>
+                <input
+                  id={ids.model}
+                  className={`input mt-1.5 w-full max-w-sm bg-base-100 ${errorOf("ai.model") === undefined ? "" : "input-error"}`}
+                  value={form.model}
+                  onChange={(event) => change({ model: event.target.value }, "ai")}
+                  {...errorProps(ids.model, errorOf("ai.model"), { hint: hintIdOf(ids.model) })}
+                />
+                <FieldError controlId={ids.model} message={errorOf("ai.model")} />
+              </div>
+              <AiTestButton blocked={aiDirty} />
+            </div>
+          </Section>
+
+          <Backups ops={ops} />
+          <AutoStart ops={ops} />
+
+          <Section title="Export" lead="Every prospect of every campaign, with stage, score, dates and the texts sent, for a spreadsheet.">
+            <a href={prospectsCsvUrl()} className={`${SECONDARY_BUTTON} btn-sm`} download>
+              Download all prospects (CSV)
+            </a>
+          </Section>
+        </Group>
       </div>
 
       <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-3 border-t border-base-300 bg-base-100 px-4 py-3 lg:-mx-10 lg:px-10">
-        <button type="button" className="btn btn-sm btn-primary" disabled={saving || !dirty} onClick={save}>
+        <button type="button" className="btn btn-sm btn-primary" disabled={saving || !dirty} aria-busy={saving} onClick={save}>
           {saving && <span className="loading loading-spinner loading-xs" />}
           Save settings
         </button>
         {dirty && (
-          <button type="button" className="btn btn-sm btn-ghost border-base-300" disabled={saving} onClick={() => {
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving} onClick={() => {
               setForm(toForm(base));
               setErrors({});
+              setPairs(new Map());
               setResult(undefined);
             }}
           >
             Undo changes
           </button>
         )}
-        <p role="status" className={`text-sm ${result === undefined ? "text-base-content/65" : result.ok ? "text-primary" : "text-error"}`} data-testid="settings-result">
-          {result?.text ?? (dirty ? "You have changes that are not saved." : "")}
-        </p>
+        {/* One line says the state of the changes; a refused or failed save replaces it with the failure, never beside it. */}
+        <div ref={resultLine} role="status" tabIndex={-1} className="min-w-0 text-sm" data-testid="settings-result">
+          {result !== undefined && !result.ok ? (
+            <ActionError message={{ text: result.text, detail: result.detail }} announce={false} />
+          ) : (
+            <p className={result === undefined ? "text-muted" : "text-primary"}>{result?.text ?? (dirty ? "You have changes that are not saved." : "No changes to save.")}</p>
+          )}
+        </div>
       </div>
     </>
+  );
+}
+
+/** One of the two plain groups the settings fall into, over its cards. */
+function Group({ title, children }: { readonly title: string; readonly children: ReactNode }) {
+  const id = useId();
+  return (
+    <section aria-labelledby={id}>
+      <h2 id={id} className="mb-group text-xl font-semibold">
+        {title}
+      </h2>
+      <div className="flex flex-col gap-4">{children}</div>
+    </section>
   );
 }
 
 function Section({ title, lead, children }: { readonly title: string; readonly lead: string; readonly children: ReactNode }) {
   const id = useId();
   return (
-    <section aria-labelledby={id} className="rounded-box border border-base-300 px-5 py-5">
-      <h2 id={id} className="text-lg font-semibold">
+    <section aria-labelledby={id} className="rounded-box border border-base-300 p-card">
+      <h3 id={id} className="text-lg font-semibold">
         {title}
-      </h2>
-      <p className="mb-4 text-sm text-base-content/65">{lead}</p>
+      </h3>
+      <p className="mb-group text-sm text-muted">{lead}</p>
       {children}
     </section>
   );
 }
 
-function LimitRow({ control, label, hint, error }: { readonly control: ReactNode; readonly label: string; readonly hint: string; readonly error: string | undefined }) {
+function LimitRow({ path, control, label, hint, error }: { readonly path: string; readonly control: ReactNode; readonly label: string; readonly hint: string; readonly error: string | undefined }) {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
       <div>
         <p className="font-medium">{label}</p>
-        <p className="text-sm text-base-content/65">{hint}</p>
+        <p id={hintIdOf(fieldId(path))} className="text-sm text-muted">
+          {hint}
+        </p>
       </div>
       {control}
       {error !== undefined && (
         <div className="col-span-2">
-          <FieldError message={error} />
+          <FieldError controlId={fieldId(path)} message={error} />
         </div>
       )}
     </div>
   );
 }
 
-// ------------------------------------------------------------ the LinkedIn window
+// ------------------------------------------------------------ the dedicated window
 
 /** The session of the app's own Chrome window: its state, when it was last checked, Re-check, and how to log in again. */
 function LinkedInWindow() {
@@ -502,7 +634,7 @@ function LinkedInWindow() {
   const session = home?.session;
   const view = session === undefined ? undefined : sessionView(session);
   return (
-    <Section title="LinkedIn window" lead="The app works on LinkedIn only in its own Chrome window, logged in to your account.">
+    <Section title="Dedicated window" lead="The app works on LinkedIn only in its own Chrome window, logged in to your account.">
       {session === undefined || view === undefined ? (
         <div className="skeleton h-12 w-full" />
       ) : (
@@ -512,24 +644,20 @@ function LinkedInWindow() {
               <span className={`status ${view.light}`} aria-hidden="true" />
               {view.label}
             </p>
-            <p className="text-sm text-base-content/65" data-testid="linkedin-window-checked">
+            <p className="text-sm text-muted" data-testid="linkedin-window-checked">
               {session.lastCheckedAt === null ? "Never checked." : `Last checked ${formatWhen(session.lastCheckedAt, timeZone, new Date())}.`}
             </p>
             {view.problem !== undefined && <p className="mt-1 text-sm">{view.problem}</p>}
           </div>
-          <button type="button" className="btn btn-sm border-base-300 bg-base-100" disabled={recheck.checking} onClick={recheck.run}>
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={recheck.checking} aria-busy={recheck.checking} onClick={() => recheck.run("settings")}>
             {recheck.checking && <span className="loading loading-spinner loading-xs" />}
             Re-check
           </button>
         </div>
       )}
-      {recheck.error !== undefined && (
-        <p role="status" className="mt-2 text-sm text-error">
-          {recheck.error}
-        </p>
-      )}
-      <p className="mt-4 text-sm text-base-content/75">
-        If LinkedIn logs the app out, log in again in the app&rsquo;s own Chrome window, not in your usual browser, then press Re-check.
+      <ActionError message={recheck.error} className="mt-2" takeFocus />
+      <p className="mt-group text-sm text-base-content">
+        If LinkedIn logs the app out, log in again in the dedicated window, not in your usual browser, then press Re-check.
       </p>
     </Section>
   );
@@ -540,7 +668,7 @@ function LinkedInWindow() {
 function AiTestButton({ blocked }: { readonly blocked: boolean }) {
   const [running, setRunning] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [outcome, setOutcome] = useState<AiTest | { readonly failed: string } | undefined>(undefined);
+  const [outcome, setOutcome] = useState<AiTest | { readonly failed: Failure } | undefined>(undefined);
 
   useEffect(() => {
     if (!running) return;
@@ -554,38 +682,32 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
     setOutcome(undefined);
     testAi()
       .then(setOutcome)
-      .catch((failure: unknown) => setOutcome({ failed: toApiError(failure).message }))
+      .catch((failed: unknown) => setOutcome({ failed: failure("The test did not run. Your settings are unchanged; press Test the AI to try again.", toApiError(failed)) }))
       .finally(() => setRunning(false));
   };
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" className="btn btn-sm border-base-300 bg-base-100" disabled={running || blocked} onClick={run}>
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={running || blocked} aria-busy={running} onClick={run}>
           {running && <span className="loading loading-spinner loading-xs" />}
-          Test
+          Test the AI
         </button>
         {running && (
-          <p role="status" className="nums text-sm text-base-content/75">
-            Asking the AI a small question… {seconds} s. This can take up to half a minute.
+          <p role="status" className="nums text-sm text-base-content">
+            Asking the AI a small question… <span aria-hidden="true">{seconds} s.</span> This can take up to half a minute.
           </p>
         )}
-        {blocked && !running && <p className="text-sm text-base-content/65">Save your changes first: the test uses the saved settings.</p>}
+        {blocked && !running && <p className="text-sm text-muted">Save your changes first: the test uses the saved settings.</p>}
       </div>
-      {outcome !== undefined && (
-        <div
-          role="status"
-          data-testid="ai-test-result"
-          className={`mt-3 rounded-field px-3 py-2 text-sm ${"failed" in outcome || !outcome.ok ? "bg-error/10 text-error" : "bg-score-high/60"}`}
-        >
-          {"failed" in outcome ? (
-            <p>The test could not run: {outcome.failed}</p>
-          ) : (
-            <>
-              <p>{asSentence(outcome.message)}</p>
-              {outcome.ok && outcome.model !== null && outcome.model !== "" && <p className="text-base-content/65">Model: {outcome.model}</p>}
-            </>
-          )}
+      {/* A test that could not run, or an AI that answered with a problem, is the one failure pattern, and takes the focus. */}
+      {outcome !== undefined && ("failed" in outcome || !outcome.ok) && (
+        <ActionError message={"failed" in outcome ? outcome.failed : asSentence(outcome.message)} takeFocus className="mt-3" testId="ai-test-result" />
+      )}
+      {outcome !== undefined && !("failed" in outcome) && outcome.ok && (
+        <div role="status" data-testid="ai-test-result" className="mt-3 rounded-field bg-score-high/60 px-3 py-2 text-sm">
+          <p>{asSentence(outcome.message)}</p>
+          {outcome.model !== null && outcome.model !== "" && <p className="text-muted">Model: {outcome.model}</p>}
         </div>
       )}
     </div>
@@ -602,15 +724,18 @@ function backupDay(date: string, timeZone: string): string {
   return Number.isNaN(new Date(day).getTime()) ? date : formatDate(day, /^\d{4}-\d{2}-\d{2}$/.test(date) ? "UTC" : timeZone);
 }
 
-function backupWords(result: BackupResult): { readonly ok: boolean; readonly text: string } {
+/** What a failed backup says to do: earlier copies are untouched, and the button can be pressed again. */
+const BACKUP_FAILED = "The backup did not run. Your earlier backups are kept; press Back up now again.";
+
+function backupWords(result: BackupResult): { readonly ok: boolean; readonly text: string; readonly detail?: string | undefined } {
   const file = result.file?.split("/").at(-1);
   switch (result.kind) {
     case "created":
       return { ok: true, text: `Backed up${file === undefined ? "" : ` to ${file}`}.` };
     case "skipped":
-      return { ok: true, text: result.message == null ? `Today's backup${file === undefined ? "" : `, ${file},`} is already there.` : asSentence(result.message) };
+      return { ok: true, text: result.message == null ? `Today’s backup${file === undefined ? "" : `, ${file},`} is already there.` : asSentence(result.message) };
     case "failed":
-      return { ok: false, text: result.message == null ? "The backup failed." : asSentence(result.message) };
+      return { ok: false, ...failure(BACKUP_FAILED, result.message ?? undefined) };
     default: {
       const _exhaustive: never = result.kind;
       return _exhaustive;
@@ -621,7 +746,12 @@ function backupWords(result: BackupResult): { readonly ok: boolean; readonly tex
 function Backups({ ops }: { readonly ops: OpsLoad }) {
   const { timeZone } = useAppData();
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string } | undefined>(undefined);
+  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string; readonly detail?: string | undefined } | undefined>(undefined);
+  const resultLine = useRef<HTMLDivElement>(null);
+  // A failed backup: its message takes the focus (Back up now was off while it ran).
+  useEffect(() => {
+    if (result?.ok === false) resultLine.current?.focus({ preventScroll: true });
+  }, [result]);
 
   const backUp = () => {
     setBusy(true);
@@ -631,7 +761,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
         setResult(backupWords(answer));
         ops.reload();
       })
-      .catch((failure: unknown) => setResult({ ok: false, text: `The backup failed: ${toApiError(failure).message}` }))
+      .catch((failed: unknown) => setResult({ ok: false, ...failure(BACKUP_FAILED, toApiError(failed)) }))
       .finally(() => setBusy(false));
   };
 
@@ -640,48 +770,57 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Backups" lead="The app copies its database once a day and keeps the last seven copies.">
       {ops.status === "error" && ops.data === undefined ? (
-        <LoadError what="the backups" message={ops.error.message} onRetry={ops.reload} />
+        <LoadError what="the backups" error={ops.error} onRetry={ops.reload} />
       ) : ops.data === undefined ? (
         <div className="skeleton h-20 w-full" />
       ) : backups.length === 0 ? (
-        <p className="text-base-content/75">No backups yet.</p>
+        <p className="text-base-content">No backups yet.</p>
       ) : (
         <ul className="divide-y divide-base-300 rounded-box border border-base-300 text-sm" data-testid="backups">
           {backups.map((b) => (
             <li key={b.file} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-3 py-2">
               <span>{backupDay(b.date, timeZone)}</span>
-              <span className="text-base-content/65">
+              <span className="text-muted">
                 {b.file.split("/").at(-1)}, {formatBytes(b.sizeBytes)}
               </span>
             </li>
           ))}
         </ul>
       )}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button type="button" className="btn btn-sm border-base-300 bg-base-100" disabled={busy} onClick={backUp}>
+      <div className="mt-group flex flex-wrap items-center gap-3">
+        <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={busy} aria-busy={busy} onClick={backUp}>
           {busy && <span className="loading loading-spinner loading-xs" />}
           Back up now
         </button>
-        {result !== undefined && (
-          <p role="status" className={`text-sm ${result.ok ? "text-primary" : "text-error"}`} data-testid="backup-result">
-            {result.text}
-          </p>
-        )}
+        <Announce>
+          {result !== undefined && (
+            <div ref={resultLine} tabIndex={-1} className="text-sm" data-testid="backup-result">
+              {result.ok ? <p className="text-primary">{result.text}</p> : <ActionError message={{ text: result.text, detail: result.detail }} announce={false} />}
+            </div>
+          )}
+        </Announce>
       </div>
-      <div className="mt-5 text-sm">
+      <ForYourAiTool testId="restore-help">
         <p className="font-medium">To go back to a backup</p>
-        <p className="mt-1 text-base-content/75">
+        <p className="mt-1">
           Stop the app first. Then, in Terminal, in the app&rsquo;s folder, run this with the name of the backup you want
           {backups[0] === undefined ? "" : " (here, the newest)"}:
         </p>
-        <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono">
+        <pre className="mt-2 rounded-field bg-base-200 px-3 py-2 font-mono break-all whitespace-pre-wrap">
           <code>npm run restore -- {backups[0]?.file.split("/").at(-1) ?? "<backup file name>"}</code>
         </pre>
-        <p className="mt-1 text-base-content/75">
+        <p className="mt-1">
           The current database is kept aside first, so nothing is lost.
-          {ops.data === undefined ? "" : ` The backups are in ${ops.data.dataDir}/backups.`}
+          {ops.data === undefined ? (
+            ""
+          ) : (
+            <>
+              {" "}
+              The backups are in <span className="break-all">{ops.data.dataDir}/backups</span>.
+            </>
+          )}
         </p>
-      </div>
+      </ForYourAiTool>
     </Section>
   );
 }
@@ -698,19 +837,47 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Start at login" lead="Whether the app starts by itself when you log in to the Mac.">
       {ops.status === "error" && ops.data === undefined ? (
-        <p className="text-sm text-error">Could not read whether it is set up: {ops.error.message}</p>
+        <LoadError what="whether it is set up" error={ops.error} onRetry={ops.reload} />
+      ) : service !== undefined && !service.installed ? (
+        // Plain information, not amber: starting at login is optional, and nothing waits on the user without it.
+        <Notice tone="note" className="text-sm">
+          <span data-testid="service-state">{state}</span>
+        </Notice>
       ) : (
         <p data-testid="service-state">{state}</p>
       )}
-      {service?.note != null && service.note !== "" && <p className="mt-1 text-sm text-base-content/75">{asSentence(service.note.replace(/`/g, ""))}</p>}
+      {service?.note != null && service.note !== "" && (
+        // The note names Terminal commands, so it is folded with them, as Backups does.
+        <ForYourAiTool>
+          <p>
+            {asSentence(service.note)
+              .split("`")
+              .map((part, i) => (i % 2 === 1 ? <code key={i} className="font-mono">{part}</code> : part))}
+          </p>
+        </ForYourAiTool>
+      )}
       {service !== undefined && !(service.installed && service.loaded) && (service.note == null || service.note === "") && (
-        <>
-          <p className="mt-3 text-sm text-base-content/75">To set it up, run this in Terminal, in the app&rsquo;s folder:</p>
-          <pre className="mt-2 overflow-x-auto rounded-field bg-base-200 px-3 py-2 font-mono text-sm">
+        <ForYourAiTool>
+          <p>To set it up, run this in Terminal, in the app&rsquo;s folder:</p>
+          <pre className="mt-2 rounded-field bg-base-200 px-3 py-2 font-mono break-all whitespace-pre-wrap">
             <code>npm run service:install</code>
           </pre>
-        </>
+        </ForYourAiTool>
       )}
     </Section>
+  );
+}
+
+/** Terminal commands and paths, folded away: they are for the user's AI coding tool, not for reading. */
+function ForYourAiTool({ children, testId }: { readonly children: ReactNode; readonly testId?: string }) {
+  return (
+    <Disclosure
+      className="mt-block text-sm"
+      testId={testId}
+      summary="For your AI coding tool"
+      summaryClassName="-my-2 py-2 text-muted hover:text-base-content max-lg:-my-3 max-lg:py-3"
+    >
+      <div className="mt-2">{children}</div>
+    </Disclosure>
   );
 }

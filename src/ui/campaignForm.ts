@@ -125,13 +125,13 @@ export const FIELD_LABEL: Readonly<Record<FormKey, string>> = {
   inviteNote: "Invite note",
   firstMessage: "First message",
   followUp: "Follow-up",
-  aiPersonalise: "Personalisation",
-  personalisationInstructions: "Instructions for the AI",
+  aiPersonalise: "AI-written line",
+  personalisationInstructions: "Instructions for the AI line",
   acceptToMessageMinHours: "Wait before the first message",
   acceptToMessageMaxHours: "Wait before the first message",
   followUpDelayMinHours: "Wait before the follow-up",
   followUpDelayMaxHours: "Wait before the follow-up",
-  delayPolicy: "How days are counted",
+  delayPolicy: "How the waits count days",
   withdrawAfterDays: "Withdraw unanswered invites",
 };
 
