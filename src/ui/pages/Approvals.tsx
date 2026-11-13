@@ -88,11 +88,21 @@ export function Approvals() {
     focusedBefore.current = [...rows.current].find(([, element]) => element.contains(document.activeElement))?.[0];
     reload();
   }, [reloads, reload]);
+  /**
+   * Approve all went through: its rows and the button that opened the dialog have gone, so the focus went to the empty
+   * state. When the list loads again with people who arrived meanwhile, the first of them takes it instead.
+   */
+  const afterApproveAll = useRef(false);
+  const list = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const id = focusedBefore.current;
     focusedBefore.current = undefined;
     const element = id === undefined ? undefined : rows.current.get(id);
     if (element !== undefined && !element.contains(document.activeElement)) element.focus();
+    if (afterApproveAll.current) {
+      afterApproveAll.current = false;
+      list.current?.querySelector<HTMLElement>("[role=row][tabindex]")?.focus();
+    }
   }, [loaded.data]);
 
   const all = loaded.data?.items ?? [];
@@ -188,6 +198,9 @@ export function Approvals() {
         setInStep((n) => (n === undefined ? n : n - approved));
         setNotice(`${approved} approved${skipped === 0 ? "" : `, ${skipped} no longer waiting`}.`);
         setConfirmIds(null);
+        // Every row shown was in the dialog, so none is left: the empty state takes the focus once the dialog has closed.
+        setFocusEmpty((n) => n + 1);
+        afterApproveAll.current = true;
       })
       .catch((failed: unknown) =>
         setAllError(failure(`Nobody was approved. They are still in the queue; press Approve ${ids.length} again, or Cancel.`, toApiError(failed))),
@@ -326,7 +339,7 @@ export function Approvals() {
               </span>
             </div>
           </div>
-          <div role="rowgroup">
+          <div role="rowgroup" ref={list}>
             {items.map((item) => (
               <Fragment key={item.id}>
                 {ghostsBefore(item.id)}
@@ -375,7 +388,12 @@ export function Approvals() {
           <p role="status" className="text-sm" data-testid="new-arrivals">
             {arrived === 1 ? "1 new person is" : `${arrived} new people are`} waiting.{" "}
             {/* Closing the dialog brings the list up to date by itself. */}
-            <button type="button" className="link" disabled={approvingAll} onClick={() => setConfirmIds(null)}>
+            <button
+              type="button"
+              className="link inline-flex min-h-6 items-center max-lg:-my-2.5 max-lg:min-h-11"
+              disabled={approvingAll}
+              onClick={() => setConfirmIds(null)}
+            >
               Close this to see them
             </button>
             .

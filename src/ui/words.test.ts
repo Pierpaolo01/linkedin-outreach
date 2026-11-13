@@ -27,11 +27,11 @@ describe("plainMessage", () => {
   it("names an edited campaign's steps as the wizard does, in its order, never its field keys", () => {
     expect(
       plainMessage('Campaign "Hotel owners, Rome" edited: acceptToMessageMinHours, followUpDelayMinHours, aiPersonalise, firstMessage'),
-    ).toBe('Campaign "Hotel owners, Rome" edited: Messages, Timings.');
-    expect(plainMessage('Campaign "Dentists" edited: name, scoringBrief, sourceUrls')).toBe('Campaign "Dentists" edited: Name, Where people come from, Who fits.');
-    expect(plainMessage('Campaign "Dentists" edited: nothing')).toBe('Campaign "Dentists" edited: nothing.');
+    ).toBe('Campaign “Hotel owners, Rome” edited: Messages, Timings.');
+    expect(plainMessage('Campaign "Dentists" edited: name, scoringBrief, sourceUrls')).toBe('Campaign “Dentists” edited: Name, Where people come from, Who fits.');
+    expect(plainMessage('Campaign "Dentists" edited: nothing')).toBe('Campaign “Dentists” edited: nothing.');
     // A field the dashboard does not know reads as words, not as a camelCase key.
-    expect(plainMessage('Campaign "Dentists" edited: replyCheckEveryHours')).toBe('Campaign "Dentists" edited: reply check every hours.');
+    expect(plainMessage('Campaign "Dentists" edited: replyCheckEveryHours')).toBe('Campaign “Dentists” edited: reply check every hours.');
   });
 
   // "the daily budget", never "today's": the line may be from an earlier day.
@@ -44,11 +44,11 @@ describe("plainMessage", () => {
 
   it("says a campaign that starts running on an approval as a sentence, not a status key", () => {
     expect(plainMessage('Campaign "Local trades, Milan" running: a prospect was approved')).toBe(
-      'A prospect was approved in "Local trades, Milan", so the campaign is running.',
+      'A prospect was approved in “Local trades, Milan”, so the campaign is running.',
     );
     // The other campaign lines already read as sentences and stay as they are.
-    expect(plainMessage('Campaign "Dentists" paused (was awaiting approval)')).toBe('Campaign "Dentists" paused (was awaiting approval).');
-    expect(plainMessage('Campaign "Dentists" created as a draft')).toBe('Campaign "Dentists" created as a draft.');
+    expect(plainMessage('Campaign "Dentists" paused (was awaiting approval)')).toBe('Campaign “Dentists” paused (was awaiting approval).');
+    expect(plainMessage('Campaign "Dentists" created as a draft')).toBe('Campaign “Dentists” created as a draft.');
   });
 });
 
@@ -92,13 +92,13 @@ describe("plainMessage beside a campaign column", () => {
   // Where the row shows no campaign (Home), the name stays, always in quotes.
   it("keeps the name in quotes where the row shows no campaign", () => {
     const alone = (text: string, campaign: string | undefined) => plainMessage(text, { campaign, campaignShown: false });
-    expect(alone("Campaign Restaurants, Naples paused by you", "Restaurants, Naples")).toBe('Campaign "Restaurants, Naples" paused by you.');
-    expect(alone('Campaign "Dentists" edited: name', "Dentists")).toBe('Campaign "Dentists" edited: Name.');
-    expect(alone('Campaign "Dentists" edited: name', undefined)).toBe('Campaign "Dentists" edited: Name.');
+    expect(alone("Campaign Restaurants, Naples paused by you", "Restaurants, Naples")).toBe('Campaign “Restaurants, Naples” paused by you.');
+    expect(alone('Campaign "Dentists" edited: name', "Dentists")).toBe('Campaign “Dentists” edited: Name.');
+    expect(alone('Campaign "Dentists" edited: name', undefined)).toBe('Campaign “Dentists” edited: Name.');
     expect(alone("Discovery for Architects, Turin: 3 new prospects from 30 cards", "Architects, Turin")).toBe(
-      'Discovery for "Architects, Turin": 3 new prospects from 30 cards.',
+      'Discovery for “Architects, Turin”: 3 new prospects from 30 cards.',
     );
-    expect(alone("Architects, Turin completed: nobody matched", "Architects, Turin")).toBe('"Architects, Turin" completed: nobody matched.');
+    expect(alone("Architects, Turin completed: nobody matched", "Architects, Turin")).toBe('“Architects, Turin” completed: nobody matched.');
   });
 });
 
@@ -226,7 +226,7 @@ describe("failure", () => {
 
   it("says a failed Pause or Resume, the campaign's state and what to press", () => {
     expect(toggleFailure({ name: "Dentists", resuming: false, said: { message: "busy", status: 409 } })).toEqual({
-      text: 'Campaign "Dentists" was not paused. Nothing changed; press Pause again.',
+      text: 'Campaign “Dentists” was not paused. Nothing changed; press Pause again.',
       detail: "What the app said: busy.",
     });
     expect(toggleFailure({ name: undefined, resuming: true, said: { message: "busy", status: 409 } }).text).toBe(

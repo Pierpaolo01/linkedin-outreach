@@ -134,6 +134,9 @@ const RULE_WORDS: Readonly<Record<string, string>> = {
   "expected HH:MM, 24-hour": "Write the time as hours and minutes, 24-hour.",
   "days must not repeat": "Each day can be chosen once.",
 };
+/** A refused save, whether the page or the app found the problem: one sentence for one fact, as the live edit says it. */
+const REFUSED = "Nothing was saved: some settings need attention. Fix the marked ones, then press Save settings again.";
+
 const words = (message: string) => RULE_WORDS[message] ?? asSentence(message);
 
 /**
@@ -217,7 +220,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
     if (Object.keys(built.errors).length > 0) {
       setErrors(built.errors);
       setPairs(new Map());
-      setResult({ ok: false, text: "Nothing was saved: some settings need attention. Fix the marked ones, then press Save settings again." });
+      setResult({ ok: false, text: REFUSED });
       setRefusals((n) => n + 1);
       return;
     }
@@ -237,7 +240,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         setErrors(Object.fromEntries(Object.entries(error.fields).map(([path, message]) => [path, words(message)])));
         setPairs(new Map(Object.entries(error.fields).flatMap(([path, message]) => (pairOf(path, message).length === 0 ? [] : [[path, pairOf(path, message)] as const]))));
         if (Object.keys(error.fields).length > 0) {
-          setResult({ ok: false, text: "Nothing was saved: some settings are not valid. Fix the marked ones, then press Save settings again." });
+          setResult({ ok: false, text: REFUSED });
           setRefusals((n) => n + 1);
         } else {
           setResult({ ok: false, ...failure("Nothing was saved. Your changes are still on this page; press Save settings again.", error) });

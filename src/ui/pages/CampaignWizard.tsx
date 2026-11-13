@@ -200,8 +200,14 @@ function StepStrip(props: {
                       Not finished
                     </span>
                   )}
+                  {/* A refused step says so the same way, in the error tone (on the current step, in its own ink). */}
+                  {problem && (
+                    <span className={`hidden text-caption lg:block ${here ? "" : "text-error"}`} data-testid="step-needs-attention">
+                      Needs attention
+                    </span>
+                  )}
                 </span>
-                {problem && <span className="sr-only">(needs attention)</span>}
+                {problem && <span className="sr-only lg:hidden">(needs attention)</span>}
                 {done && <span className="sr-only">(done)</span>}
                 {passedOpen && <span className="sr-only lg:hidden">(not finished)</span>}
               </button>
@@ -263,7 +269,14 @@ function keptDifferently(form: CampaignForm, kept: Campaign): FormKey[] {
   return CHECKED_KEYS.filter((key) => JSON.stringify(toFields(form, [key]).fields) !== JSON.stringify(toFields(keptForm, [key]).fields));
 }
 
-type SaveResult = { readonly ok: true; readonly campaign: Campaign } | { readonly ok: false };
+/**
+ * A save that went through, or not: `failed` when the app did not take it at all (no field to mark), else it was
+ * refused, with the paths of the fields it marked (`sourceUrls.0`), by the page or by the app.
+ */
+type SaveResult =
+  | { readonly ok: true; readonly campaign: Campaign }
+  | { readonly ok: false; readonly failed: true }
+  | { readonly ok: false; readonly failed: false; readonly marked: readonly string[] };
 
 /** A save waiting for its turn. Its values are read from the form only when it is sent. */
 interface WaitingSave {
@@ -349,7 +362,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
   /** Sends one save with the form as it is now. Never throws. */
   const send = async (job: WaitingSave): Promise<SaveResult> => {
     const snapshot = formNow.current;
-    if (snapshot === null) return { ok: false };
+    if (snapshot === null) return { ok: false, failed: false, marked: [] };
     const keys = [...job.keys];
     const { fields, errors: local } = toFields(snapshot, keys);
     if (Object.keys(local).length > 0) {
@@ -357,7 +370,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         setErrors((e) => ({ ...e, ...local }));
         setNotSaved(true);
       }
-      return { ok: false };
+      return { ok: false, failed: false, marked: Object.keys(local) };
     }
     setSaveFailed(undefined);
     try {
@@ -387,10 +400,11 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       return { ok: true, campaign };
     } catch (failure) {
       const error = toApiError(failure);
-      if (Object.keys(error.fields).length > 0) setErrors((e) => ({ ...e, ...error.fields }));
+      const refused = Object.keys(error.fields).length > 0;
+      if (refused) setErrors((e) => ({ ...e, ...error.fields }));
       else setSaveFailed(error);
       setNotSaved(true);
-      return { ok: false };
+      return refused ? { ok: false, failed: false, marked: Object.keys(error.fields) } : { ok: false, failed: true };
     }
   };
 
@@ -410,7 +424,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       queue.current.tail = queue.current.tail.then(async () => {
         // From here on it is on its way; a save asked for now waits behind it.
         queue.current.waiting = null;
-        const outcome = await send(job).catch((): SaveResult => ({ ok: false }));
+        const outcome = await send(job).catch((): SaveResult => ({ ok: false, failed: true }));
         for (const done of job.done) done(outcome);
       });
     });
@@ -432,9 +446,10 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     if (stepMoved) document.getElementById(STEP_TITLE_ID)?.focus({ preventScroll: true });
   }, [step, stepMoved]);
 
-  // A refused Start: the summary above the review takes the focus and comes into view, wherever Start was pressed.
+  // A refused Start: the summary above the review takes the focus and comes into view, wherever Start was pressed; when
+  // its save failed with nothing to mark, the failed save's message does.
   useEffect(() => {
-    const summary = document.getElementById(START_ERROR_ID);
+    const summary = document.getElementById(START_ERROR_ID) ?? document.getElementById(SAVE_ERROR_ID);
     if (startRefusals > 0 && summary !== null) focusInView(summary);
   }, [startRefusals]);
   // A refused step change: the first field the step marked takes the focus, as a refused save does in Settings.
@@ -515,20 +530,26 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     if (campaignId === null) return;
     setStarting(true);
     setStartError(undefined);
-    const { ok } = await save(ALL_KEYS);
+    const saved = await save(ALL_KEYS);
     await drain();
-    const stop = (message: string) => {
+    const stop = (message: string | undefined) => {
       setStarting(false);
       setConfirmAuto(false);
       setStartError(message);
       setStartRefusals((n) => n + 1);
     };
-    if (!ok) {
-      const marked = formNow.current === null ? [] : stepTitlesOf(Object.keys(toFields(formNow.current, ALL_KEYS).errors));
+    if (!saved.ok) {
+      // A save that failed with nothing to mark is said once, by the failed save's message above the review (the
+      // pattern of every failure: not saved, still on this page, press Start the campaign again), which takes the focus.
+      if (saved.failed) {
+        stop(undefined);
+        return;
+      }
+      const marked = stepTitlesOf(saved.marked);
       stop(
         marked.length > 0
-          ? `Some answers could not be saved. Fix ${joinWords(marked)}, marked below, then press Start the campaign again.`
-          : "Some answers could not be saved. Fix what is marked below, then press Start the campaign again.",
+          ? `Nothing was saved: some answers need attention. Fix ${joinWords(marked)}, marked below, then press Start the campaign again.`
+          : "Nothing was saved: some answers need attention. Fix what is marked below, then press Start the campaign again.",
       );
       return;
     }
@@ -641,10 +662,10 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
               </button>
             )}
             {step === REVIEW && (
-              // During a safety stop nothing runs on LinkedIn until the user resumes, so starting does not begin finding people yet.
+              // During a safety stop nothing runs on LinkedIn until the user resumes, so a started campaign does not find people yet.
               <p className="text-sm text-muted" data-testid="start-note">
-                {stopped ? "Starting begins finding people once you resume." : "Starting begins finding people."} Nobody is invited before you approve
-                them{form.autoApprove ? ", unless auto-approve is on" : ""}.
+                Once started, the campaign begins finding people{stopped ? " when you resume" : ""}. Nobody is invited before you approve them
+                {form.autoApprove ? ", unless auto-approve is on" : ""}.
               </p>
             )}
           </div>
@@ -1012,7 +1033,7 @@ function Review({
       <h2 id={STEP_TITLE_ID} tabIndex={-1} className="text-xl font-semibold">
         Review and start
       </h2>
-      <p className="mt-1 max-w-2xl text-base-content">Check everything once more. The app checks it too when you press Start.</p>
+      <p className="mt-1 max-w-2xl text-base-content">Check everything once more. The app checks it too when you press Start the campaign.</p>
       <ActionError message={startError} className="mt-block" testId="start-error" id={START_ERROR_ID} />
       <div className="mt-block divide-y divide-base-300 rounded-box border border-base-300">
         {sections.map(({ step, rows }) => {

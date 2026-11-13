@@ -1,7 +1,7 @@
 import type { CampaignStatus, ProspectStage } from "../db/schema";
 import type { Budget, BudgetKind, Campaign, DiscoveryWait } from "./apiSchemas";
 import { STEPS } from "./campaignForm";
-import { formatClock, formatResume, formatWhen, NBSP, plural, STAGE_LABEL, unbroken, withStop } from "./format";
+import { formatClock, formatResume, formatWhen, NBSP, plural, quoted, STAGE_LABEL, unbroken, withStop } from "./format";
 
 /** More words and dates for the campaign, activity, stats and settings pages. Times are in the app's time zone. */
 
@@ -207,27 +207,27 @@ function campaignLead(text: string, name: string | undefined): { readonly name: 
     ];
     for (const [prefix, lead] of forms) if (text.startsWith(prefix)) return { name, lead, rest: text.slice(prefix.length) };
   }
-  const quoted = /^Campaign "(.*)" (.+)$/s.exec(text);
-  if (quoted?.[1] !== undefined && quoted[2] !== undefined) return { name: quoted[1], lead: "campaign", rest: quoted[2] };
+  const inQuotes = /^Campaign "(.*)" (.+)$/s.exec(text);
+  if (inQuotes?.[1] !== undefined && inQuotes[2] !== undefined) return { name: inQuotes[1], lead: "campaign", rest: inQuotes[2] };
   return null;
 }
 
 /** A campaign line in the app's words: without its name when the row shows the campaign beside it, else with the name in quotes. */
 function campaignLine(line: { readonly name: string; readonly lead: CampaignLead; readonly rest: string }, shown: boolean): string {
   const rest = line.rest.replace(/_/g, " ");
-  const quoted = `"${line.name}"`;
+  const name = quoted(line.name);
   switch (line.lead) {
     case "discovery":
-      return shown ? `Discovery: ${rest}` : `Discovery for ${quoted}: ${rest}`;
+      return shown ? `Discovery: ${rest}` : `Discovery for ${name}: ${rest}`;
     case "completed":
-      return shown ? `Completed: ${rest}` : `${quoted} completed: ${rest}`;
+      return shown ? `Completed: ${rest}` : `${name} completed: ${rest}`;
     case "campaign": {
       const edited = /^edited: ([\w, ]+)$/.exec(line.rest);
-      if (edited?.[1] !== undefined) return shown ? `Edited: ${editedWords(edited[1])}.` : `Campaign ${quoted} edited: ${editedWords(edited[1])}.`;
+      if (edited?.[1] !== undefined) return shown ? `Edited: ${editedWords(edited[1])}.` : `Campaign ${name} edited: ${editedWords(edited[1])}.`;
       if (line.rest === "running: a prospect was approved") {
-        return shown ? "A prospect was approved, so the campaign is running." : `A prospect was approved in ${quoted}, so the campaign is running.`;
+        return shown ? "A prospect was approved, so the campaign is running." : `A prospect was approved in ${name}, so the campaign is running.`;
       }
-      return shown ? `${capitalised(rest)}.` : `Campaign ${quoted} ${rest}`;
+      return shown ? `${capitalised(rest)}.` : `Campaign ${name} ${rest}`;
     }
     default: {
       const _exhaustive: never = line.lead;
@@ -296,7 +296,7 @@ export function failure(text: string, said?: Said | string): Failure {
 
 /** A Pause or Resume that failed, on a campaign named `name` (undefined on the campaign's own page). */
 export function toggleFailure(args: { readonly name: string | undefined; readonly resuming: boolean; readonly said: Said }): Failure {
-  const which = args.name === undefined ? "The campaign" : `Campaign "${args.name}"`;
+  const which = args.name === undefined ? "The campaign" : `Campaign ${quoted(args.name)}`;
   return failure(
     args.resuming ? `${which} was not resumed. It is still paused; press Resume again.` : `${which} was not paused. Nothing changed; press Pause again.`,
     args.said,

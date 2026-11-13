@@ -633,7 +633,9 @@ test("the activity log does not repeat a line's campaign beside its campaign col
   await page.goto("/");
   const home = page.getByRole("region", { name: "What the app did" });
   await expect(home.getByRole("listitem").first()).toBeVisible();
-  for (const text of await home.getByRole("listitem").allInnerTexts()) expect(text).not.toMatch(/Campaign [^"]/);
+  // The dashboard's own quotation marks: “ ”, never the straight ones.
+  const texts = await home.getByRole("listitem").allInnerTexts();
+  for (const text of texts) expect(text).not.toMatch(/Campaign [^“]|"/);
 });
 
 test("every line in the activity log and on Home ends as a sentence, whether the app rewrote it or passed it through", async ({ page }) => {
@@ -1186,7 +1188,7 @@ test("approval queue: when the last row is decided, the focus moves to the empty
 });
 
 test("the session light agrees with the banner: red whenever LinkedIn needs you, a ring when not checked yet", async ({ page }) => {
-  const light = () => sidebar(page).getByTestId("session-status").locator("xpath=preceding-sibling::span[1]");
+  const light = () => sidebar(page).getByTestId("session-status").locator("xpath=preceding-sibling::span[1]/span");
   // Logged out: the red "LinkedIn needs you" bar, and the red dot.
   await page.route("**/api/home", async (route) => {
     const response = await route.fetch();
@@ -1209,4 +1211,106 @@ test("the session light agrees with the banner: red whenever LinkedIn needs you,
   await expect(sidebar(page).getByTestId("session-status")).toHaveText("Not checked yet");
   await expect(page.getByTestId("session-problem")).toHaveCount(0);
   await expect(light()).toHaveClass(/status-hollow/);
+});
+
+test("the sidebar's session card reads in full in every state: a long one wraps, Re-check stays beside it, the full words on hover", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const checked = new Date().toISOString();
+  const states = [
+    { status: "ok", lastCheckedAt: checked, label: "Logged in" },
+    { status: "logged_out", lastCheckedAt: checked, label: "Logged out" },
+    { status: "checkpoint", lastCheckedAt: checked, label: "Checkpoint" },
+    { status: "restricted", lastCheckedAt: checked, label: "Restricted" },
+    { status: "unknown", lastCheckedAt: checked, label: "Unknown" },
+    { status: "unknown", lastCheckedAt: null, label: "Not checked yet" },
+    { status: "search_capped", lastCheckedAt: checked, label: "Search limit reached" },
+  ] as const;
+  let session: { status: string; lastCheckedAt: string | null } = states[0];
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { session: Record<string, unknown> };
+    await route.fulfill({ response, json: { ...json, session: { ...json.session, status: session.status, lastCheckedAt: session.lastCheckedAt } } });
+  });
+  await page.goto("/");
+  const label = sidebar(page).getByTestId("session-status");
+  const recheck = sidebar(page).getByRole("button", { name: "Re-check" });
+  for (const state of states) {
+    session = state;
+    await page.reload();
+    await expect(label).toHaveText(state.label);
+    await expect(label).toHaveAttribute("title", state.label);
+    // Nothing is cut: no ellipsis, and every word inside the label's box.
+    const cut = await label.evaluate((el) => getComputedStyle(el).textOverflow === "ellipsis" || el.scrollWidth > el.clientWidth);
+    expect(cut, state.label).toBe(false);
+    // Re-check sits beside the label's first line, inside the card.
+    const [labelBox, buttonBox] = [await label.boundingBox(), await recheck.boundingBox()];
+    expect(labelBox !== null && buttonBox !== null && labelBox.x + labelBox.width <= buttonBox.x, state.label).toBe(true);
+  }
+  // The long one takes two lines rather than an ellipsis.
+  const lines = await label.evaluate((el) => Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+  expect(lines).toBe(2);
+});
+
+test("approve all: when it empties the queue the focus moves to the empty state; when people arrived meanwhile, to the first row", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // Two people in the list, then (after Approve all) either nobody or one newcomer; answered here, so the demo's queue stays.
+  let approved = false;
+  let newcomer = false;
+  let all: Record<string, unknown>[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/approvals",
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { total: number; items: Record<string, unknown>[] };
+      all = json.items;
+      // The newcomer is invented from the first person, under an id and a name of its own.
+      const late = all.slice(0, 1).map((item) => ({ ...item, id: 900_001, person: { ...(item["person"] as object), fullName: "Test Newcomer" } }));
+      const items = !approved ? all.slice(0, 2) : newcomer ? late : [];
+      await route.fulfill({ response, json: { ...json, total: items.length, items } });
+    },
+  );
+  await page.route("**/api/approvals/approve-all", async (route) => {
+    approved = true;
+    await route.fulfill({ json: { approved: 2, skipped: 0 } });
+  });
+  await page.goto("/approvals");
+  const rows = page.getByTestId("approval-row");
+  await expect(rows).toHaveCount(2);
+  await page.getByRole("button", { name: "Approve all 2 shown" }).click();
+  await page.getByRole("dialog", { name: "Approve all 2 prospects shown?" }).getByRole("button", { name: "Approve 2" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByTestId("queue-empty")).toBeFocused();
+
+  // Someone scored while the dialog was open: the list brings them in, and the focus goes to their row.
+  approved = false;
+  newcomer = true;
+  await page.reload();
+  await expect(rows).toHaveCount(2);
+  await page.getByRole("button", { name: "Approve all 2 shown" }).click();
+  await page.getByRole("dialog", { name: "Approve all 2 prospects shown?" }).getByRole("button", { name: "Approve 2" }).click();
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Test Newcomer");
+  await expect(rows.first()).toBeFocused();
+});
+
+test("phone width: Close this to see them, in the approve-all dialog, is a 44px target", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/approvals");
+  const { items } = (await (await page.request.get("/api/approvals?pageSize=200")).json()) as { items: unknown[] };
+  const before = items.length;
+  expect(before).toBeGreaterThan(0);
+  await expect(page.getByTestId("approval-row")).toHaveCount(before);
+  // One more person waiting than the list was loaded with, while the dialog is open.
+  await page.getByRole("button", { name: `Approve all ${before} shown` }).click();
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { needsYou: Record<string, number> };
+    await route.fulfill({ response, json: { ...json, needsYou: { ...json.needsYou, pendingApproval: (json.needsYou["pendingApproval"] ?? 0) + 1 } } });
+  });
+  const close = page.getByRole("button", { name: "Close this to see them" });
+  await expect(close).toBeVisible({ timeout: 15_000 });
+  const box = await close.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await close.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

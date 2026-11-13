@@ -613,7 +613,7 @@ function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign
         setError(
           Object.keys(apiError.fields).length > 0
             ? "Nothing was saved: some fields need attention. Fix the ones marked above, then press Save changes again."
-            : failure("The changes were not saved. They are still in the form; press Save changes again.", apiError),
+            : failure("Nothing was saved. Your changes are still on this page; press Save changes again.", apiError),
         );
         setRefusals((n) => n + 1);
       })

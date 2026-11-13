@@ -106,9 +106,21 @@ export function asSentence(text: string): string {
 /** A straight apostrophe between two letters ("LinkedIn's"), which the app shows as the typographic one. */
 const STRAIGHT_APOSTROPHE = /(?<=\p{L})'(?=\p{L})/gu;
 
-/** The typographic apostrophe (’) in place of the straight one between letters: the server's own words keep the straight one (D-10). */
+/** A straight double quote that opens a quotation: at the start, or after a space or an opening bracket or dash. */
+const OPENING_DOUBLE = /(^|[\s([{\u2013\u2014])"/gu;
+
+/**
+ * The typographic apostrophe (’) in place of the straight one between letters, and “ ” in place of straight double
+ * quotes: the server's own words keep the straight ones (D-10). Only the server's lines pass here, never a template or
+ * a text that is sent, which are shown exactly as they are.
+ */
 export function typographic(text: string): string {
-  return text.replace(STRAIGHT_APOSTROPHE, "\u2019");
+  return text.replace(STRAIGHT_APOSTROPHE, "\u2019").replace(OPENING_DOUBLE, "$1\u201c").replaceAll('"', "\u201d");
+}
+
+/** A name the dashboard quotes itself: “Local trades, Milan”. */
+export function quoted(name: string): string {
+  return `\u201c${name}\u201d`;
 }
 
 /**

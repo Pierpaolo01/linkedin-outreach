@@ -133,11 +133,17 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
         </p>
       )}
       {/* During a stop the window's sentence takes the card's width, with Re-check under it. */}
+      {/*
+       * Outside a stop the state's name wraps beside Re-check rather than being cut ("Search limit reached" takes two
+       * lines at the sidebar's width); the light sits in a box one line high, so it stays on the name's first line.
+       */}
       <div className={stop === null ? "flex items-center justify-between gap-2" : "flex flex-col items-start gap-2"}>
         {stop === null ? (
-          <p className="flex min-w-0 items-center gap-2 font-medium">
-            <span className={`status ${view.light}`} aria-hidden="true" />
-            <span data-testid="session-status" className="truncate">
+          <p className="flex min-w-0 items-start gap-2 font-medium">
+            <span className="flex h-lh shrink-0 items-center" aria-hidden="true">
+              <span className={`status ${view.light}`} />
+            </span>
+            <span data-testid="session-status" className="min-w-0 wrap-break-word" title={view.label}>
               {view.label}
             </span>
           </p>

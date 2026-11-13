@@ -134,7 +134,11 @@ export function MessageFields({
             <SwitchRow
               id={ids.personalise}
               label="Let the AI write one line for each person"
-              hint="The line goes where you put the AI-written line variable, based only on what their profile says."
+              hint={
+                <>
+                  The line goes where you put <code className="font-mono">{"{{ai_line}}"}</code> in a text, and is based only on what their profile says.
+                </>
+              }
               checked={form.aiPersonalise}
               error={errors["aiPersonalise"]}
               onChange={(on) => set("aiPersonalise", on)}
@@ -224,7 +228,7 @@ function TemplatePreview(props: {
                 <p className="font-semibold">{item.fullName}</p>
                 <PreviewLine label={TEXT_LABEL.inviteNote} text={item.inviteNote} template={templates?.inviteNote} none="No note: the invite goes without one." />
                 <PreviewLine label={TEXT_LABEL.firstMessage} text={item.firstMessage} template={templates?.firstMessage} none="" />
-                <PreviewLine label={TEXT_LABEL.followUp} text={item.followUp} template={templates?.followUp} none="No follow-up." />
+                <PreviewLine label={TEXT_LABEL.followUp} text={item.followUp} template={templates?.followUp} none="No follow-up" />
               </li>
             ))}
           </ul>
@@ -345,15 +349,18 @@ export function TimingFields({ form, set, errors }: { readonly form: CampaignFor
         </label>
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <span>Withdraw an invite nobody accepted after</span>
-          <input
-            id={ids.withdraw}
-            inputMode="numeric"
-            className={`input input-sm w-20 bg-base-100 nums ${errors["withdrawAfterDays"] === undefined ? "" : "input-error"}`}
-            value={form.withdrawAfterDays}
-            onChange={(event) => set("withdrawAfterDays", event.target.value)}
-            {...errorProps(ids.withdraw, errors["withdrawAfterDays"])}
-          />
-          <span>days.</span>
+          {/* The unit stays with its box: never "[21]" at a line's end and "days." alone on the next. */}
+          <span className="inline-flex items-center gap-2 whitespace-nowrap">
+            <input
+              id={ids.withdraw}
+              inputMode="numeric"
+              className={`input input-sm w-20 bg-base-100 nums ${errors["withdrawAfterDays"] === undefined ? "" : "input-error"}`}
+              value={form.withdrawAfterDays}
+              onChange={(event) => set("withdrawAfterDays", event.target.value)}
+              {...errorProps(ids.withdraw, errors["withdrawAfterDays"])}
+            />
+            <span>days.</span>
+          </span>
         </div>
         <FieldError controlId={ids.withdraw} message={errors["withdrawAfterDays"]} />
       </div>
@@ -415,9 +422,12 @@ function HourRange(props: {
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <span>{props.lead}</span>
         {box(minKey, minValue, "shortest wait in hours")}
-        <span>and</span>
-        {box(maxKey, maxValue, "longest wait in hours")}
-        <span>hours.</span>
+        {/* "and [48] hours." is one piece, so the unit never starts a line alone, as in Settings' ranges. */}
+        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+          <span>and</span>
+          {box(maxKey, maxValue, "longest wait in hours")}
+          <span>hours.</span>
+        </span>
       </div>
       {props.note !== undefined && (
         <p id={hintIdOf(groupId)} className="mt-1 text-sm text-muted">

@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 import { appUrl } from "./apps";
 
 // A route handler that re-fetches a response can still be running when its test ends (the dashboard
@@ -539,7 +539,7 @@ test("settings: a refused save shows the problem in place, a good one saves; AI 
   await invites.fill("-1");
   await page.getByLabel("End of the working day").focus();
   await page.getByRole("button", { name: "Save settings" }).click();
-  await expect(page.getByTestId("settings-result")).toHaveText("Nothing was saved: some settings are not valid. Fix the marked ones, then press Save settings again.");
+  await expect(page.getByTestId("settings-result")).toHaveText("Nothing was saved: some settings need attention. Fix the marked ones, then press Save settings again.");
   await expect(page.getByText("Enter 0 or more.")).toBeVisible();
   // Refused by the app: the focus goes to the first field it marked, in sight.
   await expect(invites).toBeFocused();
@@ -723,7 +723,7 @@ test("forms: a field's hint describes its control, after its error when there is
   await expect(page.getByLabel("First message")).toHaveAccessibleDescription("Sent after they accept your invite.");
   await page.getByRole("switch", { name: "Let the AI write one line for each person" }).check();
   await expect(page.getByRole("switch", { name: "Let the AI write one line for each person" })).toHaveAccessibleDescription(
-    "The line goes where you put the AI-written line variable, based only on what their profile says.",
+    "The line goes where you put {{ai_line}} in a text, and is based only on what their profile says.",
   );
   await page.route(
     (url) => url.pathname === `/api/campaigns/${id}`,
@@ -926,7 +926,7 @@ test("edit a live campaign on a phone: a refused save focuses the first marked f
   await save.click();
   await expect(summary).toBeFocused();
   await expect(summary).toBeInViewport({ ratio: 1 });
-  await expect(summary.locator("p").first()).toHaveText("The changes were not saved. They are still in the form; press Save changes again.");
+  await expect(summary.locator("p").first()).toHaveText("Nothing was saved. Your changes are still on this page; press Save changes again.");
   await expect(summary.locator("p").nth(1)).toHaveText("What the app said: Test failure.");
   await expect(summary.locator("p").nth(1)).toHaveCSS("color", MUTED_TONE);
 });
@@ -1094,4 +1094,134 @@ test("live edit: a wait's shortest above its longest marks both boxes; text in t
   }
   await expect(shortest).toBeFocused();
   await form.getByRole("button", { name: "Cancel" }).click();
+});
+
+/** How far each unit word ("hours.", "days.") sits from the box before it, centre to centre, in pixels: 0 when they share a line. */
+async function unitOffsets(scope: Locator): Promise<number[]> {
+  return scope.evaluate((root) =>
+    [...root.querySelectorAll("span")]
+      .filter((span) => span.children.length === 0 && /^(hours|days)\.$/.test(span.textContent.trim()))
+      .map((unit) => {
+        const box = [...root.querySelectorAll("input")].filter((input) => input.compareDocumentPosition(unit) & Node.DOCUMENT_POSITION_FOLLOWING).at(-1);
+        if (box === undefined) return Number.POSITIVE_INFINITY;
+        const a = unit.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        return Math.abs(a.top + a.height / 2 - (b.top + b.height / 2));
+      }),
+  );
+}
+
+test("waits: a box and the unit after it stay on one line, in the live edit and the wizard, at every width", async ({ page }) => {
+  const widths = [390, 768, 1024, 1280, 1440];
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/campaigns/1");
+  await page.getByRole("button", { name: "Edit messages and timings" }).click();
+  const form = page.getByTestId("live-edit");
+  await expect(form.getByLabel("Before the first message: longest wait in hours")).toBeVisible();
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    const offsets = await unitOffsets(form);
+    expect(offsets, `live edit at ${width}`).toHaveLength(3);
+    expect(offsets.filter((offset) => offset > 4), `live edit at ${width}`).toEqual([]);
+  }
+  await form.getByRole("button", { name: "Cancel" }).click();
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await draftToMessages(page, "Test waits on one line");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByRole("heading", { name: "Timings", level: 2 })).toBeVisible();
+  const step = page.getByRole("region", { name: "Timings" });
+  for (const width of widths) {
+    await page.setViewportSize({ width, height: 900 });
+    const offsets = await unitOffsets(step);
+    expect(offsets, `wizard at ${width}`).toHaveLength(3);
+    expect(offsets.filter((offset) => offset > 4), `wizard at ${width}`).toEqual([]);
+  }
+});
+
+test("wizard: the review and the sentence by Start name the button and say what starting does, during a stop too", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await draftToMessages(page, "Test start words");
+  await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: /Review and start/ }).click();
+  await expect(page.getByText("Check everything once more. The app checks it too when you press Start the campaign.", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("start-note")).toHaveText("Once started, the campaign begins finding people. Nobody is invited before you approve them.");
+
+  // During a safety stop (put on this page by the test): it begins when the user resumes, and nothing is said twice.
+  const safetyStop = { reason: "checkpoint", detail: null, raisedAt: new Date().toISOString(), whatToDo: "Test: complete the check.", invitesBlockedUntil: null };
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...((await response.json()) as object), safetyStop } });
+  });
+  await page.reload();
+  await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: /Review and start/ }).click();
+  await expect(page.getByTestId("start-note")).toHaveText("Once started, the campaign begins finding people when you resume. Nobody is invited before you approve them.");
+});
+
+test("wizard at 1024 and up: a refused step says Needs attention under its name, in the error tone, read once", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await draftToMessages(page, "Test needs attention");
+  const strip = page.getByRole("navigation", { name: "Wizard steps" });
+  await strip.getByRole("button", { name: /Review and start/ }).click();
+  await page.getByRole("button", { name: "Start the campaign" }).click();
+  await expect(page.getByTestId("start-error")).toBeFocused();
+  await expect(page.getByTestId("start-error")).toHaveText("The campaign cannot start yet. Fix Messages, marked below, then press Start the campaign again.");
+  const messages = strip.getByRole("button", { name: /Messages/ });
+  const words = messages.getByTestId("step-needs-attention");
+  await expect(words).toBeVisible();
+  await expect(words).toHaveText("Needs attention");
+  await expect(words).toHaveCSS("color", STOP_RED);
+  await expect(messages).toHaveAccessibleName("Messages Needs attention");
+  await expect(strip.getByRole("button", { name: /Timings/ }).getByTestId("step-needs-attention")).toHaveCount(0);
+  // On a phone the strip keeps one line per step: the words are for screen readers only.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(words).toBeHidden();
+  await expect(messages).toHaveAccessibleName("Messages (needs attention)");
+});
+
+test("wizard on a phone: Start whose save fails with no marked field shows only the failed save, focused", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const id = await draftToMessages(page, "Test start save failed");
+  await page.getByLabel("First message").fill("Test first message for {{first_name}}");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByRole("heading", { name: "Timings", level: 2 })).toBeVisible();
+  await page.getByRole("button", { name: "Save and review" }).click();
+  await expect(page.getByRole("heading", { name: "Review and start", level: 2 })).toBeVisible();
+  await page.route(
+    (url) => url.pathname === `/api/campaigns/${id}`,
+    async (route) => (route.request().method() === "PATCH" ? route.fulfill({ status: 500, json: { error: "Test failure" } }) : route.fallback()),
+  );
+  const start = page.getByRole("button", { name: "Start the campaign" });
+  await start.scrollIntoViewIfNeeded();
+  await start.click();
+  const failed = page.getByTestId("save-error");
+  await expect(failed.locator("p").first()).toHaveText("The draft was not saved. Your changes are still on this page; press Start the campaign again.");
+  await expect(failed.locator("p").nth(1)).toHaveText("What the app said: Test failure.");
+  await expect(failed).toBeFocused();
+  await expect(failed).toBeInViewport({ ratio: 1 });
+  // Nothing is marked, so nothing says "Fix what is marked below".
+  await expect(page.getByTestId("start-error")).toHaveCount(0);
+  await expect(page.getByText(/marked below/)).toHaveCount(0);
+
+  // A save the app refuses with a marked field says it as Settings and the live edit do: nothing was saved, and what needs attention.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.route(
+    (url) => url.pathname === `/api/campaigns/${id}`,
+    async (route) =>
+      route.request().method() === "PATCH" ? route.fulfill({ status: 400, json: { error: "Test refusal", fields: { followUp: "Test: not a good follow-up" } } }) : route.fallback(),
+  );
+  await start.scrollIntoViewIfNeeded();
+  await start.click();
+  await expect(page.getByTestId("start-error")).toHaveText("Nothing was saved: some answers need attention. Fix Messages, marked below, then press Start the campaign again.");
+  await expect(page.getByTestId("start-error")).toBeFocused();
+});
+
+test("wizard: the AI line's help names its variable as a text shows it, and the preview's No follow-up has no full stop", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await draftToMessages(page, "Test AI line words");
+  const hint = page.getByText(/^The line goes where you put/);
+  await expect(hint).toHaveText("The line goes where you put {{ai_line}} in a text, and is based only on what their profile says.");
+  await expect(hint.locator("code")).toHaveText("{{ai_line}}");
+  await page.getByLabel("First message").fill("Test first message for {{first_name}}");
+  await expect(page.getByText("No follow-up", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("No follow-up.", { exact: true })).toHaveCount(0);
 });
