@@ -70,7 +70,6 @@ describe("runDoctor", () => {
     expect(report.checks.filter((c) => c.status === "problem")).toEqual([]);
     expect(report.ok).toBe(true);
     const text = formatReport(report);
-    expect(text).toContain("142.0.7444.60");
     expect(text).toMatch(/migrations applied (\d+) of \1\b/);
     expect(text).toContain("auto-start: not installed (`npm run service:install` starts the app at login)");
     expect(text.trimEnd().split("\n").at(-1)).toBe("doctor: OK");

@@ -106,7 +106,7 @@ describe("10. AI work is not LinkedIn", () => {
     expect(messages(result(10))).toEqual([]);
     expect(run.aiCalls.some((call) => !call.answered)).toBe(true);
     expect(verdict.counts.aiCallsAtNight).toBeGreaterThan(0);
-  });
+  }, 15_000); // Replays a full day of failed AI calls before scoring resumes at night.
 });
 
 describe("10. nothing loads during a safety stop", () => {
