@@ -64,7 +64,10 @@ test("Home reads what needs you as sentences and shows today's usage", async ({ 
   await expect(page.getByTestId("usage-discovery_page")).toContainText(/Budget spent, resumes (tomorrow|today|Monday|\w+day) \d\d:\d\d/);
   // A spent budget is quiet: its meter is the solid muted tone (never amber, never darker than the green bars) and its
   // line is muted like every other line under a meter. The words carry the state.
-  await expect(page.getByTestId("usage-discovery_page").locator("progress")).toHaveCSS("color", MUTED);
+  // The full meter is the control tone, lighter than the muted words (so it is not the darkest block in the card), on
+  // Desk Paper inside the control-tone edge, which reaches 3:1 on the card.
+  await expect(page.getByTestId("usage-discovery_page").locator("progress")).toHaveCSS("color", CONTROL);
+  await expect(page.getByTestId("usage-discovery_page").locator("progress")).toHaveCSS("border-top-color", CONTROL);
   await expect(page.getByTestId("usage-discovery_page").locator("p")).toHaveCSS("color", MUTED);
 
   const campaigns = page.getByRole("region", { name: "Campaigns" }).getByRole("table");
@@ -585,6 +588,50 @@ test("the sidebar marks exactly one item as the current page on every page, a dr
   }
 });
 
+test("the sidebar shows a long campaign name on two lines, with the full name on hover, its dot on the first line", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const long = "Test campaign with a long name for independent hotel owners in the historic centre of Rome";
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { campaigns: { name: string }[] };
+    await route.fulfill({ response, json: { ...json, campaigns: json.campaigns.map((c, i) => (i === 0 ? { ...c, name: long } : c)) } });
+  });
+  await page.goto("/");
+  const link = sidebar(page).getByRole("link", { name: new RegExp(`^${long}`) });
+  await expect(link).toHaveAttribute("title", long);
+  const name = link.getByTestId("sidebar-campaign-name");
+  await expect(name).toHaveCSS("-webkit-line-clamp", "2");
+  const lineHeight = await name.evaluate((el) => Number.parseFloat(getComputedStyle(el).lineHeight));
+  const box = await name.boundingBox();
+  const dot = await link.locator(".status").boundingBox();
+  expect(box).not.toBeNull();
+  expect(dot).not.toBeNull();
+  if (box === null || dot === null) return;
+  expect(Math.round(box.height / lineHeight), "the long name does not take two lines").toBe(2);
+  expect(Math.abs(dot.y + dot.height / 2 - (box.y + lineHeight / 2)), "the dot is not on the name's first line").toBeLessThanOrEqual(1);
+});
+
+test("the activity log does not repeat a line's campaign beside its campaign column; Home keeps it, in quotes", async ({ page }) => {
+  await page.goto("/activity");
+  const lines = page.getByTestId("activity-line");
+  await expect(lines.first()).toBeVisible();
+  const repeats = await lines.evaluateAll((els) =>
+    els.flatMap((el) => {
+      const message = el.children[1]?.textContent ?? "";
+      const campaign = el.children[2]?.textContent ?? "";
+      return campaign !== "" && message.includes(campaign) ? [message] : [];
+    }),
+  );
+  expect(repeats, "a line names the campaign its row already shows").toEqual([]);
+  await page.getByLabel("Campaign").selectOption({ label: "Restaurants, Naples" });
+  await expect(lines.filter({ has: page.getByText("Paused by you.", { exact: true }) })).toContainText("Restaurants, Naples");
+  // Home shows no campaign beside its lines, so a line keeps the campaign's name, in quotes like every other.
+  await page.goto("/");
+  const home = page.getByRole("region", { name: "What the app did" });
+  await expect(home.getByRole("listitem").first()).toBeVisible();
+  for (const text of await home.getByRole("listitem").allInnerTexts()) expect(text).not.toMatch(/Campaign [^"]/);
+});
+
 test("phone width: the sidebar becomes a menu and nothing scrolls sideways", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const path of ["/", "/approvals", "/review", "/campaigns", "/campaigns/1", "/campaigns/new", "/activity", "/stats", "/settings"]) {
@@ -725,6 +772,7 @@ const INK = "rgb(29, 37, 33)";
 const MUTED = "rgb(91, 98, 93)";
 /** Hairline Sage (base-300), the edge of the secondary button. */
 const HAIRLINE = "rgb(220, 224, 216)";
+const CONTROL = "rgb(129, 134, 131)";
 const ON_MOSS = "rgb(242, 244, 240)";
 const MOSS = "rgb(38, 48, 43)";
 
@@ -867,6 +915,49 @@ test("campaigns during a safety stop: the header says how many it stopped, and P
   await expect(pause).toHaveCSS("color", MUTED);
   await expect(pause).toHaveCSS("border-top-style", "solid");
   await expect(pause).toHaveCSS("border-top-color", HAIRLINE);
+});
+
+test("during a safety stop nothing promises work at a time: Campaigns, a campaign's page, its people and Approve all", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(appUrl("stop", "/campaigns"));
+  const trades = page.getByTestId("campaign-row").filter({ has: page.getByRole("link", { name: "Local trades, Milan", exact: true }) });
+  // Only what stays true either way: when LinkedIn's limit resets, never when finding people resumes.
+  await expect(trades).toContainText(/LinkedIn's monthly search limit is reached\. It resets on 1 \w+ \d{4}\./);
+  await expect(page.getByTestId("campaigns-table").first()).not.toContainText(/resumes|looks again|tomorrow/);
+
+  // A campaign's people with a planned step, one later today and one already due: both wait for the resume.
+  const later = new Date(Date.now() + 2 * 3_600_000).toISOString();
+  const due = new Date(Date.now() - 3_600_000).toISOString();
+  await page.route(
+    (url) => /^\/api\/campaigns\/\d+\/prospects$/.test(url.pathname),
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { items: Record<string, unknown>[] };
+      const items = json.items.map((item, index) => ({ ...item, nextActionAt: index === 0 ? later : index === 1 ? due : null }));
+      await route.fulfill({ response, json: { ...json, items } });
+    },
+  );
+  await trades.getByRole("link", { name: "Local trades, Milan", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Local trades, Milan");
+  await expect(page.getByText(/^LinkedIn's monthly search limit is reached\. It resets on 1 \w+ \d{4}\.$/)).toBeVisible();
+  await expect(page.getByText(/It resumes on|looks again/)).toHaveCount(0);
+  const when = page.getByTestId("people-table").getByTestId("next-action-when");
+  await expect(when).toHaveCount(2);
+  expect(await when.allInnerTexts()).toEqual(["after you resume", "after you resume"]);
+  await expect(page.getByTestId("people-table")).not.toContainText(/due now|today at|tomorrow at/);
+  // Pause on the halted campaign is the bordered secondary button with muted words, as on Home and Campaigns.
+  const pause = page.getByRole("button", { name: "Pause", exact: true });
+  await expect(pause).toHaveCSS("color", MUTED);
+  await expect(pause).toHaveCSS("border-top-style", "solid");
+  await expect(pause).toHaveCSS("border-top-color", HAIRLINE);
+
+  // Approve all: the invites go out once the user resumes, not by themselves.
+  await page.goto(appUrl("stop", "/approvals"));
+  await page.getByRole("button", { name: /^Approve all \d+ shown$/ }).click();
+  const dialog = page.getByRole("dialog", { name: /^Approve all \d+ prospects shown\?$/ });
+  await expect(dialog.getByTestId("approve-all-when")).toHaveText("The app sends the invites itself once you resume, within your working window and budgets.");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
 });
 
 test("phone width: the safety-stop banner's icon sits beside its heading, centred on its first line", async ({ page }) => {

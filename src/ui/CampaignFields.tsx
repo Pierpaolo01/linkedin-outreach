@@ -2,7 +2,7 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { previewCampaign } from "./api";
 import type { PreviewText } from "./apiSchemas";
 import { INVITE_NOTE_MAX, VARIABLES, type CampaignForm, type FieldErrors, type SetField } from "./campaignForm";
-import { describedByError, errorProps, FieldError, FilledText, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
+import { describedByError, errorProps, FieldError, FilledText, hintIdOf, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
 import { Link } from "./router";
 import { useLoad } from "./useLoad";
 
@@ -58,7 +58,7 @@ export function MessageFields({
       placeholder={placeholder}
       onFocus={() => setTarget(key)}
       onChange={(event) => set(key, event.target.value)}
-      {...errorProps(ids[key], errors[key])}
+      {...errorProps(ids[key], errors[key], { hint: hintIdOf(ids[key]) })}
     />
   );
 
@@ -99,7 +99,7 @@ export function MessageFields({
                 Template: {noteLength} characters
               </span>
             </div>
-            <p className="text-sm text-muted">
+            <p id={hintIdOf(ids.inviteNote)} className="text-sm text-muted">
               Sent with the invite. Leave it empty to invite without a note. LinkedIn allows {INVITE_NOTE_MAX} characters once the variables are filled
               in; the preview shows the real length.
             </p>
@@ -111,7 +111,9 @@ export function MessageFields({
             <label htmlFor={ids.firstMessage} className="font-medium">
               First message
             </label>
-            <p className="text-sm text-muted">Sent after they accept your invite.</p>
+            <p id={hintIdOf(ids.firstMessage)} className="text-sm text-muted">
+              Sent after they accept your invite.
+            </p>
             <div className="mt-1.5">{textBox("firstMessage", 6, "Your first message")}</div>
             <FieldError controlId={ids.firstMessage} message={errors["firstMessage"]} />
           </div>
@@ -120,7 +122,9 @@ export function MessageFields({
             <label htmlFor={ids.followUp} className="font-medium">
               Follow-up <span className="font-normal text-muted">(optional)</span>
             </label>
-            <p className="text-sm text-muted">Sent once if they have not replied to the first message. Leave it empty to send no follow-up.</p>
+            <p id={hintIdOf(ids.followUp)} className="text-sm text-muted">
+              Sent once if they have not replied to the first message. Leave it empty to send no follow-up.
+            </p>
             <div className="mt-1.5">{textBox("followUp", 4, "Your follow-up")}</div>
             <FieldError controlId={ids.followUp} message={errors["followUp"]} />
           </div>
@@ -143,7 +147,7 @@ export function MessageFields({
                 <textarea
                   id={ids.instructions}
                   rows={3}
-                  className="textarea mt-1 w-full bg-base-100"
+                  className={`textarea mt-1 w-full bg-base-100 ${errors["personalisationInstructions"] === undefined ? "" : "textarea-error"}`}
                   value={form.personalisationInstructions}
                   placeholder="What the line should be about, and what to avoid"
                   onChange={(event) => set("personalisationInstructions", event.target.value)}
@@ -350,7 +354,7 @@ function HourRange(props: {
       value={value}
       onChange={(event) => props.set(key, event.target.value)}
       aria-invalid={props.errors[key] !== undefined || undefined}
-      {...describedByError(groupId, error)}
+      {...describedByError(groupId, error, { hint: props.note === undefined ? undefined : hintIdOf(groupId) })}
     />
   );
   return (
@@ -363,7 +367,11 @@ function HourRange(props: {
         {box(maxKey, maxValue, "longest wait in hours")}
         <span>hours.</span>
       </div>
-      {props.note !== undefined && <p className="mt-1 text-sm text-muted">{props.note}</p>}
+      {props.note !== undefined && (
+        <p id={hintIdOf(groupId)} className="mt-1 text-sm text-muted">
+          {props.note}
+        </p>
+      )}
       <FieldError controlId={groupId} message={error} />
     </fieldset>
   );

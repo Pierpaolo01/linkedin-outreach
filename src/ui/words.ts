@@ -83,15 +83,27 @@ export function formatStamp(iso: string, timeZone: string): string {
   return `${day} ${formatClock(iso, timeZone)}`;
 }
 
-/** Why finding new people waits, as a sentence. */
-export function discoveryWaitSentence(wait: DiscoveryWait, timeZone: string): string {
+/**
+ * Why finding new people waits, as a sentence. During a safety stop nothing resumes until the user does, so the
+ * sentence says only what stays true either way (when LinkedIn's limit resets), never when the app looks again.
+ */
+export function discoveryWaitSentence(args: { readonly wait: DiscoveryWait; readonly timeZone: string; readonly safetyStop: boolean }): string {
+  const { wait, safetyStop } = args;
   switch (wait.reason) {
-    case "search_limit":
-      return `Finding people is waiting: LinkedIn's monthly search limit is reached. It resumes on ${formatDate(wait.until, timeZone)}.`;
+    case "search_limit": {
+      const date = formatDate(wait.until, args.timeZone);
+      return safetyStop
+        ? `LinkedIn's monthly search limit is reached. It resets on ${date}.`
+        : `Finding people is waiting: LinkedIn's monthly search limit is reached. It resumes on ${date}.`;
+    }
     case "no_new_people":
-      return "Finding people is waiting: LinkedIn's recommendations show nobody new today. The app looks again tomorrow.";
+      return safetyStop
+        ? "LinkedIn's recommendations showed nobody new today."
+        : "Finding people is waiting: LinkedIn's recommendations show nobody new today. The app looks again tomorrow.";
     case "unreadable":
-      return "Finding people is waiting: the app could not read LinkedIn's page. It looks again tomorrow; the activity log has the details.";
+      return safetyStop
+        ? "The app could not read LinkedIn's page; the activity log has the details."
+        : "Finding people is waiting: the app could not read LinkedIn's page. It looks again tomorrow; the activity log has the details.";
     case "exhausted":
       return "Finding people has stopped: there is nobody more to find from this campaign's sources.";
     default: {
@@ -118,9 +130,13 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** "today at 10:42", or "due now" when the moment has passed. */
-export function formatNext(iso: string, timeZone: string, now: Date): string {
-  return new Date(iso).getTime() <= now.getTime() ? "due now" : formatWhen(iso, timeZone, now);
+/**
+ * When a prospect's next step is planned: "today at 10:42", or "due now" when the moment has passed. During a safety
+ * stop no step is sent at its time, so it says "after you resume" instead of a time that would not hold.
+ */
+export function nextActionWhen(args: { readonly at: string; readonly timeZone: string; readonly now: Date; readonly safetyStop: boolean }): string {
+  if (args.safetyStop) return "after you resume";
+  return new Date(args.at).getTime() <= args.now.getTime() ? "due now" : formatWhen(args.at, args.timeZone, args.now);
 }
 
 /** What the app does next for a prospect in this stage; undefined when nothing more is planned. */
@@ -163,20 +179,68 @@ function editedWords(keys: string): string {
   return [...new Set([...steps, ...other])].join(", ");
 }
 
+/** How a line names its campaign, as the server writes it. */
+type CampaignLead = "campaign" | "discovery" | "completed";
+
+/**
+ * A line that leads with its campaign: `Campaign "N" …` (or the demo's unquoted `Campaign N …`), `Discovery for N: …`
+ * and `N completed: …`. Found by the campaign's name when the page knows it, else by the quotes the server puts round it.
+ */
+function campaignLead(text: string, name: string | undefined): { readonly name: string; readonly lead: CampaignLead; readonly rest: string } | null {
+  if (name !== undefined && name !== "") {
+    const forms: readonly (readonly [string, CampaignLead])[] = [
+      [`Campaign "${name}" `, "campaign"],
+      [`Campaign ${name} `, "campaign"],
+      [`Discovery for ${name}: `, "discovery"],
+      [`Discovery for "${name}": `, "discovery"],
+      [`${name} completed: `, "completed"],
+      [`"${name}" completed: `, "completed"],
+    ];
+    for (const [prefix, lead] of forms) if (text.startsWith(prefix)) return { name, lead, rest: text.slice(prefix.length) };
+  }
+  const quoted = /^Campaign "(.*)" (.+)$/s.exec(text);
+  if (quoted?.[1] !== undefined && quoted[2] !== undefined) return { name: quoted[1], lead: "campaign", rest: quoted[2] };
+  return null;
+}
+
+/** A campaign line in the app's words: without its name when the row shows the campaign beside it, else with the name in quotes. */
+function campaignLine(line: { readonly name: string; readonly lead: CampaignLead; readonly rest: string }, shown: boolean): string {
+  const rest = line.rest.replace(/_/g, " ");
+  const quoted = `"${line.name}"`;
+  switch (line.lead) {
+    case "discovery":
+      return shown ? `Discovery: ${rest}` : `Discovery for ${quoted}: ${rest}`;
+    case "completed":
+      return shown ? `Completed: ${rest}` : `${quoted} completed: ${rest}`;
+    case "campaign": {
+      const edited = /^edited: ([\w, ]+)$/.exec(line.rest);
+      if (edited?.[1] !== undefined) return shown ? `Edited: ${editedWords(edited[1])}.` : `Campaign ${quoted} edited: ${editedWords(edited[1])}.`;
+      if (line.rest === "running: a prospect was approved") {
+        return shown ? "A prospect was approved, so the campaign is running." : `A prospect was approved in ${quoted}, so the campaign is running.`;
+      }
+      return shown ? `${capitalised(rest)}.` : `Campaign ${quoted} ${rest}`;
+    }
+    default: {
+      const _exhaustive: never = line.lead;
+      return _exhaustive;
+    }
+  }
+}
+
 /**
  * A message from the engine as the activity log and Home show it: without underscores, and with the server
  * lines that read as log keys put in the app's words ("LinkedIn session: ok" is "Checked LinkedIn: logged in.";
  * a campaign edit names the wizard's steps, not field keys; a reached daily limit is "the daily budget … is
  * spent", as Home says it, without "today's", since the line may be from an earlier day; a campaign that starts
- * running on an approval says so as a sentence). The server's own strings stay as they are (backlog D-10).
+ * running on an approval says so as a sentence). A line about one campaign does not name it again where the row
+ * shows the campaign beside it (`campaignShown`, the activity log); elsewhere (Home) the name stays, in quotes.
+ * The server's own strings stay as they are (backlog D-10).
  */
-export function plainMessage(text: string): string {
+export function plainMessage(text: string, where: { readonly campaign?: string | undefined; readonly campaignShown?: boolean } = {}): string {
   const session = /^LinkedIn session: (\w+)$/.exec(text);
   if (session?.[1] !== undefined) return `Checked LinkedIn: ${sessionWords(session[1])}.`;
-  const edited = /^(Campaign ".*" edited): ([\w, ]+)$/.exec(text);
-  if (edited?.[1] !== undefined && edited[2] !== undefined) return `${edited[1]}: ${editedWords(edited[2])}.`;
-  const running = /^Campaign (".*") running: a prospect was approved$/.exec(text);
-  if (running?.[1] !== undefined) return `A prospect was approved in ${running[1]}, so the campaign is running.`;
+  const lead = campaignLead(text, where.campaign);
+  if (lead !== null) return campaignLine(lead, where.campaignShown === true);
   const limit = /the (daily|weekly) limit of (\d+) (.+?) is reached/.exec(text);
   if (limit !== null) {
     const [phrase, period, count, what] = limit;

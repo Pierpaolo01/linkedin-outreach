@@ -31,6 +31,7 @@ import {
   FieldError,
   focusFirstError,
   focusInView,
+  hintIdOf,
   LoadError,
   Notice,
   SECONDARY_BUTTON,
@@ -47,6 +48,11 @@ const STEP_TITLES: readonly string[] = [...STEPS.map((s) => s.title), "Review an
 
 /** A step's number circle, on the strip and in the review. Add its fill. */
 const STEP_CIRCLE = "nums flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold";
+/**
+ * The fill of a step the user has passed but not finished: Hairline Sage with a 1.5px Ink edge, drawn as an inset ring
+ * so it stays 1.5px where a border would be rounded to whole pixels, and the circle keeps its 24px.
+ */
+const UNFINISHED_CIRCLE = "bg-base-300 ring-[1.5px] ring-base-content ring-inset";
 
 /** The space between two steps on the strip (`gap-1`). */
 const STRIP_GAP = 4;
@@ -150,6 +156,9 @@ function StepStrip(props: {
           const here = index === step;
           const problem = props.problems.has(index);
           const done = !here && !problem && !props.unfinished.has(index) && index < props.furthest;
+          // Passed and still missing what Start needs: an Ink edge sets it apart from the steps not reached yet. Not amber
+          // (nothing waits on the user yet) and not red (nothing is wrong yet).
+          const passedOpen = !here && !problem && props.unfinished.has(index) && index < props.furthest;
           return (
             <li key={title} data-step={index} className="shrink-0 snap-start">
               <button
@@ -169,7 +178,9 @@ function StepStrip(props: {
                         ? "bg-neutral-content text-neutral"
                         : done
                           ? "bg-score-high text-primary"
-                          : "bg-base-300"
+                          : passedOpen
+                            ? UNFINISHED_CIRCLE
+                            : "bg-base-300"
                   }`}
                   aria-hidden="true"
                 >
@@ -178,6 +189,7 @@ function StepStrip(props: {
                 <span className="whitespace-nowrap">{title}</span>
                 {problem && <span className="sr-only">(needs attention)</span>}
                 {done && <span className="sr-only">(done)</span>}
+                {passedOpen && <span className="sr-only">(not finished)</span>}
               </button>
             </li>
           );
@@ -259,7 +271,8 @@ interface SaveQueue {
 }
 
 function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCreated: (id: number) => void }) {
-  const { refresh, timeZone } = useAppData();
+  const { home, refresh, timeZone } = useAppData();
+  const stopped = home?.safetyStop != null;
   const loaded = useLoad(() => (id === null ? Promise.resolve(null) : getCampaign(id).then((r) => r.campaign)), `wizard-${id ?? "new"}`);
   const [campaignId, setCampaignId] = useState<number | null>(id);
   const [form, setForm] = useState<CampaignForm | null>(id === null ? BLANK_FORM : null);
@@ -389,8 +402,12 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     if (startRefusals > 0 && summary !== null) focusInView(summary);
   }, [startRefusals]);
   // A refused step change: the first field the step marked takes the focus, as a refused save does in Settings.
+  // With no field marked (the request failed), the save's message above the step takes it instead.
   useEffect(() => {
-    if (stepRefusals > 0 && stepBody.current !== null) focusFirstError(stepBody.current);
+    if (stepRefusals === 0 || stepBody.current === null) return;
+    if (focusFirstError(stepBody.current)) return;
+    const failed = document.getElementById(SAVE_ERROR_ID);
+    if (failed !== null) focusInView(failed);
   }, [stepRefusals]);
 
   // Save the current step in the background once typing pauses, so nothing is lost.
@@ -522,7 +539,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         <StepStrip step={step} furthest={furthest} problems={stepsWithProblems} unfinished={stepsUnfinished} created={created} onGo={(index) => void goTo(index)} />
 
         <div className="min-w-0">
-          <ActionError message={saveError} className="mb-group" />
+          <ActionError message={saveError} className="mb-group" testId="save-error" id={SAVE_ERROR_ID} />
           <div key={step} ref={stepBody} className={stepMoved ? "animate-appear" : undefined}>
             {step === 0 && <NameStep form={form} set={set} errors={errors} onEnter={() => void goTo(1)} />}
             {step === 1 && <SourceStep form={form} set={set} errors={errors} />}
@@ -572,7 +589,11 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
               </button>
             )}
             {step === REVIEW && (
-              <p className="text-sm text-muted">Starting begins finding people. Nobody is invited before you approve them{form.autoApprove ? ", unless auto-approve is on" : ""}.</p>
+              // During a safety stop nothing runs on LinkedIn until the user resumes, so starting does not begin finding people yet.
+              <p className="text-sm text-muted" data-testid="start-note">
+                {stopped ? "Starting begins finding people once you resume." : "Starting begins finding people."} Nobody is invited before you approve
+                them{form.autoApprove ? ", unless auto-approve is on" : ""}.
+              </p>
             )}
           </div>
         </div>
@@ -622,6 +643,8 @@ function unfinishedSteps(form: CampaignForm): ReadonlySet<number> {
 const STEP_TITLE_ID = "step-title";
 /** The id of the summary of a refused Start, which takes the focus. */
 const START_ERROR_ID = "start-error";
+/** The id of a failed save's message above the step, which takes the focus when no field is marked. */
+const SAVE_ERROR_ID = "save-error";
 /** The id of the sentence by Start that names the unfinished steps. */
 const UNFINISHED_ID = "start-unfinished";
 
@@ -708,7 +731,7 @@ function SourceStep({ form, set, errors }: StepProps) {
       {form.discoverySource === "search" && (
         <div className="mt-block max-w-2xl">
           <p className="font-medium">Search addresses</p>
-          <p className="text-sm text-muted">
+          <p id={hintIdOf(`${countId}-urls`)} className="text-sm text-muted">
             Run the search on LinkedIn, then copy the address from your browser&rsquo;s address bar and paste it here. It must start with{" "}
             <span className="font-medium break-all">{SEARCH_PREFIX}</span>
           </p>
@@ -723,7 +746,7 @@ function SourceStep({ form, set, errors }: StepProps) {
                     <input
                       id={urlId}
                       aria-label={`Search address ${index + 1}`}
-                      {...errorProps(urlId, serverError)}
+                      {...errorProps(urlId, serverError, { hint: hintIdOf(`${countId}-urls`) })}
                       className={`input min-w-0 flex-1 bg-base-100 ${serverError === undefined ? "" : "input-error"}`}
                       value={url}
                       placeholder={SEARCH_PREFIX}
@@ -771,7 +794,7 @@ function SourceStep({ form, set, errors }: StepProps) {
           className={`input w-32 bg-base-100 nums ${errors["targetProspectCount"] === undefined ? "" : "input-error"}`}
           value={form.targetProspectCount}
           onChange={(event) => set("targetProspectCount", event.target.value)}
-          {...errorProps(countId, errors["targetProspectCount"])}
+          {...errorProps(countId, errors["targetProspectCount"], { hint: hintIdOf(countId) })}
         />
       </Field>
     </StepFrame>
@@ -785,7 +808,7 @@ function WhoFitsStep({ form, set, errors }: StepProps) {
       <label htmlFor={briefId} className="block font-medium">
         Who fits this campaign, and who does not
       </label>
-      <div className="mt-1 max-w-3xl text-sm text-muted">
+      <div id={hintIdOf(briefId)} className="mt-1 max-w-3xl text-sm text-muted">
         <p>Write who you want to reach: their role or whether they own the business, the industries, the places and the company size.</p>
         <p>Then write the signs of a good fit, and who to leave out.</p>
       </div>
@@ -795,7 +818,7 @@ function WhoFitsStep({ form, set, errors }: StepProps) {
         className={`textarea mt-2 w-full max-w-3xl bg-base-100 text-base ${errors["scoringBrief"] === undefined ? "" : "textarea-error"}`}
         value={form.scoringBrief}
         onChange={(event) => set("scoringBrief", event.target.value)}
-        {...errorProps(briefId, errors["scoringBrief"])}
+        {...errorProps(briefId, errors["scoringBrief"], { hint: hintIdOf(briefId) })}
       />
       <FieldError controlId={briefId} message={errors["scoringBrief"]} />
     </StepFrame>
@@ -811,7 +834,7 @@ function ApprovalStep({ form, set, errors }: StepProps) {
       className={`input w-24 bg-base-100 nums ${errors[key] === undefined ? "" : "input-error"}`}
       value={form[key]}
       onChange={(event) => set(key, event.target.value)}
-      {...errorProps(id, errors[key])}
+      {...errorProps(id, errors[key], { hint: hintIdOf(id) })}
     />
   );
   return (
@@ -884,6 +907,8 @@ function Review({
       .map(([path, message]) => {
         const [key = "", index] = path.split(".");
         const label = key === "sourceUrls" && index !== undefined ? "Search address" : (Object.entries(FIELD_LABEL).find(([name]) => name === key)?.[1] ?? key);
+        // Inside its own step's block a field named like the step ("Who fits" under Who fits) does not say the name again.
+        if (index === undefined && label === STEPS[step]?.title) return { path, text: capitalised(message) };
         return { path, text: `${label}${index === undefined ? "" : ` ${Number(index) + 1}`}: ${message}` };
       });
   const text = (value: string, empty: string) => (value.trim() === "" ? <span className="text-muted">{empty}</span> : <span className="whitespace-pre-line">{value}</span>);
@@ -954,7 +979,7 @@ function Review({
                   ) : unfinished.has(step) ? (
                     // Not done yet: the step's own number in its circle, as on the strip. Not a ring (a ring is a campaign
                     // that is not working), not amber and not red, since nothing is wrong yet.
-                    <span className={`${STEP_CIRCLE} bg-base-300`} aria-hidden="true" data-testid="review-mark">
+                    <span className={`${STEP_CIRCLE} ${UNFINISHED_CIRCLE}`} aria-hidden="true" data-testid="review-mark">
                       {step + 1}
                     </span>
                   ) : (

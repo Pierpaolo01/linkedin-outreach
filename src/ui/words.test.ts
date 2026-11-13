@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { budgetNote, campaignsSummary, capitalised, plainMessage, POLICY_WORDS } from "./words";
+import { budgetNote, campaignsSummary, capitalised, discoveryWaitSentence, nextActionWhen, plainMessage, POLICY_WORDS } from "./words";
 
 describe("plainMessage", () => {
   it("puts the session lines in the app's words", () => {
@@ -46,6 +46,87 @@ describe("plainMessage", () => {
     // The other campaign lines already read as sentences and stay as they are.
     expect(plainMessage('Campaign "Dentists" paused (was awaiting approval)')).toBe('Campaign "Dentists" paused (was awaiting approval)');
     expect(plainMessage('Campaign "Dentists" created as a draft')).toBe('Campaign "Dentists" created as a draft');
+  });
+});
+
+describe("plainMessage beside a campaign column", () => {
+  // The activity log prints each line's campaign in its own column, so the line does not name it again.
+  it("drops the campaign's name when the row already shows it", () => {
+    const shown = (text: string, campaign: string) => plainMessage(text, { campaign, campaignShown: true });
+    expect(shown('Campaign "Strip shot campaign" edited: acceptToMessageMinHours', "Strip shot campaign")).toBe("Edited: Timings.");
+    expect(shown("Campaign Restaurants, Naples paused by you", "Restaurants, Naples")).toBe("Paused by you.");
+    expect(shown('Campaign "Dentists" created as a draft', "Dentists")).toBe("Created as a draft.");
+    expect(shown('Campaign "Dentists" paused (was awaiting approval)', "Dentists")).toBe("Paused (was awaiting approval).");
+    expect(shown('Campaign "Local trades, Milan" running: a prospect was approved', "Local trades, Milan")).toBe(
+      "A prospect was approved, so the campaign is running.",
+    );
+    expect(shown("Discovery for Architects, Turin: 3 new prospects from 30 cards (recommendations)", "Architects, Turin")).toBe(
+      "Discovery: 3 new prospects from 30 cards (recommendations)",
+    );
+    expect(shown("Architects, Turin completed: nobody matched the campaign; there is nothing more to find", "Architects, Turin")).toBe(
+      "Completed: nobody matched the campaign; there is nothing more to find",
+    );
+    // A line that does not lead with the campaign keeps its words.
+    expect(shown("Sent the first message to Test Person 16", "Hotel owners, Rome")).toBe("Sent the first message to Test Person 16");
+  });
+
+  // Where the row shows no campaign (Home), the name stays, always in quotes.
+  it("keeps the name in quotes where the row shows no campaign", () => {
+    const alone = (text: string, campaign: string | undefined) => plainMessage(text, { campaign, campaignShown: false });
+    expect(alone("Campaign Restaurants, Naples paused by you", "Restaurants, Naples")).toBe('Campaign "Restaurants, Naples" paused by you');
+    expect(alone('Campaign "Dentists" edited: name', "Dentists")).toBe('Campaign "Dentists" edited: Name.');
+    expect(alone('Campaign "Dentists" edited: name', undefined)).toBe('Campaign "Dentists" edited: Name.');
+    expect(alone("Discovery for Architects, Turin: 3 new prospects from 30 cards", "Architects, Turin")).toBe(
+      'Discovery for "Architects, Turin": 3 new prospects from 30 cards',
+    );
+    expect(alone("Architects, Turin completed: nobody matched", "Architects, Turin")).toBe('"Architects, Turin" completed: nobody matched');
+  });
+});
+
+describe("discoveryWaitSentence", () => {
+  const until = "2026-11-30T23:00:00.000Z";
+  const say = (wait: Parameters<typeof discoveryWaitSentence>[0]["wait"], safetyStop: boolean) => discoveryWaitSentence({ wait, timeZone: "Europe/Rome", safetyStop });
+
+  it("says when finding people resumes", () => {
+    expect(say({ reason: "search_limit", until, message: "" }, false)).toBe(
+      "Finding people is waiting: LinkedIn's monthly search limit is reached. It resumes on 1 December 2026.",
+    );
+    expect(say({ reason: "no_new_people", until: null, message: "" }, false)).toBe(
+      "Finding people is waiting: LinkedIn's recommendations show nobody new today. The app looks again tomorrow.",
+    );
+  });
+
+  // During a safety stop nothing resumes until the user does: only what stays true either way.
+  it("promises no time and no work during a safety stop", () => {
+    const lines = [
+      say({ reason: "search_limit", until, message: "" }, true),
+      say({ reason: "no_new_people", until: null, message: "" }, true),
+      say({ reason: "unreadable", until, message: "" }, true),
+      say({ reason: "exhausted", until: null, message: "" }, true),
+    ];
+    expect(lines).toEqual([
+      "LinkedIn's monthly search limit is reached. It resets on 1 December 2026.",
+      "LinkedIn's recommendations showed nobody new today.",
+      "The app could not read LinkedIn's page; the activity log has the details.",
+      "Finding people has stopped: there is nobody more to find from this campaign's sources.",
+    ]);
+    for (const line of lines) expect(line).not.toMatch(/resumes|again|tomorrow|waiting/);
+  });
+});
+
+describe("nextActionWhen", () => {
+  const now = new Date("2026-11-12T09:00:00Z");
+  const base = { timeZone: "Europe/Rome", now } as const;
+
+  it("says when the next step is planned, or that it is due", () => {
+    expect(nextActionWhen({ ...base, at: "2026-11-12T12:30:00Z", safetyStop: false })).toBe("today at 13:30");
+    expect(nextActionWhen({ ...base, at: "2026-11-12T08:00:00Z", safetyStop: false })).toBe("due now");
+  });
+
+  // During a safety stop no step is sent at its time: it waits for the user's resume.
+  it("says after you resume during a safety stop, never a time", () => {
+    expect(nextActionWhen({ ...base, at: "2026-11-12T12:30:00Z", safetyStop: true })).toBe("after you resume");
+    expect(nextActionWhen({ ...base, at: "2026-11-12T08:00:00Z", safetyStop: true })).toBe("after you resume");
   });
 });
 

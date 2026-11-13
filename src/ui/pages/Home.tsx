@@ -296,9 +296,13 @@ function Usage({ home }: { readonly home: HomeData }) {
                   <span className="text-muted"> of {budget.limit}</span>
                 </span>
               </div>
-              {/* A spent budget is quiet (not a problem): its meter is the muted tone, lighter than the green bars and never amber. */}
+              {/*
+               * A spent budget is quiet (not a problem): its meter is the control tone, lighter than the green bars and the
+               * muted words, never amber. Its track is Desk Paper, so a meter spent below its number (the week's invite
+               * budget, LinkedIn's own limit) still meets 3:1 against the track; the control-tone edge meets 3:1 on the card.
+               */}
               <progress
-                className={`progress mt-1.5 h-2 border border-control bg-base-300 ${full ? "text-muted" : "progress-primary"}`}
+                className={`progress mt-1.5 h-2 border border-control ${full ? "bg-base-100 text-control" : "bg-base-300 progress-primary"}`}
                 value={Math.min(budget.used, budget.limit)}
                 max={Math.max(budget.limit, 1)}
                 aria-label={`${BUDGET_LABEL[kind]}: ${budget.used} of ${budget.limit} used today`}
@@ -321,6 +325,8 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
   const loaded = useLoad(() => listActivity({ pageSize: 6 }), key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const now = new Date();
   const items = loaded.data?.items ?? [];
+  // Home's lines show no campaign beside them, so a line keeps its campaign's name (in quotes).
+  const names = new Map(home.campaigns.map((c) => [c.id, c.name]));
   return (
     <section aria-labelledby="home-activity">
       <SectionHead id="home-activity" title="What the app did">
@@ -343,7 +349,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
                 {formatShort(item.at, timeZone, now)}
                 <LevelMark level={item.level} />
               </span>
-              <ActivityMessage level={item.level} message={item.message} />
+              <ActivityMessage level={item.level} message={item.message} campaign={item.campaignId === null ? undefined : names.get(item.campaignId)} />
             </li>
           ))}
         </ol>

@@ -129,7 +129,7 @@ export function Activity() {
                     {formatStamp(item.at, timeZone)}
                     <LevelMark level={item.level} />
                   </span>
-                  <ActivityMessage level={item.level} message={item.message} />
+                  <ActivityMessage level={item.level} message={item.message} campaign={campaign} campaignShown={campaign !== undefined} />
                   <span className="truncate text-muted sm:text-right">{campaign ?? ""}</span>
                 </li>
               );

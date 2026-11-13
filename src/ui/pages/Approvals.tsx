@@ -352,7 +352,10 @@ export function Approvals() {
           {minScore > 0 ? ` with a score of ${minScore} or more` : ""}
           {campaignName === undefined ? "" : ` in ${campaignName}`} will be invited.
         </p>
-        <p className="text-base-content">The app sends the invites itself, within your working window and budgets.</p>
+        {/* During a safety stop nothing is sent until the user resumes, so the dialog does not say it happens on its own. */}
+        <p className="text-base-content" data-testid="approve-all-when">
+          The app sends the invites itself{home?.safetyStop != null ? " once you resume" : ""}, within your working window and budgets.
+        </p>
         {arrived > 0 && (
           <p role="status" className="text-sm" data-testid="new-arrivals">
             {arrived === 1 ? "1 new person is" : `${arrived} new people are`} waiting —{" "}

@@ -4,12 +4,12 @@ import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { ActionError, Announce, DEF_LIST, DEF_TERM, EmptyState, FilledText, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
+import { ActionError, Announce, DEF_LIST, DEF_TERM, EmptyState, FilledText, HALTED_PAUSE, haltedBy, LoadError, Notice, Pager, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
 import { IconChevron, IconExternal } from "../icons";
 import { tabTitle } from "../format";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { discoveryWaitSentence, formatNext, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords } from "../words";
+import { discoveryWaitSentence, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextActionWhen, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const PAGE_SIZE = 25;
@@ -90,7 +90,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <StatusLine status={campaign.status} safetyStop={stopped} className="gap-2 font-medium" testId="campaign-status" />
         {(PAUSABLE.has(campaign.status) || campaign.status === "paused") && (
-          <button type="button" className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-sm`} disabled={busy} aria-busy={busy} onClick={toggle}>
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm ${halted ? HALTED_PAUSE : ""}`} disabled={busy} aria-busy={busy} onClick={toggle}>
             {busy && <span className="loading loading-spinner loading-xs" />}
             {campaign.status === "paused" ? "Resume" : "Pause"}
           </button>
@@ -105,7 +105,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
           {campaign.autoApprove ? ". Auto-approve is on" : ""}.
         </p>
       </div>
-      {wait !== null && <p className="mt-2 text-sm text-base-content">{discoveryWaitSentence(wait, timeZone)}</p>}
+      {wait !== null && <p className="mt-2 text-sm text-base-content">{discoveryWaitSentence({ wait, timeZone, safetyStop: stopped })}</p>}
       <ActionError message={error} className="mt-group" />
 
       <ol className="mt-group grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
@@ -117,7 +117,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
         ))}
       </ol>
 
-      <People campaign={campaign} />
+      <People campaign={campaign} safetyStop={stopped} />
       <MessagesAndTimings campaign={campaign} onSaved={onChanged} />
     </>
   );
@@ -125,7 +125,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
 
 // ------------------------------------------------------------ people
 
-function People({ campaign }: { readonly campaign: Campaign }) {
+function People({ campaign, safetyStop }: { readonly campaign: Campaign; readonly safetyStop: boolean }) {
   const { timeZone } = useAppData();
   const [stage, setStage] = useState<Stage | null>(null);
   const [page, setPage] = useState(1);
@@ -212,6 +212,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                       onToggle={() => setOpen((current) => (current === p.id ? null : p.id))}
                       timeZone={timeZone}
                       now={now}
+                      safetyStop={safetyStop}
                     />
                     {open === p.id && (
                       <tr role="row" className="@max-people:block">
@@ -249,6 +250,8 @@ function ProspectRow(props: {
   readonly onToggle: () => void;
   readonly timeZone: string;
   readonly now: Date;
+  /** During a safety stop a planned step waits for the user's resume, so it shows no time. */
+  readonly safetyStop: boolean;
 }) {
   const { prospect: p, campaign, timeZone, now } = props;
   const next = nextStepWords(p.stage, campaign);
@@ -325,7 +328,9 @@ function ProspectRow(props: {
               Next:
             </span>
             {next !== undefined && <p>{next}</p>}
-            <p className="whitespace-nowrap text-muted">{formatNext(p.nextActionAt, timeZone, now)}</p>
+            <p className="whitespace-nowrap text-muted" data-testid="next-action-when">
+              {nextActionWhen({ at: p.nextActionAt, timeZone, now, safetyStop: props.safetyStop })}
+            </p>
           </div>
         )}
       </td>
@@ -421,8 +426,14 @@ function ProspectDetail(props: { readonly prospect: Prospect; readonly campaign:
   ] as const;
 
   return (
-    <div className="grid gap-x-section gap-y-block lg:grid-cols-[minmax(0,1fr)_17rem]" data-testid="prospect-detail">
-      <div className="min-w-0">
+    // From 1024px the texts and Do not contact share the left column and History the right, top-aligned, so neither column
+    // leaves a block of empty space; the second row takes what History needs beyond the texts. On a phone: texts, History,
+    // then Do not contact, in the order of the page.
+    <div
+      className="grid gap-x-section gap-y-block lg:grid-cols-[minmax(0,1fr)_17rem] lg:grid-rows-[auto_1fr]"
+      data-testid="prospect-detail"
+    >
+      <div className="min-w-0 lg:col-start-1 lg:row-start-1">
         <h3 className="font-semibold">Texts as sent</h3>
         <dl className="mt-2 flex flex-col gap-3">
           {texts.map(([label, text, template, none]) => (
@@ -444,29 +455,27 @@ function ProspectDetail(props: { readonly prospect: Prospect; readonly campaign:
           </Notice>
         )}
       </div>
-      <div className="flex flex-col gap-block">
-        <div>
-          <h3 className="font-semibold">History</h3>
-          <ol className="mt-2 flex flex-col gap-1.5">
-            {history(p).map((e) => (
-              <li key={e.label} className="grid grid-cols-[6.5rem_1fr] gap-2">
-                <span className="nums text-muted">{formatStamp(e.at, timeZone)}</span>
-                <span>{e.label}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div className="rounded-box border border-base-300 bg-base-100 px-3 py-3">
-          <SwitchRow
-            id={switchId}
-            label="Do not contact"
-            checked={doNotContact}
-            disabled={busy}
-            onChange={change}
-            hint="The app never invites or messages this person, in any campaign."
-          />
-          <ActionError message={error} className="mt-2" />
-        </div>
+      <div className="lg:col-start-2 lg:row-span-2 lg:row-start-1">
+        <h3 className="font-semibold">History</h3>
+        <ol className="mt-2 flex flex-col gap-1.5">
+          {history(p).map((e) => (
+            <li key={e.label} className="grid grid-cols-[6.5rem_1fr] gap-2">
+              <span className="nums text-muted">{formatStamp(e.at, timeZone)}</span>
+              <span>{e.label}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+      <div className="self-start rounded-box border border-base-300 bg-base-100 px-3 py-3 lg:col-start-1 lg:row-start-2 lg:max-w-xl lg:justify-self-start" data-testid="dnc-card">
+        <SwitchRow
+          id={switchId}
+          label="Do not contact"
+          checked={doNotContact}
+          disabled={busy}
+          onChange={change}
+          hint="The app never invites or messages this person, in any campaign."
+        />
+        <ActionError message={error} className="mt-2" />
       </div>
     </div>
   );

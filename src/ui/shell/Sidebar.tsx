@@ -52,9 +52,23 @@ export function Sidebar(props: { readonly path: string; readonly recheck: Rechec
                   const to = `/campaigns/${c.id}`;
                   return (
                     <li key={c.id}>
-                      <Link to={to} className={`text-sm ${current === to ? "menu-active" : ""}`} aria-current={current === to ? "page" : undefined} onClick={onNavigate}>
-                        <StatusDot status={c.status} safetyStop={stopped} />
-                        <span className="truncate">{c.name}</span>
+                      {/*
+                       * A long name takes two lines, then ends in an ellipsis; the full name shows on hover. The dot sits
+                       * in a box one line high, so it stays on the name's first line.
+                       */}
+                      <Link
+                        to={to}
+                        title={c.name}
+                        className={`items-start text-sm ${current === to ? "menu-active" : ""}`}
+                        aria-current={current === to ? "page" : undefined}
+                        onClick={onNavigate}
+                      >
+                        <span className="flex h-lh shrink-0 items-center" aria-hidden="true">
+                          <StatusDot status={c.status} safetyStop={stopped} />
+                        </span>
+                        <span className="line-clamp-2 min-w-0 whitespace-normal wrap-break-word" data-testid="sidebar-campaign-name">
+                          {c.name}
+                        </span>
                         <span className="sr-only">, {statusLabel(c.status, stopped)}</span>
                       </Link>
                     </li>

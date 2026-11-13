@@ -3,7 +3,7 @@ import { backUpNow, getOps, prospectsCsvUrl, testAi, toApiError, updateSettings 
 import { AI_PROVIDERS, type AiProvider, type AiTest, type BackupResult, type Ops, type Settings as SettingsData, type SettingsPatch } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatWhen } from "../format";
-import { ActionError, Announce, describedByError, Disclosure, errorProps, FieldError, focusFirstError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
+import { ActionError, Announce, describedByError, Disclosure, errorProps, FieldError, focusFirstError, hintIdOf, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
 import { sessionView } from "../shell/sessionView";
 import { useRecheck } from "../shell/useRecheck";
 import { useLoad, type Loaded } from "../useLoad";
@@ -37,6 +37,18 @@ interface Form {
 }
 
 const COOLDOWN = "inviteLimitCooldownDays";
+/** The settings whose number boxes have a line on what they are for (a budget's row, a pace group's lead): it describes them. */
+const HINTED: ReadonlySet<string> = new Set([
+  "limits.invitesPerDay",
+  "limits.invitesPerWeek",
+  "limits.messagesPerDay",
+  "limits.profileViewsPerDay",
+  "limits.discoveryPagesPerDay",
+  "limits.withdrawalsPerDay",
+  COOLDOWN,
+  "actionGapSeconds",
+  "breaks",
+]);
 
 function toForm(s: SettingsData): Form {
   const numbers: Record<string, string> = { [COOLDOWN]: String(s.inviteLimitCooldownDays) };
@@ -216,13 +228,16 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
   /** The first message for any of these paths (a range's check arrives on the group). */
   const errorOf = (...paths: string[]) => paths.map((p) => errors[p]).find((m) => m !== undefined);
   const groupError = (group: string) => errorOf(...(GROUPS[group] ?? [group]));
-  /** A number box: marked invalid by its own error, described by its group's error line. */
-  const num = (path: string, label: string, width = "w-20") => (
+  /**
+   * A number box: marked invalid by its own error, described by its group's error line and then by the line on what it
+   * is for: its own (a budget's row) or its group's (`hintOf`, the path whose hint it shares).
+   */
+  const num = (path: string, label: string, { width = "w-20", hintOf = path }: { readonly width?: string; readonly hintOf?: string } = {}) => (
     <input
       id={fieldId(path)}
       aria-label={label}
       aria-invalid={errors[path] !== undefined || undefined}
-      {...describedByError(fieldId(groupOf(path)), groupError(groupOf(path)))}
+      {...describedByError(fieldId(groupOf(path)), groupError(groupOf(path)), { hint: HINTED.has(hintOf) ? hintIdOf(fieldId(hintOf)) : undefined })}
       inputMode="numeric"
       className={`input input-sm ${width} bg-base-100 nums ${errors[path] === undefined ? "" : "input-error"}`}
       value={form.numbers[path] ?? ""}
@@ -352,6 +367,12 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 hint="Old invites nobody accepted, withdrawn in a day."
                 error={errorOf("limits.withdrawalsPerDay")}
               />
+            </div>
+            {/*
+             * Not an allowance per day or week but a cool-down after LinkedIn's own limit: set apart from the budgets by a
+             * hairline with twice the rows' space on each side, inside the same card.
+             */}
+            <div className="mt-block border-t border-base-300 pt-block" data-testid="cooldown-row">
               <LimitRow
                 path={COOLDOWN}
                 control={num(COOLDOWN, "Days invites stay off")}
@@ -386,32 +407,36 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
               </div>
               <div>
                 <p className="font-medium">Gap between actions</p>
-                <p className="text-sm text-muted">A random wait between two actions on LinkedIn.</p>
+                <p id={hintIdOf(fieldId("actionGapSeconds"))} className="text-sm text-muted">
+                  A random wait between two actions on LinkedIn.
+                </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                    Between {num("actionGapSeconds.min", "Shortest gap in seconds")}
+                    Between {num("actionGapSeconds.min", "Shortest gap in seconds", { hintOf: "actionGapSeconds" })}
                   </span>
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                    and {num("actionGapSeconds.max", "Longest gap in seconds")} seconds.
+                    and {num("actionGapSeconds.max", "Longest gap in seconds", { hintOf: "actionGapSeconds" })} seconds.
                   </span>
                 </div>
                 <FieldError controlId={fieldId("actionGapSeconds")} message={groupError("actionGapSeconds")} />
               </div>
               <div>
                 <p className="font-medium">Breaks</p>
-                <p className="text-sm text-muted">A longer rest now and then, as a person would take.</p>
+                <p id={hintIdOf(fieldId("breaks"))} className="text-sm text-muted">
+                  A longer rest now and then, as a person would take.
+                </p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm">
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                    A break of {num("breaks.minutesMin", "Shortest break in minutes")}
+                    A break of {num("breaks.minutesMin", "Shortest break in minutes", { hintOf: "breaks" })}
                   </span>
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                    to {num("breaks.minutesMax", "Longest break in minutes")} minutes
+                    to {num("breaks.minutesMax", "Longest break in minutes", { hintOf: "breaks" })} minutes
                   </span>
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                    every {num("breaks.everyActionsMin", "Fewest actions between breaks")}
+                    every {num("breaks.everyActionsMin", "Fewest actions between breaks", { hintOf: "breaks" })}
                   </span>
                   <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                    to {num("breaks.everyActionsMax", "Most actions between breaks")} actions.
+                    to {num("breaks.everyActionsMax", "Most actions between breaks", { hintOf: "breaks" })} actions.
                   </span>
                 </div>
                 <FieldError controlId={fieldId("breaks")} message={groupError("breaks")} />
@@ -440,12 +465,14 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 <label htmlFor={ids.provider} className="block font-medium">
                   Which AI
                 </label>
-                <p className="text-sm text-muted">Claude Code is the claude command on this Mac.</p>
+                <p id={hintIdOf(ids.provider)} className="text-sm text-muted">
+                  Claude Code is the claude command on this Mac.
+                </p>
                 <select
                   id={ids.provider}
-                  className="select mt-1.5 w-full max-w-sm bg-base-100"
+                  className={`select mt-1.5 w-full max-w-sm bg-base-100 ${errorOf("ai", "ai.provider") === undefined ? "" : "select-error"}`}
                   value={form.provider}
-                  {...errorProps(ids.provider, errorOf("ai", "ai.provider"))}
+                  {...errorProps(ids.provider, errorOf("ai", "ai.provider"), { hint: hintIdOf(ids.provider) })}
                   onChange={(event) => {
                     const provider = AI_PROVIDERS.find((p) => p === event.target.value);
                     if (provider !== undefined) change({ provider }, "ai");
@@ -463,13 +490,15 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 <label htmlFor={ids.model} className="block font-medium">
                   Model
                 </label>
-                <p className="text-sm text-muted">Leave it empty to use the provider&rsquo;s default.</p>
+                <p id={hintIdOf(ids.model)} className="text-sm text-muted">
+                  Leave it empty to use the provider&rsquo;s default.
+                </p>
                 <input
                   id={ids.model}
-                  className="input mt-1.5 w-full max-w-sm bg-base-100"
+                  className={`input mt-1.5 w-full max-w-sm bg-base-100 ${errorOf("ai.model") === undefined ? "" : "input-error"}`}
                   value={form.model}
                   onChange={(event) => change({ model: event.target.value }, "ai")}
-                  {...errorProps(ids.model, errorOf("ai.model"))}
+                  {...errorProps(ids.model, errorOf("ai.model"), { hint: hintIdOf(ids.model) })}
                 />
                 <FieldError controlId={ids.model} message={errorOf("ai.model")} />
               </div>
@@ -542,7 +571,9 @@ function LimitRow({ path, control, label, hint, error }: { readonly path: string
     <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-3 first:pt-0 last:pb-0">
       <div>
         <p className="font-medium">{label}</p>
-        <p className="text-sm text-muted">{hint}</p>
+        <p id={hintIdOf(fieldId(path))} className="text-sm text-muted">
+          {hint}
+        </p>
       </div>
       {control}
       {error !== undefined && (

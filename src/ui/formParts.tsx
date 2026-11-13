@@ -33,14 +33,32 @@ export const ON_RED_BUTTON = "btn border-error-content/40 bg-error-content text-
 /** The id of the error line under the control `controlId`. */
 const errorIdOf = (controlId: string) => `${controlId}-error`;
 
-/** What a control carries when it has an error: marked invalid, and described by its error line (`FieldError` with the same id). */
-export function errorProps(controlId: string, message: string | undefined) {
-  return message === undefined ? {} : { "aria-invalid": true, "aria-describedby": errorIdOf(controlId) };
+/** The id of the line that says what the control `controlId` (or a group of controls) is for: give it to that line. */
+export const hintIdOf = (controlId: string) => `${controlId}-hint`;
+
+/** What describes a control: its error line first, while it shows, then the line on what it is for. */
+function describedBy(errorId: string | undefined, hintId: string | undefined): { readonly "aria-describedby"?: string } {
+  const ids = [errorId, hintId].filter((id) => id !== undefined);
+  return ids.length === 0 ? {} : { "aria-describedby": ids.join(" ") };
 }
 
-/** For one control of a group whose error line is `groupId`'s (a range, a time pair): points at that line while it shows. */
-export function describedByError(groupId: string, message: string | undefined) {
-  return message === undefined ? {} : { "aria-describedby": errorIdOf(groupId) };
+/**
+ * What a control carries: marked invalid when it has an error, and described by its error line (`FieldError` with the
+ * same id) and then by its hint (`hint`, the id of the line on what it is for, usually `hintIdOf(controlId)`).
+ */
+export function errorProps(controlId: string, message: string | undefined, options: { readonly hint?: string | undefined } = {}) {
+  return {
+    ...(message === undefined ? {} : { "aria-invalid": true as const }),
+    ...describedBy(message === undefined ? undefined : errorIdOf(controlId), options.hint),
+  };
+}
+
+/**
+ * For one control of a group whose error line is `groupId`'s (a range, a time pair): points at that line while it
+ * shows, then at the line on what the control is for (`hint`), if it has one.
+ */
+export function describedByError(groupId: string, message: string | undefined, options: { readonly hint?: string | undefined } = {}) {
+  return describedBy(message === undefined ? undefined : errorIdOf(groupId), options.hint);
 }
 
 /** The server's (or the form's) message for one field, under it. Pass the control's id so the control can point at it. */
@@ -115,8 +133,16 @@ export function Notice(props: { readonly tone: keyof typeof NOTICE_TONE; readonl
  * A safety stop's line already leads with "Safety stop:", so it takes no "Error:" before it.
  * No stripe and no amber: amber means "waits for you", and a solid red is the safety stop.
  */
-export function ActivityMessage({ level, message }: { readonly level: EventLevel; readonly message: string }) {
-  const text = plainMessage(message);
+export function ActivityMessage(props: {
+  readonly level: EventLevel;
+  readonly message: string;
+  /** The name of the line's campaign, when known. */
+  readonly campaign?: string | undefined;
+  /** The row shows the campaign beside the message (the activity log), so the message does not name it again. */
+  readonly campaignShown?: boolean;
+}) {
+  const { level } = props;
+  const text = plainMessage(props.message, { campaign: props.campaign, campaignShown: props.campaignShown === true });
   return (
     <span className={level === "error" ? "text-error" : ""}>
       {level === "warning" && <span className="mr-1.5 font-semibold">Warning:</span>}
@@ -317,22 +343,24 @@ export function focusInView(element: HTMLElement) {
 /**
  * After a refused save: moves the focus to the first control `container` marked, in view (`focusInView`). Found from
  * the first error line with an id: the control that points at it (`aria-describedby`), or the first control of a group
- * (a fieldset) that does.
+ * (a fieldset) that does. False when nothing is marked, so the caller can bring its own message into view instead.
  */
-export function focusFirstError(container: HTMLElement) {
+export function focusFirstError(container: HTMLElement): boolean {
   const line = container.querySelector<HTMLElement>('[data-testid="field-error"][id]');
-  if (line === null) return;
+  if (line === null) return false;
   const owner = container.querySelector<HTMLElement>(`[aria-describedby~="${CSS.escape(line.id)}"]`);
   const control = owner?.matches("input, select, textarea, button") === true ? owner : owner?.querySelector<HTMLElement>("input, select, textarea, button");
-  if (control === null || control === undefined) return;
+  if (control === null || control === undefined) return false;
   focusInView(control);
+  return true;
 }
 
 // ------------------------------------------------------------ controls
 
 /**
  * A labelled field: the label, an optional line on what it is for, the control, its error. The control's id is
- * `htmlFor`; give it `errorProps(htmlFor, error)` so it is marked invalid and points at its error line.
+ * `htmlFor`; give it `errorProps(htmlFor, error, { hint: hintIdOf(htmlFor) })` (without `hint` when there is none) so it
+ * is marked invalid and is described by its error line and its hint.
  */
 export function Field(props: {
   readonly label: ReactNode;
@@ -347,7 +375,11 @@ export function Field(props: {
       <label htmlFor={props.htmlFor} className="block font-medium">
         {props.label}
       </label>
-      {props.hint !== undefined && <p className="text-sm text-muted">{props.hint}</p>}
+      {props.hint !== undefined && (
+        <p id={hintIdOf(props.htmlFor)} className="text-sm text-muted">
+          {props.hint}
+        </p>
+      )}
       <div className="mt-1.5">{props.children}</div>
       <FieldError controlId={props.htmlFor} message={props.error} />
     </div>
@@ -374,17 +406,21 @@ export function SwitchRow(props: {
         id={props.id}
         type="checkbox"
         role="switch"
-        className="toggle toggle-primary mt-0.5 shrink-0"
+        className={`toggle mt-0.5 shrink-0 ${props.error === undefined ? "toggle-primary" : "toggle-error"}`}
         checked={props.checked}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.checked)}
-        {...errorProps(props.id, props.error)}
+        {...errorProps(props.id, props.error, { hint: props.hint === undefined ? undefined : hintIdOf(props.id) })}
       />
       <div>
         <label htmlFor={props.id} className="font-medium max-lg:after:absolute max-lg:after:inset-0 max-lg:after:cursor-pointer">
           {props.label}
         </label>
-        {props.hint !== undefined && <div className="text-sm text-muted">{props.hint}</div>}
+        {props.hint !== undefined && (
+          <div id={hintIdOf(props.id)} className="text-sm text-muted">
+            {props.hint}
+          </div>
+        )}
       </div>
     </div>
   );

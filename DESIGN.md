@@ -234,14 +234,14 @@ A green-grey neutral family with one deep green for action, one amber for waitin
 | Campaign draft, paused, completed, archived; session not checked | Dark Moss | dot + words |
 | Campaign stopped by a safety stop; session checkpoint or restricted | Stop Red | dot + words |
 | Budget with room | Desk Green | meter fill |
-| Budget spent ("Budget spent, resumes …"; during a safety stop "Budget spent; it resets …") | Muted (`--color-muted`, #5b625d) | full meter + muted sentence |
+| Budget spent ("Budget spent, resumes …"; during a safety stop "Budget spent; it resets …") | Control (`--color-control`, #818683) | full meter + muted sentence |
 | Score 7 to 10 / 5 to under 7 / under 5 or not scored | Score Mint / Score Sage / Desk Paper with a Hairline Sage edge | square chip with the number |
 | Safety stop | Stop Red | full-width banner + red session card |
 
 ### Named Rules
-**The One Alarm Rule.** A solid Stop Red bar or panel means LinkedIn needs the user: the safety-stop banner, the "LinkedIn needs you" banner, and the session card during a stop. A spent budget is a muted meter and a pause is Dark Moss, so neither can be taken for a stop.
+**The One Alarm Rule.** A solid Stop Red bar or panel means LinkedIn needs the user: the safety-stop banner, the "LinkedIn needs you" banner, and the session card during a stop. A spent budget is a control-tone meter and a pause is Dark Moss, so neither can be taken for a stop.
 
-**The Amber Waits Rule.** Amber marks what waits for the user (a count to approve or review, a campaign waiting for approval, a notice about a held person). A spent budget is not amber: it is not a problem and waits on nobody, so its meter is the muted tone and its words carry the state. Amber is never the colour of a button.
+**The Amber Waits Rule.** Amber marks what waits for the user (a count to approve or review, a campaign waiting for approval, a notice about a held person). A spent budget is not amber: it is not a problem and waits on nobody, so its meter is the control tone and its words carry the state. Amber is never the colour of a button.
 
 **The Dot And Words Rule.** A status dot always sits beside its label ("Running", "Paused", "Stopped by safety stop"). No status is shown by colour alone.
 
@@ -260,7 +260,7 @@ A green-grey neutral family with one deep green for action, one amber for waitin
 - **Figure** (600, 1.5rem, tabular): the funnel counts on a campaign's page and the percentages in Stats. Count tiles use 1.25rem and large score chips 1.125rem.
 - **Body** (400, 1rem, 1.5): sentences, field labels (at 500), lead paragraphs (Ink at 75%, held to about 36 to 42rem wide), text inside message boxes.
 - **Body small** (400, 0.875rem): tables, secondary lines and hints (Ink at 65%), the activity log, the sidebar footer, button text (at 600).
-- **Navigation** (400, 0.95rem): sidebar items; a campaign's name in a table uses the same size at 600.
+- **Navigation** (400, 0.95rem): sidebar items; a campaign's name in a table uses the same size at 600. A campaign's name in the sidebar (body-small) takes up to two lines, then an ellipsis, with the full name on hover; its status dot stays on the first line.
 - **Label** (400, 0.75rem): the small caption over a quoted text ("Invite note", "First message, after they accept") and the number in a wizard step circle (at 600).
 
 Subheadings inside a card or an expanded row ("Texts as sent", "History", "Preview") are body size at 600.
@@ -329,7 +329,7 @@ Built on daisyUI's button, mostly at the small size (2rem high, 0.875rem, 600); 
 - **Key cap:** daisyUI's extra-small `kbd` for A, R and the arrow keys.
 
 ### Cards / Containers
-- **Card:** 8px radius, 1px Hairline Sage border, Desk Paper, no shadow. Padding 16px, or 20px in Settings sections and empty states. Rows inside are divided by hairlines.
+- **Card:** 8px radius, 1px Hairline Sage border, Desk Paper, no shadow. Padding 16px, or 20px in Settings sections and empty states. Rows inside are divided by hairlines. A row of another kind inside the same card (in Budgets, "Days invites stay off", a cool-down after LinkedIn's own limit, not an allowance) stands under a hairline with 24px on each side, twice the rows' spacing, with no new card or heading.
 - **Panel:** 8px radius, Sidebar Sage, no border. Holds controls or a summary: filter toolbars (12px padding), "Today's usage" (16px), the variables panel in the wizard.
 - **Funnel strip:** one bordered box split by hairlines into six cells (three across on a phone), each a figure over a small label.
 - **Empty state:** a card with one sentence at 500 and one line at 65% saying what will appear there, sometimes with one button.
@@ -340,19 +340,19 @@ Built on daisyUI's button, mostly at the small size (2rem high, 0.875rem, 600); 
 ### Tables and lists
 - **Table:** daisyUI's small table inside a card that scrolls sideways by itself. Header cells are body-small at 500, Ink at 65%; number columns are right-aligned and tabular. The first cell holds a name at 600 with its status line under it.
 - **Approval queue:** a grid with table roles. Each row: score chip, the person (name at 600, headline, place and campaign at 65%, profile link), why the AI picked them (the reason, then industry and size evidence at 65%), what they will receive (quoted texts under small captions, the follow-up folded away), and Approve / Reject. A row that has focus is tinted Sidebar Sage at 60%.
-- **Expandable row:** in a campaign's people table, clicking a name opens a full-width cell tinted Sidebar Sage at 60% with the texts as sent, the history and the "Do not contact" switch.
-- **Activity line:** time (tabular, faded), sentence, campaign at the right. Warnings and errors start with "Warning:" or "Error:" at 500; errors are Stop Red text. A mark ends the time column: an Ink outlined triangle with "!" for a warning (never the ring, which is a campaign that is not working), a Stop Red dot for an error. The time and its mark are one line high, on the first line of a sentence that wraps.
+- **Expandable row:** in a campaign's people table, clicking a name opens a full-width cell tinted Sidebar Sage at 60% with the texts as sent, the history and the "Do not contact" switch. From 1024px the texts and the "Do not contact" card share the left column and the history the right, top-aligned, so neither column leaves an empty block; on a phone the order is texts, history, "Do not contact".
+- **Activity line:** time (tabular, faded), sentence, campaign at the right. Where the campaign shows beside the sentence (the activity log) the sentence does not name it again ("Edited: Timings.", "Paused by you."); where it does not (Home) the name stays, always in quotes. Warnings and errors start with "Warning:" or "Error:" at 500; errors are Stop Red text. A mark ends the time column: an Ink outlined triangle with "!" for a warning (never the ring, which is a campaign that is not working), a Stop Red dot for an error. The time and its mark are one line high, on the first line of a sentence that wraps.
 - **Pager:** "Showing 1 to 20 of 20" at the left; joined Previous / "Page 1 of 3" / Next at the right, only when there is more than one page.
 
 ### Inputs / Fields
 - **Style:** daisyUI input, select and textarea with a 1px border, 6px radius and a Desk Paper fill. Medium height in the wizard, small in Settings and in filters. Numeric fields are narrow (5 to 8rem) and tabular, often set inside a sentence ("Between [45] and [180] seconds.").
-- **Field:** label at 500, an optional hint at body-small 65% under it, then the control 6px below, then the error line.
+- **Field:** label at 500, an optional hint at body-small 65% under it, then the control 6px below, then the error line. The control is described by its error line first, while it shows, then by its hint (`aria-describedby`).
 - **Focus:** daisyUI's default focus outline; nothing custom.
 - **Error:** the control takes the error border and one line of Stop Red body-small text appears under it.
 - **Switch:** daisyUI toggle, Desk Green when on, set at the left of its label (500) and hint. The auto-approve and "Do not contact" switches use the amber tone when on.
 - **Radio choice:** small radio with a label; a discovery source is a whole bordered card that takes a Desk Green border and a faint mint fill when chosen.
 - **Variable buttons:** extra-small outlined buttons in a panel, each a name plus its `{{variable}}` in faded ink; pressing one inserts it at the cursor.
-- **Save bar:** in Settings, "Save settings" and "Undo changes" sit in a bar that stays at the bottom of the window, Desk Paper with a top hairline.
+- **Save bar:** in Settings, "Save settings" and "Undo changes" sit in a bar that stays at the bottom of the window, Desk Paper with a top hairline. A failed save is said beside the buttons, so it is always in view.
 
 ### Navigation
 - **Sidebar:** Sidebar Sage, 16rem, right hairline. From the top: "Outreach", the session card, the menu, and at the bottom the working window in two faded lines ("Working Mon to Fri, 09:00 to 18:00. Working now, until 18:00.").
@@ -361,15 +361,15 @@ Built on daisyUI's button, mostly at the small size (2rem high, 0.875rem, 600); 
 - **Phone:** a top bar with the menu button, "Outreach" and the session light; the sidebar slides in as a drawer over an overlay and closes when a link is followed.
 
 ### Safety-stop banner
-The one alarm. A full-width Stop Red bar above the page on every screen, with `role="alert"`: the stop icon (on a phone beside the heading, centred on its first line), "Safety stop. All LinkedIn activity is stopped." at 600, what LinkedIn showed, "What to do: …", when it stopped in body-small, and a white Resume button at the right (full width under the text on a phone). Resume opens the confirm dialog. The same bar, with Re-check, is used when the session needs the user and no stop has been raised yet. While a stop is active, pausable campaigns show a red dot and "Stopped by safety stop", and the sidebar footer reads "Nothing runs on LinkedIn until you resume."
+The one alarm. A full-width Stop Red bar above the page on every screen, with `role="alert"`: the stop icon (on a phone beside the heading, centred on its first line), "Safety stop. All LinkedIn activity is stopped." at 600, what LinkedIn showed, "What to do: …", when it stopped in body-small, and a white Resume button at the right (full width under the text on a phone). Resume opens the confirm dialog. The same bar, with Re-check, is used when the session needs the user and no stop has been raised yet. While a stop is active, pausable campaigns show a red dot and "Stopped by safety stop", and the sidebar footer reads "Nothing runs on LinkedIn until you resume." No sentence anywhere promises work at a time during a stop: a waiting discovery says only what stays true ("LinkedIn's monthly search limit is reached. It resets on 1 December 2026."), a person's planned step says "after you resume" instead of a time, a spent budget says when it resets, and Approve all and the wizard's Start say the work begins once the user resumes. Pause on a halted campaign is the secondary button with muted words on every page.
 
 The quiet counterpart is the unreachable banner: an amber bar with one sentence and no button, when the app does not answer.
 
 ### Budget meter
-One per budget in "Today's usage": the name at the left, "7 of 11" at the right (the used count at 600, the limit at 65%), and a 6px progress bar under them. The fill is Desk Green while there is room and the solid muted tone (`--color-muted`) when the budget is spent: quieter than the green bars and never amber, since a spent budget is not a problem. The sentence under it is muted like every other ("Budget spent, resumes tomorrow 09:00"; during a safety stop, when nothing runs until the user resumes, "Budget spent; it resets Monday 09:00"; during warm-up, "Warm-up: today's allowance, rising to 15 a day").
+One per budget in "Today's usage": the name at the left, "7 of 11" at the right (the used count at 600, the limit at 65%), and a 6px progress bar under them. The fill is Desk Green on a Hairline Sage track while there is room. A spent budget's fill is the control tone (`--color-control`, #818683) on a Desk Paper track: lighter than the green bars and than the muted words, so a full meter reads as finished and quiet and is never the darkest block in the card, and never amber, since a spent budget is not a problem. Every meter has a control-tone edge (3.2:1 on the usage panel); a meter spent below its number (the week's invite budget or LinkedIn's own limit) keeps 3.45:1 between its fill and the Desk Paper track. The sentence under it is muted like every other ("Budget spent, resumes tomorrow 09:00"; during a safety stop, when nothing runs until the user resumes, "Budget spent; it resets Monday 09:00"; during warm-up, "Warm-up: today's allowance, rising to 15 a day").
 
 ### Wizard step bar
-Seven numbered steps. From 1024px a left column; below it a horizontal strip that scrolls. Each step is a 1.5rem circle with its number and the step's name at body-small. The current step is Dark Moss with a light circle; other steps are plain with a Hairline Sage circle and a Sidebar Sage hover; steps that cannot be opened yet are at half opacity; a step with a problem has a Stop Red circle. Below the form, a top hairline separates Back and "Save and continue"; the last step's Start button is the medium size. The review marks each step with a check when done, a Stop Red dot when it has a problem, and the same numbered Hairline Sage circle as the strip when it is not finished yet. While steps are unfinished, a plain Ink sentence above Start names them ("Who fits and Messages are not finished yet."), and Start points at it. A refused Start moves the focus to the summary at the top of the review, which names the steps to fix; a refused "Save and continue" moves the focus to the first field the step marked.
+Seven numbered steps. From 1024px a left column; below it a horizontal strip that scrolls. Each step is a 1.5rem circle with its number and the step's name at body-small. The current step is Dark Moss with a light circle; other steps are plain with a Hairline Sage circle and a Sidebar Sage hover; steps that cannot be opened yet are at half opacity; a step with a problem has a Stop Red circle. Below the form, a top hairline separates Back and "Save and continue"; the last step's Start button is the medium size. A step the user has passed but not finished keeps its number on Hairline Sage with a 1.5px Ink edge (an inset ring) and "not finished" for screen readers, so it stands apart from the steps not reached yet; no amber and no red, since nothing is wrong yet. The review marks each step with a check when done, a Stop Red dot when it has a problem, and the same Ink-edged numbered circle when it is not finished yet; inside a step's block an error does not repeat the step's name ("Describe who fits…" under Who fits), while the summary names the steps. A save that fails with no field to mark (the request failed) moves the focus to its message above the step. While steps are unfinished, a plain Ink sentence above Start names them ("Who fits and Messages are not finished yet."), and Start points at it. A refused Start moves the focus to the summary at the top of the review, which names the steps to fix; a refused "Save and continue" moves the focus to the first field the step marked.
 
 ### Confirm dialog
 The native `dialog` with daisyUI's modal: a bottom sheet on a phone, centred from 640px, at most 32rem wide. Title at 1.125rem 600, one or two sentences, then the actions at the right: an outlined way out ("Cancel", "Not yet") and one primary action that says what it does ("I have done this, resume"). A destructive action uses the red button. Escape and the backdrop cancel. While the action runs the primary button keeps its fill and the focus, shows a spinner and says what it is doing ("Approving…", "Archiving…", "Resuming…", "Starting…"; "Working…" by default), and ignores a second press (`aria-disabled`, `aria-busy`); Cancel is disabled, and Escape and the backdrop do nothing until the action ends.
@@ -384,7 +384,7 @@ None is authored. Buttons, switches, the drawer, spinners and skeletons use dais
 
 ### Do:
 - **Do** keep one theme: Desk Paper page, Sidebar Sage sidebar and panels, 1px Hairline Sage borders, no shadows.
-- **Do** keep solid Stop Red bars and panels for the safety stop and for "LinkedIn needs you", and show a spent budget in amber with a sentence saying when it resumes.
+- **Do** keep solid Stop Red bars and panels for the safety stop and for "LinkedIn needs you", and show a spent budget as a quiet control-tone meter with a muted sentence saying when it resumes (during a safety stop, when it resets).
 - **Do** pair every status dot with its words, using the status map.
 - **Do** use the `field` radius (6px) for controls and chips and the `box` radius (8px) for cards, tables and panels.
 - **Do** set every count, time, score and budget in tabular figures.
@@ -393,7 +393,7 @@ None is authored. Buttons, switches, the drawer, spinners and skeletons use dais
 - **Do** keep every page free of sideways scrolling at 390px; a wide table scrolls inside its own box.
 
 ### Don't:
-- **Don't** make a spent budget, a pause or a wait look like a safety stop. They are muted, Dark Moss or amber; only a stop is a red bar.
+- **Don't** make a spent budget, a pause or a wait look like a safety stop. They are control-tone or muted, Dark Moss or amber; only a stop is a red bar.
 - **Don't** show a status by colour alone.
 - **Don't** add drop shadows; the theme's depth is 0.
 - **Don't** set text at 700, in uppercase or with letter-spacing; the system uses 400, 500 and 600 in sentence case.
