@@ -156,6 +156,13 @@ function countedAs(entry: LogEntry): Counted | null {
   return null;
 }
 
+/** Every budget an entry uses: an invite is a profile view too, since sending one loads the profile again. */
+function budgetsOf(entry: LogEntry): Counted[] {
+  const counted = countedAs(entry);
+  if (counted === null) return [];
+  return counted === "invites" ? ["invites", "profileViews"] : [counted];
+}
+
 const WRITE_KIND: Readonly<Record<WriteOp, LogKind>> = { sendInvite: "invite", sendMessage: "message", withdrawInvite: "withdraw" };
 const WRITE_WORDS: Readonly<Record<WriteOp, string>> = { sendInvite: "invite", sendMessage: "message", withdrawInvite: "withdrawal" };
 /** A planned send sleep must start at most this long before the window's end. */
@@ -227,13 +234,13 @@ export function judge(run: SimRun): Verdict {
   const usage = new Map<string, Used>();
   const weekInvites = new Map<string, number>();
   for (const entry of log) {
-    const counted = countedAs(entry);
-    if (counted === null) continue;
-    const key = localDay(tz, entry.at);
-    const today = usage.get(key) ?? none();
-    usage.set(key, today);
-    today[counted] += 1;
-    if (counted === "invites") weekInvites.set(localWeek(tz, entry.at), (weekInvites.get(localWeek(tz, entry.at)) ?? 0) + 1);
+    for (const counted of budgetsOf(entry)) {
+      const key = localDay(tz, entry.at);
+      const today = usage.get(key) ?? none();
+      usage.set(key, today);
+      today[counted] += 1;
+      if (counted === "invites") weekInvites.set(localWeek(tz, entry.at), (weekInvites.get(localWeek(tz, entry.at)) ?? 0) + 1);
+    }
   }
   const inviteDays = [...usage].filter(([, used]) => used.invites > 0).map(([key]) => key).sort();
   /** A day's warm-up allowance under `settings`: earlier days with an invite LinkedIn received. */
@@ -264,18 +271,18 @@ export function judge(run: SimRun): Verdict {
       if (count > limit && !over.has(key)) over.set(key, { limit, firstOverAt: moment });
     };
     for (const entry of log) {
-      const counted = countedAs(entry);
-      if (counted === null) continue;
-      const key = localDay(tz, entry.at);
-      const now = at(entry.at);
-      const count = bump(`${key}|${counted}`);
-      if (counted === "invites") {
-        note(dayOver, `${key}|invites`, count, allowance(key, now), entry.at);
-        note(dayOver, `${key}|invites (daily limit)`, count, now.limits.invitesPerDay, entry.at);
-        const week = localWeek(tz, entry.at);
-        note(weekOver, week, bump(`week ${week}`), now.limits.invitesPerWeek, entry.at);
-      } else {
-        note(dayOver, `${key}|${COUNTED_WORDS[counted]}`, count, now.limits[DAY_LIMIT[counted]], entry.at);
+      for (const counted of budgetsOf(entry)) {
+        const key = localDay(tz, entry.at);
+        const now = at(entry.at);
+        const count = bump(`${key}|${counted}`);
+        if (counted === "invites") {
+          note(dayOver, `${key}|invites`, count, allowance(key, now), entry.at);
+          note(dayOver, `${key}|invites (daily limit)`, count, now.limits.invitesPerDay, entry.at);
+          const week = localWeek(tz, entry.at);
+          note(weekOver, week, bump(`week ${week}`), now.limits.invitesPerWeek, entry.at);
+        } else {
+          note(dayOver, `${key}|${COUNTED_WORDS[counted]}`, count, now.limits[DAY_LIMIT[counted]], entry.at);
+        }
       }
     }
   }
@@ -1041,12 +1048,12 @@ export function judge(run: SimRun): Verdict {
       const { start } = windowOn(settings, key);
       return stops.some((stop) => stop.invitesBlockedUntil !== null && stop.invitesBlockedUntil > start);
     };
-    /** The app's claims of `type` started in [from, to): what its budgets count (decision 35), sent or not. */
-    const claimed = (type: "invite" | "message" | "profile_view", from: string, days: number): number =>
+    /** The app's claims of `types` started in [from, to): what its budgets count (decision 35), sent or not. */
+    const claimed = (types: readonly ("invite" | "message" | "profile_view")[], from: string, days: number): number =>
       db
         .select({ id: actions.id })
         .from(actions)
-        .where(and(eq(actions.type, type), gte(actions.startedAt, localDayStart(from)), lt(actions.startedAt, localDayStart(addDays(from, days)))))
+        .where(and(inArray(actions.type, types), gte(actions.startedAt, localDayStart(from)), lt(actions.startedAt, localDayStart(addDays(from, days)))))
         .all().length;
     // Budgets had room only if neither what LinkedIn received nor what the app claimed reached the limit.
     const room = (stage: string, followUpBlank: boolean, key: string): string | null => {
@@ -1055,14 +1062,15 @@ export function judge(run: SimRun): Verdict {
       const { limits } = onDay(key);
       if (stage === "approved") {
         const monday = localWeek(tz, windowOn(settings, key).start);
-        const invites = Math.max(used.invites, claimed("invite", key, 1));
-        const week = Math.max(weekInvites.get(monday) ?? 0, claimed("invite", monday, 7));
-        const views = Math.max(used.profileViews, claimed("profile_view", key, 1));
-        const open = !invitesBlocked(key) && invites < Math.min(used.allowance, limits.invitesPerDay) && week < limits.invitesPerWeek && views < limits.profileViewsPerDay;
+        const invites = Math.max(used.invites, claimed(["invite"], key, 1));
+        const week = Math.max(weekInvites.get(monday) ?? 0, claimed(["invite"], monday, 7));
+        // An invite needs two profile views: the read before it and the send's own load.
+        const views = Math.max(used.profileViews, claimed(["profile_view", "invite"], key, 1));
+        const open = !invitesBlocked(key) && invites < Math.min(used.allowance, limits.invitesPerDay) && week < limits.invitesPerWeek && views + 2 <= limits.profileViewsPerDay;
         return open ? `${key}: invites ${invites}/${used.allowance}, week ${week}/${limits.invitesPerWeek}, views ${views}/${limits.profileViewsPerDay}` : null;
       }
       if (stage === "message_sent" && followUpBlank) return `${key}: no follow-up to send, nothing needs budget`;
-      const messages = Math.max(used.messages, claimed("message", key, 1));
+      const messages = Math.max(used.messages, claimed(["message"], key, 1));
       return messages < limits.messagesPerDay ? `${key}: messages ${messages}/${limits.messagesPerDay}` : null;
     };
     for (const row of prospectRows) {
@@ -1383,7 +1391,7 @@ export function judge(run: SimRun): Verdict {
     };
     const atLimit = (perDay: Map<string, number>, limit: (settings: Settings) => number): string[] =>
       [...perDay].filter(([key, n]) => n >= limit(onDay(key))).map(([key]) => key).sort();
-    const viewDays = atLimit(claimsPerDay(["profile_view"]), (then) => then.limits.profileViewsPerDay);
+    const viewDays = atLimit(claimsPerDay(["profile_view", "invite"]), (then) => then.limits.profileViewsPerDay);
     const pageDays = atLimit(claimsPerDay(["recommendation_page", "search_page"]), (then) => then.limits.discoveryPagesPerDay);
     notes.push(`days at the profile-view limit: ${viewDays.join(", ") || "none"}; at the discovery-page limit: ${pageDays.join(", ") || "none"}`);
 

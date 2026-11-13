@@ -336,8 +336,9 @@ describe("6. no backlog after downtime", () => {
   });
 
   it("reports a stub that keeps the budgets and the gap but never takes a break; one that breaks every 10 pieces passes", async () => {
-    // 30 invites a day are allowed, so the day holds more pieces of work than one run may.
-    const busy = () => smallScenario({ members: 30, days: 1, extra: (context) => applySettings(context, { warmUp: { enabled: false }, limits: { invitesPerDay: 30 } }) });
+    // 30 invites a day are allowed (each two profile views), so the day holds more pieces of work than one run may.
+    const busy = () =>
+      smallScenario({ members: 30, days: 1, extra: (context) => applySettings(context, { warmUp: { enabled: false }, limits: { invitesPerDay: 30, profileViewsPerDay: 60 } }) });
     const { verdict, result } = await simulate(inviter({ noBreaks: true }), busy());
     expect(messages(result(6))).toEqual(["30 pieces of work in a row without a break of 10 min or more (at most 15), counted across kills and restarts"]);
     expect(messages(result(2))).toEqual([]);
