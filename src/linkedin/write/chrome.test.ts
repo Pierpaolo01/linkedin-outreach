@@ -11,6 +11,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { isChromeMissing } from "../browser";
+import { hasOpenDialog } from "./common";
 import { findAll, parseHtml } from "./markup";
 import { writePageFor, type Target, type WritePage } from "./page";
 import { sentRowOf, writeStructure, writeWordingFor } from "./selectors.write";
@@ -122,6 +123,33 @@ describe("write locators in real Chrome, offline", { timeout: 60_000 }, () => {
     await expect(write.clickUnless(send, async () => undefined)).resolves.toBeUndefined();
     expect(await page.evaluate(() => (window as { clicked?: number }).clicked ?? 0)).toBe(1);
     expect(page.url()).toBe("about:blank");
+  });
+
+  it("sees a dialog LinkedIn draws inside a shadow root, as the live invite dialog is (2026-11-13)", async (ctx) => {
+    if (context === undefined) ctx.skip();
+    // The live page holds the invite dialog in an open shadow root under #interop-outlet, which
+    // Playwright's page.content() leaves out.
+    const { page, write } = await show(
+      '<html lang="en"><body><main><h1>Profile</h1></main><div id="interop-outlet" data-testid="interop-shadowdom"></div></body></html>',
+    );
+    await page.evaluate(() => {
+      const host = document.getElementById("interop-outlet");
+      if (host === null) throw new Error("no host");
+      const root = host.attachShadow({ mode: "open" });
+      root.innerHTML =
+        '<div><dialog><h2>Add a note to your invitation?</h2><button>Add a note</button><button>Send without a note</button></dialog></div>';
+      root.querySelector("dialog")?.showModal();
+    });
+    expect(hasOpenDialog(await page.content())).toBe(false);
+
+    const html = await write.content();
+    expect(hasOpenDialog(html)).toBe(true);
+    const inDialog = (name: RegExp): Target => ({ roles: ["button"], name, within: writeStructure.dialog });
+    expect(findAll(parseHtml(html), inDialog(en.addNote))).toHaveLength(1);
+    expect(findAll(parseHtml(html), inDialog(en.sendWithoutNote))).toHaveLength(1);
+    expect(await write.count(inDialog(en.addNote))).toBe(1);
+    expect(await write.waitFor((shown) => (hasOpenDialog(shown) ? "seen" : undefined), 1_000)).toBe("seen");
+    expect(html).toMatch(/^<html lang="en">/);
   });
 
   it("aborts every request a page makes", async (ctx) => {
