@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { CampaignStatus, EventLevel } from "../db/schema";
 import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone } from "./format";
-import { IconChevron } from "./icons";
+import { filledSegments } from "./filled";
+import { IconChevron, IconWarning } from "./icons";
 import { PAUSABLE, plainMessage } from "./words";
 
 /**
@@ -117,18 +118,37 @@ export function ActivityMessage({ level, message }: { readonly level: EventLevel
 }
 
 /**
- * The mark that lets a warning or an error line be found at a glance in a log: a hollow Ink ring for a warning, a
- * solid red dot for an error, nothing for information. The status-dot recipe, not amber and not a stripe; the words
- * of the line carry the level, so it is hidden from screen readers.
+ * The mark that lets a warning or an error line be found at a glance in a log: an Ink triangle with "!" for a warning
+ * (its own shape: a ring is a campaign that is not working), a solid red dot for an error, nothing for information.
+ * Not amber and not a stripe; the words of the line carry the level, so it is hidden from screen readers.
  */
 export function LevelMark({ level }: { readonly level: EventLevel }) {
   if (level === "info") return null;
+  if (level === "warning") return <IconWarning className="size-3.5 shrink-0 text-base-content" testId="level-mark" />;
+  return <span className="status status-error shrink-0" aria-hidden="true" data-testid="level-mark" />;
+}
+
+/**
+ * A text as it will be (or was) sent, with the words its variables filled in for this person at 500, so the fixed words
+ * and the personal ones read apart. Read from the template's `{{variable}}` positions (`filledSegments`), so a fixed
+ * word that happens to equal one of the person's values stays plain. Plain throughout when the template is unknown or
+ * the text does not follow it (a template edited after the text was sent).
+ */
+export function FilledText({ text, template }: { readonly text: string; readonly template: string | null | undefined }) {
+  const segments = template === null || template === undefined ? null : filledSegments(template, text);
+  if (segments === null) return <>{text}</>;
   return (
-    <span
-      className={`status shrink-0 ${level === "error" ? "status-error" : "status-hollow text-base-content"}`}
-      aria-hidden="true"
-      data-testid="level-mark"
-    />
+    <>
+      {segments.map((segment, i) =>
+        segment.filled ? (
+          <span key={i} className="font-medium">
+            {segment.text}
+          </span>
+        ) : (
+          segment.text
+        ),
+      )}
+    </>
   );
 }
 

@@ -120,7 +120,7 @@ function StatsRow({ row, replyLabel }: { readonly row: Row; readonly replyLabel:
     // In the table every cell sits on the row's first baseline: the name and the values' 28px line read as one row.
     <tr role="row" data-testid="stats-row" className="*:align-baseline @max-stats:grid @max-stats:grid-cols-2 @max-stats:gap-x-4 @max-stats:px-4 @max-stats:py-3 @max-stats:not-last:border-b @max-stats:not-last:border-base-300">
       <th role="rowheader" scope="row" className="text-left font-normal @max-stats:col-span-2 @max-stats:border-0 @max-stats:p-0">
-        <Link to={`/campaigns/${row.campaignId}`} className="inline-flex min-h-6 items-center font-semibold hover:underline">
+        <Link to={`/campaigns/${row.campaignId}`} className="inline-flex min-h-6 items-center font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11">
           {row.name}
         </Link>
         <StatusLine status={row.status} safetyStop={home?.safetyStop != null} className="text-muted" />

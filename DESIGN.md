@@ -341,7 +341,7 @@ Built on daisyUI's button, mostly at the small size (2rem high, 0.875rem, 600); 
 - **Table:** daisyUI's small table inside a card that scrolls sideways by itself. Header cells are body-small at 500, Ink at 65%; number columns are right-aligned and tabular. The first cell holds a name at 600 with its status line under it.
 - **Approval queue:** a grid with table roles. Each row: score chip, the person (name at 600, headline, place and campaign at 65%, profile link), why the AI picked them (the reason, then industry and size evidence at 65%), what they will receive (quoted texts under small captions, the follow-up folded away), and Approve / Reject. A row that has focus is tinted Sidebar Sage at 60%.
 - **Expandable row:** in a campaign's people table, clicking a name opens a full-width cell tinted Sidebar Sage at 60% with the texts as sent, the history and the "Do not contact" switch.
-- **Activity line:** time (tabular, faded), sentence, campaign at the right. Warnings and errors start with "Warning:" or "Error:" at 500; errors are Stop Red text.
+- **Activity line:** time (tabular, faded), sentence, campaign at the right. Warnings and errors start with "Warning:" or "Error:" at 500; errors are Stop Red text. A mark ends the time column: an Ink outlined triangle with "!" for a warning (never the ring, which is a campaign that is not working), a Stop Red dot for an error. The time and its mark are one line high, on the first line of a sentence that wraps.
 - **Pager:** "Showing 1 to 20 of 20" at the left; joined Previous / "Page 1 of 3" / Next at the right, only when there is more than one page.
 
 ### Inputs / Fields

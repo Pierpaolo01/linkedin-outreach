@@ -129,6 +129,19 @@ test("the approval queue shows each follow-up folded under the first message, or
   await expect(rows.filter({ hasText: "No follow-up" })).toHaveCount(3);
 });
 
+test("an opened person's texts as sent set apart what the variables filled in, as the queue does", async ({ page }) => {
+  await page.goto("/campaigns/1");
+  const row = page.getByTestId("prospect-row").filter({ hasText: "Owner at Hotel Navona Test" });
+  await row.getByRole("button").first().click();
+  const texts = page.getByTestId("prospect-detail").getByTestId("sent-text");
+  await expect(texts).toHaveCount(2);
+  // The invite note: only "{{first_name}}"; the user's own "in Rome" stays plain.
+  await expect(texts.first()).toContainText("I work with independent hotels in Rome");
+  await expect(texts.first().locator(".font-medium")).toHaveText(["Test"]);
+  // The first message: "{{first_name}}" and "{{company}}".
+  await expect(texts.nth(1).locator(".font-medium")).toHaveText(["Test", "Hotel Navona Test"]);
+});
+
 test("approval queue: the row A and R act on shows a ring under keyboard focus, not while a control inside it has focus", async ({ page }) => {
   await page.goto("/approvals");
   const rows = page.getByTestId("approval-row");
@@ -186,6 +199,38 @@ test("approve all says how many were no longer waiting", async ({ page }) => {
   await page.getByRole("dialog", { name: "Approve all 2 prospects shown?" }).getByRole("button", { name: "Approve 2" }).click();
   await expect(page.getByText("1 approved, 1 no longer waiting.")).toBeVisible();
   await expect(rows).toHaveCount(0);
+});
+
+test("a confirm dialog stays open on Escape while its action runs, so a failure is still shown", async ({ page }) => {
+  // The answer is the browser test's own, held until the test lets it go: nothing is approved on the app.
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/approvals/approve-all", async (route) => {
+    await held;
+    await route.fulfill({ status: 500, json: { error: "test: approvals unavailable" } });
+  });
+  await page.goto("/approvals");
+  await page.getByLabel("Campaign").selectOption({ label: "Local trades, Milan" });
+  const rows = page.getByTestId("approval-row");
+  // Earlier tests decide people on the demo app, so read how many wait.
+  await expect(rows.first()).toBeVisible();
+  const shown = await rows.count();
+  await page.getByRole("button", { name: `Approve all ${shown} shown` }).click();
+  const dialog = page.getByRole("dialog", { name: `Approve all ${shown} ${shown === 1 ? "prospect" : "prospects"} shown?` });
+  const confirm = dialog.getByRole("button", { name: `Approve ${shown}` });
+  await confirm.click();
+  await expect(confirm).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  release();
+  await expect(dialog.getByRole("alert")).toContainText("test: approvals unavailable");
+  // Once the action has ended, Escape closes it again.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(rows).toHaveCount(shown);
 });
 
 const LATE_PERSON = "Test Person scored later";
@@ -302,6 +347,26 @@ test("approve with the mouse, approve with A and reject with R; the counts drop"
   expect(await stageOf(page.request, first)).toBe("approved");
   expect(await stageOf(page.request, second)).toBe("approved");
   expect(await stageOf(page.request, third)).toBe("rejected");
+});
+
+test("phone width: the profile links in the approval queue and in needs review are 44px targets that do not grow the row", async ({ page }) => {
+  // Before the needs-review tests below resolve the held people.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const tall = async (link: ReturnType<Page["locator"]>, what: string) => {
+    await expect(link).toBeVisible();
+    const box = await link.boundingBox();
+    expect(box?.height ?? 0, `${what} is too small to tap`).toBeGreaterThanOrEqual(44);
+    // The hit area overhangs the line it sits on (negative margins), so the layout keeps its 24px line.
+    const space = await link.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return el.getBoundingClientRect().height + Number.parseFloat(style.marginTop) + Number.parseFloat(style.marginBottom);
+    });
+    expect(space, `${what} takes more room than its line`).toBeLessThanOrEqual(28);
+  };
+  await page.goto("/approvals");
+  await tall(page.getByTestId("approval-row").first().getByRole("link", { name: /^LinkedIn profile/ }), "the queue's profile link");
+  await page.goto("/review");
+  await tall(page.getByTestId("review-item").first().getByRole("link", { name: /^LinkedIn profile/ }), "the review's profile link");
 });
 
 test("needs review: the screenshot opens at full size, and a person without a score says so", async ({ page }) => {
@@ -503,6 +568,10 @@ test("phone width: the sidebar becomes a menu and nothing scrolls sideways", asy
   expect((nameButton?.x ?? Infinity) + (nameButton?.width ?? 0), "the name runs under the score").toBeLessThanOrEqual(chip?.x ?? 0);
   expect((chip?.x ?? Infinity) + (chip?.width ?? 0), "the score runs under Profile").toBeLessThanOrEqual(longProfile?.x ?? 0);
   for (const [what, box] of [["the name", nameButton], ["Profile", longProfile]] as const) expect(box?.height ?? 0, `${what} is too small to tap`).toBeGreaterThanOrEqual(44);
+  // In the block the headline is muted and the stage Ink, so the stage line reads as the stage (Test Person 10 is invited).
+  const invited = page.getByTestId("prospect-row").filter({ hasText: "Owner at Hotel Modello Centro" });
+  await expect(invited.getByRole("rowheader").locator("p").first()).toHaveCSS("color", MUTED);
+  await expect(invited.getByTestId("prospect-stage").locator("span").first()).toHaveCSS("color", INK);
   await person.getByRole("button").first().click();
   const detailRight = await page.getByTestId("prospect-detail").evaluate((detail) => detail.getBoundingClientRect().right - window.innerWidth);
   expect(detailRight, "an opened person's texts run past the screen").toBeLessThanOrEqual(0);
@@ -601,6 +670,7 @@ async function expectFocusRing(locator: ReturnType<Page["locator"]>, rgb: string
   expect(ring.color).toBe(rgb);
 }
 const INK = "rgb(29, 37, 33)";
+const MUTED = "rgb(91, 98, 93)";
 const ON_MOSS = "rgb(242, 244, 240)";
 const MOSS = "rgb(38, 48, 43)";
 
@@ -681,6 +751,54 @@ test("phone width: the menu is a modal; Escape and the overlay close it and give
   await expect(button).toBeFocused();
 });
 
+/** For each log line: how far its time sits from its message's first line, and how tall the time is against one line. */
+async function timeOffsets(lines: ReturnType<Page["locator"]>) {
+  return lines.evaluateAll((items) =>
+    items.map((item) => {
+      const [time, message] = [item.children[0], item.children[1]];
+      if (time === undefined || message === undefined) throw new Error("A log line has no time or no message");
+      const lineHeight = Number.parseFloat(getComputedStyle(message).lineHeight);
+      const timeBox = time.getBoundingClientRect();
+      const messageBox = message.getBoundingClientRect();
+      const mark = time.querySelector('[data-testid="level-mark"]')?.getBoundingClientRect();
+      return {
+        wrapped: messageBox.height > lineHeight * 1.5,
+        top: Math.abs(timeBox.top - messageBox.top),
+        height: timeBox.height - lineHeight,
+        // The mark's middle against the middle of the message's first line; 0 when the line has no mark.
+        mark: mark === undefined ? 0 : Math.abs(mark.top + mark.height / 2 - (messageBox.top + lineHeight / 2)),
+      };
+    }),
+  );
+}
+
+test("the log's time and level mark sit on a wrapped message's first line, at every width", async ({ page }) => {
+  const check = (offsets: Awaited<ReturnType<typeof timeOffsets>>, where: string) => {
+    for (const line of offsets) {
+      expect(line.top, `${where}: a time is not on its message's first line`).toBeLessThanOrEqual(1);
+      expect(line.height, `${where}: a time is taller than one line`).toBeLessThanOrEqual(1);
+      expect(line.mark, `${where}: a level mark is not in the middle of the first line`).toBeLessThanOrEqual(1);
+    }
+  };
+  for (const width of [390, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(appUrl("stop"));
+    const home = page.getByRole("region", { name: "What the app did" }).getByRole("listitem");
+    await expect(home.first()).toBeVisible();
+    const homeOffsets = await timeOffsets(home);
+    // At 1024 the section runs the page's full width and every line fits on one; the stop line wraps at 390 and 1440.
+    if (width !== 1024) expect(homeOffsets.some((line) => line.wrapped), `Home at ${width}: the stop line no longer wraps, so nothing is tested`).toBe(true);
+    check(homeOffsets, `Home at ${width}`);
+
+    // Below 640px the activity log puts the time on its own line above the message.
+    if (width < 640) continue;
+    await page.goto(appUrl("stop", "/activity"));
+    const lines = page.getByTestId("activity-line");
+    await expect(lines.first()).toBeVisible();
+    check(await timeOffsets(lines), `Activity at ${width}`);
+  }
+});
+
 test("the safety-stop banner says what to do, and Resume asks first", async ({ page }) => {
   // The log's stop line leads with "Safety stop:" and no "Error:" before it; a red dot marks it, and a warning line a ring.
   await page.goto(appUrl("stop", "/activity"));
@@ -689,7 +807,11 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
   await expect(stopLine).not.toContainText("Error:");
   await expect(stopLine.getByTestId("level-mark")).toHaveClass(/status-error/);
   const warning = page.locator('[data-testid="activity-line"][data-level="warning"]').first();
-  await expect(warning.getByTestId("level-mark")).toHaveClass(/status-hollow/);
+  // A warning's mark is a drawn triangle, not the ring that means Draft, Paused or Finished as a campaign status.
+  const warningMark = warning.getByTestId("level-mark");
+  expect(await warningMark.evaluate((mark) => mark.tagName.toLowerCase())).toBe("svg");
+  await expect(warningMark).not.toHaveClass(/status/);
+  await expect(warningMark).toHaveCSS("color", INK);
   await expect(page.locator('[data-testid="activity-line"][data-level="info"]').first().getByTestId("level-mark")).toHaveCount(0);
   // An info line's text starts where a warning line's does.
   const starts = await page

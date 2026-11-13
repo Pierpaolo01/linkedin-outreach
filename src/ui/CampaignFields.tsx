@@ -2,7 +2,7 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { previewCampaign } from "./api";
 import type { PreviewText } from "./apiSchemas";
 import { INVITE_NOTE_MAX, VARIABLES, type CampaignForm, type FieldErrors, type SetField } from "./campaignForm";
-import { describedByError, errorProps, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
+import { describedByError, errorProps, FieldError, FilledText, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
 import { Link } from "./router";
 import { useLoad } from "./useLoad";
 
@@ -94,8 +94,9 @@ export function MessageFields({
               <label htmlFor={ids.inviteNote} className="font-medium">
                 Invite note <span className="font-normal text-muted">(optional)</span>
               </label>
+              {/* The template's own length; the limit is for the filled-in text, which the preview counts. Red past the limit, which a save refuses too. */}
               <span className={`nums text-sm ${noteLength > INVITE_NOTE_MAX ? "font-medium text-error" : "text-muted"}`} data-testid="note-count">
-                {noteLength} / {INVITE_NOTE_MAX}
+                Template: {noteLength} characters
               </span>
             </div>
             <p className="text-sm text-muted">
@@ -176,10 +177,18 @@ function TemplatePreview(props: {
 }) {
   const { campaignId, inviteNote, firstMessage, followUp, aiPersonalise } = props;
   const settled = useDebounced(JSON.stringify([inviteNote, firstMessage, followUp, aiPersonalise]), 350);
-  // Loads when the texts have stopped changing; the call reads the newest values.
-  const loaded = useLoad(() => previewCampaign(campaignId, { inviteNote, firstMessage, followUp, aiPersonalise }), `${campaignId}|${settled}`, {
-    keepPrevious: true,
-  });
+  // Loads when the texts have stopped changing; the call reads the newest values, and keeps the templates it sent so
+  // the filled-in values are set apart against the texts they were filled from, not newer ones still being typed.
+  const loaded = useLoad(
+    () =>
+      previewCampaign(campaignId, { inviteNote, firstMessage, followUp, aiPersonalise }).then((preview) => ({
+        ...preview,
+        templates: { inviteNote, firstMessage, followUp },
+      })),
+    `${campaignId}|${settled}`,
+    { keepPrevious: true },
+  );
+  const templates = loaded.data?.templates;
 
   return (
     <aside aria-label="Preview" className="min-w-0 @preview:sticky @preview:top-6 @preview:self-start" data-testid="preview">
@@ -199,9 +208,9 @@ function TemplatePreview(props: {
             {loaded.data.items.map((item) => (
               <li key={item.prospectId ?? "sample"} className="flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm">
                 <p className="font-semibold">{item.fullName}</p>
-                <PreviewLine label="Invite note" text={item.inviteNote} none="No note: the invite goes without one." />
-                <PreviewLine label="First message" text={item.firstMessage} none="" />
-                <PreviewLine label="Follow-up" text={item.followUp} none="No follow-up." />
+                <PreviewLine label="Invite note" text={item.inviteNote} template={templates?.inviteNote} none="No note: the invite goes without one." />
+                <PreviewLine label="First message" text={item.firstMessage} template={templates?.firstMessage} none="" />
+                <PreviewLine label="Follow-up" text={item.followUp} template={templates?.followUp} none="No follow-up." />
               </li>
             ))}
           </ul>
@@ -211,14 +220,21 @@ function TemplatePreview(props: {
   );
 }
 
-function PreviewLine({ label, text, none }: { readonly label: string; readonly text: PreviewText | null; readonly none: string }) {
+function PreviewLine(props: { readonly label: string; readonly text: PreviewText | null; readonly template: string | undefined; readonly none: string }) {
+  const { label, text, template, none } = props;
   let body: ReactNode;
   if (text === null) body = <p className="text-muted">{none}</p>;
   else if (text.ok) {
     body = (
       <>
-        <p className="whitespace-pre-line">{text.text}</p>
-        {label === "Invite note" && <p className="nums text-caption text-muted">{text.length} characters</p>}
+        <p className="whitespace-pre-line" data-testid="sent-text">
+          <FilledText text={text.text} template={template} />
+        </p>
+        {label === "Invite note" && (
+          <p className="nums text-caption text-muted">
+            {text.length} of {INVITE_NOTE_MAX} characters
+          </p>
+        )}
       </>
     );
   } else if (text.problem === "empty") body = <p className="text-muted">Nothing written yet.</p>;

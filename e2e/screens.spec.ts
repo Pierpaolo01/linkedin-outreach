@@ -72,10 +72,14 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await note.fill("test note for ");
   await page.getByRole("button", { name: "Insert First name" }).click();
   await expect(note).toHaveValue("test note for {{first_name}}");
-  await expect(page.getByTestId("note-count")).toHaveText("28 / 300");
+  // The counter beside the note is the template's own length; the 300 belongs to the filled-in text, in the preview.
+  await expect(page.getByTestId("note-count")).toHaveText("Template: 28 characters");
   await first.fill("test first message {{first_name}} {{nickname}}");
   const preview = page.getByTestId("preview");
   await expect(preview).toContainText("test note for Anna");
+  await expect(preview).toContainText("18 of 300 characters");
+  // What the variables filled in is set apart, as in the approval queue.
+  await expect(preview.getByTestId("sent-text").first().locator(".font-medium")).toHaveText(["Anna"]);
   await expect(preview).toContainText("{{nickname}} is not a variable");
   await page.getByRole("button", { name: "Save and continue" }).click();
 
@@ -86,6 +90,8 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await expect(page.getByTestId("start-error")).toContainText("The campaign cannot start yet");
   await expect(page.getByTestId("review-step-2")).toContainText("This is not a LinkedIn people search");
   await expect(page.getByTestId("review-step-5")).toContainText("{{nickname}} is not a variable");
+  // Its values start with a capital, as their neighbours do.
+  await expect(page.getByTestId("review-step-6")).toContainText("Every day counts");
 
   // The problems show next to their fields too. Fix them there.
   await page.getByRole("button", { name: "Change Where people come from" }).click();

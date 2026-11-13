@@ -24,7 +24,7 @@ import { ActionError, DEF_LIST, DEF_TERM, describedByError, EmptyState, errorPro
 import { IconCheck } from "../icons";
 import { Link, navigate } from "../router";
 import { useLoad } from "../useLoad";
-import { POLICY_WORDS } from "../words";
+import { capitalised, POLICY_WORDS } from "../words";
 import { PageHeader } from "./PageHeader";
 
 /** The step names, in order: the six steps, then the review. */
@@ -858,7 +858,7 @@ function Review({
       rows: [
         ["Before the first message", `${form.acceptToMessageMinHours} to ${form.acceptToMessageMaxHours} hours after they accept`],
         ["Before the follow-up", `${form.followUpDelayMinHours} to ${form.followUpDelayMaxHours} hours after the first message`],
-        ["Counting days", POLICY_WORDS[form.delayPolicy]],
+        ["Counting days", capitalised(POLICY_WORDS[form.delayPolicy])],
         ["Withdraw an unaccepted invite after", `${form.withdrawAfterDays} days`],
       ],
     },

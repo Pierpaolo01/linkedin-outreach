@@ -4,8 +4,7 @@ import type { ApprovalItem, Campaign, Evidence, PreviewText } from "../apiSchema
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatScore, plural } from "../format";
-import { filledSegments } from "../filled";
-import { ActionError, Announce, CampaignSelect, Disclosure, EmptyState, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
+import { ActionError, Announce, CampaignSelect, Disclosure, EmptyState, FilledText, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
 import { PageHeader } from "./PageHeader";
@@ -409,7 +408,7 @@ function Row({
           href={person.profileUrl}
           target="_blank"
           rel="noreferrer"
-          className="link mt-1 inline-flex min-h-6 items-center gap-1 text-sm text-base-content link-hover"
+          className="link mt-1 inline-flex min-h-6 items-center gap-1 text-sm text-base-content link-hover max-lg:-mt-1.5 max-lg:-mb-2.5 max-lg:min-h-11"
         >
           LinkedIn profile
           <IconExternal />
@@ -421,7 +420,7 @@ function Row({
         <EvidenceLines industry={person.industryEvidence} size={person.sizeEvidence} aiLine={item.aiLineEvidence ?? null} />
       </div>
       <div role="cell" className="col-span-2 flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm text-base-content @queue:col-span-1">
-        {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} template={templates?.inviteNote ?? undefined} />}
+        {item.preview.inviteNote !== null && <Text label="Invite note" text={item.preview.inviteNote} template={templates?.inviteNote} />}
         <Text label="First message, after they accept" text={item.preview.firstMessage} template={templates?.firstMessage} />
         <FollowUp text={item.followUpPreview} template={templates?.followUp} />
       </div>
@@ -446,37 +445,13 @@ function Row({
   );
 }
 
-/**
- * A text as it will be sent, with the words its variables filled in for this person at 500, so the fixed words and the
- * personal ones read apart. Read from the template's `{{variable}}` positions (`filledSegments`), so a fixed word that
- * happens to equal one of the person's values stays plain. Plain throughout when the template is unknown or the text
- * does not follow it.
- */
-function Filled({ text, template }: { readonly text: string; readonly template: string | undefined }) {
-  const segments = template === undefined ? null : filledSegments(template, text);
-  if (segments === null) return <>{text}</>;
-  return (
-    <>
-      {segments.map((segment, i) =>
-        segment.filled ? (
-          <span key={i} className="font-medium">
-            {segment.text}
-          </span>
-        ) : (
-          segment.text
-        ),
-      )}
-    </>
-  );
-}
-
-function Text({ label, text, template }: { readonly label: string; readonly text: PreviewText; readonly template: string | undefined }) {
+function Text({ label, text, template }: { readonly label: string; readonly text: PreviewText; readonly template: string | null | undefined }) {
   return (
     <div>
       <p className="text-caption text-muted">{label}</p>
       {text.ok ? (
         <p className="whitespace-pre-line" data-testid="sent-text">
-          <Filled text={text.text} template={template} />
+          <FilledText text={text.text} template={template} />
         </p>
       ) : (
         <Notice tone="waits" className="text-base-content">
@@ -507,7 +482,7 @@ function FollowUp({ text, template }: { readonly text: PreviewText | null; reado
       summaryClassName="-my-2 py-2 text-caption text-muted hover:text-base-content max-lg:-my-3.25 max-lg:py-3.25"
     >
       <p className="mt-0.5 whitespace-pre-line" data-testid="sent-text">
-        <Filled text={text.text} template={template} />
+        <FilledText text={text.text} template={template} />
       </p>
     </Disclosure>
   );

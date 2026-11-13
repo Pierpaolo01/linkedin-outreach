@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainMessage } from "./words";
+import { capitalised, plainMessage, POLICY_WORDS } from "./words";
 
 describe("plainMessage", () => {
   it("puts the session lines in the app's words", () => {
@@ -46,5 +46,14 @@ describe("plainMessage", () => {
     // The other campaign lines already read as sentences and stay as they are.
     expect(plainMessage('Campaign "Dentists" paused (was awaiting approval)')).toBe('Campaign "Dentists" paused (was awaiting approval)');
     expect(plainMessage('Campaign "Dentists" created as a draft')).toBe('Campaign "Dentists" created as a draft');
+  });
+});
+
+describe("capitalised", () => {
+  it("starts a value with a capital, as its sibling values do, and leaves the rest as it is", () => {
+    expect(capitalised(POLICY_WORDS.calendar)).toBe("Every day counts");
+    expect(capitalised(POLICY_WORDS.working_days)).toBe("Only working days count");
+    expect(capitalised("{{first_name}} is not set")).toBe("{{first_name}} is not set");
+    expect(capitalised("")).toBe("");
   });
 });

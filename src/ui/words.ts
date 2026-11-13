@@ -27,10 +27,14 @@ export const POLICY_WORDS = { calendar: "every day counts", working_days: "only 
 /** Started and not finished: its messages and timings can still change. */
 export const LIVE: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(["finding", "awaiting_approval", "running", "paused"]);
 
+/** Words with a capital first letter, for a value that stands on its own ("Every day counts"); the rest as it is. */
+export function capitalised(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** "Accepted the invite": a stage as the start of a sentence or a table cell. */
 export function stageWords(stage: ProspectStage): string {
-  const words = STAGE_LABEL[stage];
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return capitalised(STAGE_LABEL[stage]);
 }
 
 /** "1 December 2026". */

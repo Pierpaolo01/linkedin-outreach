@@ -1,7 +1,10 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { ActionError, SECONDARY_BUTTON } from "./formParts";
 
-/** A modal question with one action and a way out. Escape or the backdrop count as cancel. */
+/**
+ * A modal question with one action and a way out. Escape or the backdrop count as cancel, except while the action
+ * runs (`busy`): then nothing closes it, so the action's failure is still shown where it was asked for.
+ */
 export function ConfirmDialog(props: {
   readonly open: boolean;
   readonly title: string;
@@ -32,8 +35,14 @@ export function ConfirmDialog(props: {
       className="modal modal-bottom sm:modal-middle"
       aria-labelledby={titleId}
       aria-describedby={bodyId}
+      onCancel={(event) => {
+        if (props.busy === true) event.preventDefault();
+      }}
       onClose={() => {
-        if (props.open) props.onCancel();
+        if (!props.open) return;
+        // The browser lets a second Escape through without user activation in between, even when the first was refused.
+        if (props.busy === true) ref.current?.showModal();
+        else props.onCancel();
       }}
     >
       <div className="modal-box max-w-lg">

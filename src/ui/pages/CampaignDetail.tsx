@@ -4,7 +4,7 @@ import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { ActionError, Announce, DEF_LIST, DEF_TERM, EmptyState, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
+import { ActionError, Announce, DEF_LIST, DEF_TERM, EmptyState, FilledText, haltedBy, LoadError, Notice, Pager, QUIET_BUTTON, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
 import { IconChevron, IconExternal } from "../icons";
 import { tabTitle } from "../format";
 import { Link } from "../router";
@@ -17,8 +17,9 @@ type Stage = (typeof PROSPECT_STAGES)[number];
 
 /*
  * The People table needs a box of 58rem (`--container-people`) for its seven columns. In a narrower box each
- * person is one block of four lines: name (with score and Profile at the right); headline and company, the full
- * width of the block; stage, and the next action when there is one; the reason, muted so the stage line leads.
+ * person is one block of four lines: name (with score and Profile at the right); headline and company, muted and the
+ * full width of the block; stage in Ink, and the next action when there is one; the reason, muted. So the block reads
+ * in steps: who (semibold), what they do (muted), where they are (Ink), why (muted).
  * The column names are not shown there: the explicit roles keep the table's semantics when its parts are laid out
  * as a grid, so every cell keeps its column's name. Until the box is 66rem (`--container-people-wide`) the table
  * hides its Company column from the eye, header and cells together (screen readers keep it), and prints the
@@ -140,7 +141,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
   return (
     <section className="mt-section" aria-labelledby="people">
       <SectionHead id="people" title="People">
-        <a href={prospectsCsvUrl(campaign.id)} className="link inline-flex min-h-6 items-center text-sm link-hover">
+        <a href={prospectsCsvUrl(campaign.id)} className="link inline-flex min-h-6 items-center text-sm link-hover max-lg:-my-2.5 max-lg:min-h-11">
           Download as CSV
         </a>
       </SectionHead>
@@ -209,7 +210,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                     {open === p.id && (
                       <tr role="row" className="@max-people:block">
                         <td role="cell" colSpan={7} className="animate-appear bg-base-200/60 p-4 @max-people:block">
-                          <ProspectDetail prospect={p} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
+                          <ProspectDetail prospect={p} campaign={campaign} timeZone={timeZone} onChanged={() => setNonce((n) => n + 1)} />
                         </td>
                       </tr>
                     )}
@@ -269,7 +270,7 @@ function ProspectRow(props: {
           </button>
         </div>
         {headline !== null && (
-          <p className="text-base-content">
+          <p className="text-base-content @max-people:text-muted">
             {headline}
             {companyAfter && (
               <span className="hidden text-muted @max-people-wide:inline" aria-hidden="true">
@@ -280,7 +281,7 @@ function ProspectRow(props: {
           </p>
         )}
         {headline === null && company !== null && (
-          <p className="hidden @max-people-wide:block" aria-hidden="true">
+          <p className="hidden @max-people:text-muted @max-people-wide:block" aria-hidden="true">
             {company}
           </p>
         )}
@@ -384,7 +385,8 @@ function history(p: Prospect): readonly { readonly label: string; readonly at: s
     .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 }
 
-function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospect: Prospect; readonly timeZone: string; readonly onChanged: () => void }) {
+function ProspectDetail(props: { readonly prospect: Prospect; readonly campaign: Campaign; readonly timeZone: string; readonly onChanged: () => void }) {
+  const { prospect: p, campaign, timeZone, onChanged } = props;
   const [doNotContact, setDnc] = useState(p.person.doNotContact);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -403,10 +405,11 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
       .finally(() => setBusy(false));
   };
 
+  // Each text with the campaign's template for it, so the filled-in values are set apart (plain if it was edited since).
   const texts = [
-    ["Invite note", p.texts.inviteNote, p.invitedAt === null ? "Not invited yet." : "Invited without a note."],
-    ["First message", p.texts.firstMessage, "Not sent yet."],
-    ["Follow-up", p.texts.followUp, "Not sent."],
+    ["Invite note", p.texts.inviteNote, campaign.inviteNote, p.invitedAt === null ? "Not invited yet." : "Invited without a note."],
+    ["First message", p.texts.firstMessage, campaign.firstMessage, "Not sent yet."],
+    ["Follow-up", p.texts.followUp, campaign.followUp, "Not sent."],
   ] as const;
 
   return (
@@ -414,10 +417,16 @@ function ProspectDetail({ prospect: p, timeZone, onChanged }: { readonly prospec
       <div className="min-w-0">
         <h3 className="font-semibold">Texts as sent</h3>
         <dl className="mt-2 flex flex-col gap-3">
-          {texts.map(([label, text, none]) => (
+          {texts.map(([label, text, template, none]) => (
             <div key={label}>
               <dt className="text-caption text-muted">{label}</dt>
-              <dd className={`whitespace-pre-line wrap-break-word ${text === null ? "text-muted" : "border-l-2 border-base-300 pl-3"}`}>{text ?? none}</dd>
+              {text === null ? (
+                <dd className="text-muted">{none}</dd>
+              ) : (
+                <dd className="border-l-2 border-base-300 pl-3 whitespace-pre-line wrap-break-word" data-testid="sent-text">
+                  <FilledText text={text} template={template} />
+                </dd>
+              )}
             </div>
           ))}
         </dl>

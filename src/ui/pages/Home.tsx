@@ -182,7 +182,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
   return (
     <section aria-labelledby="home-campaigns">
       <SectionHead id="home-campaigns" title="Campaigns">
-        <Link to="/campaigns" className="link inline-flex min-h-6 items-center text-sm link-hover">
+        <Link to="/campaigns" className="link inline-flex min-h-6 items-center text-sm link-hover max-lg:-my-2.5 max-lg:min-h-11">
           All campaigns
         </Link>
       </SectionHead>
@@ -225,7 +225,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                 return (
                   <tr key={c.id} role="row">
                     <th role="rowheader" scope="row" className="text-left font-normal @funnel:min-w-42">
-                      <Link to={`/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
+                      <Link to={`/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11">
                         {c.name}
                       </Link>
                       <StatusLine status={c.status} safetyStop={stopped} className="mt-0.5 text-sm text-muted" />
@@ -332,7 +332,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
   return (
     <section aria-labelledby="home-activity">
       <SectionHead id="home-activity" title="What the app did">
-        <Link to="/activity" className="link inline-flex min-h-6 items-center text-sm link-hover">
+        <Link to="/activity" className="link inline-flex min-h-6 items-center text-sm link-hover max-lg:-my-2.5 max-lg:min-h-11">
           Activity log
         </Link>
       </SectionHead>
@@ -346,7 +346,8 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
         <ol className="flex flex-col gap-2.5 text-sm">
           {items.map((item) => (
             <li key={item.id} className="grid grid-cols-[4rem_1fr] gap-2">
-              <span className="nums flex items-center justify-between gap-1.5 text-muted">
+              {/* One line high and at the top of the row, so the time and its mark sit on the message's first line when it wraps. */}
+              <span className="nums flex h-lh items-center justify-between gap-1.5 self-start text-muted">
                 {formatShort(item.at, timeZone, now)}
                 <LevelMark level={item.level} />
               </span>

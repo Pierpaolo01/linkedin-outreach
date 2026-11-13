@@ -169,7 +169,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{person.fullName}</h2>
-          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-6 items-center gap-1 text-sm text-base-content link-hover">
+          <a href={person.profileUrl} target="_blank" rel="noreferrer" className="link inline-flex min-h-6 items-center gap-1 text-sm text-base-content link-hover max-lg:-my-2.5 max-lg:min-h-11">
             LinkedIn profile
             <IconExternal />
             <span className="sr-only">(opens in your browser)</span>

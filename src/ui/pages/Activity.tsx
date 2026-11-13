@@ -121,8 +121,11 @@ export function Activity() {
                   data-level={item.level}
                   className="grid gap-x-4 gap-y-0.5 px-4 py-2.5 text-sm sm:grid-cols-[7rem_minmax(0,1fr)_12rem]"
                 >
-                  {/* A warning's ring or an error's dot ends the time column, so every line's text starts at one edge. */}
-                  <span className="nums flex items-center gap-2 text-muted sm:justify-between">
+                  {/*
+                   * A warning's triangle or an error's dot ends the time column, so every line's text starts at one edge.
+                   * One line high and at the top of the row, so the time and its mark sit on a wrapped message's first line.
+                   */}
+                  <span className="nums flex h-lh items-center gap-2 self-start text-muted sm:justify-between">
                     {formatStamp(item.at, timeZone)}
                     <LevelMark level={item.level} />
                   </span>

@@ -158,7 +158,7 @@ function CampaignTable(props: {
             return (
               <tr key={c.id} role="row" data-testid="campaign-row" className="@max-funnel:block">
                 <th role="rowheader" scope="row" className="text-left font-normal @funnel:min-w-42 @max-funnel:block @max-funnel:border-b-0">
-                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline">
+                  <Link to={c.status === "draft" ? `/campaigns/${c.id}/edit` : `/campaigns/${c.id}`} className="inline-flex min-h-6 items-center text-nav font-semibold hover:underline max-lg:-my-2.5 max-lg:min-h-11">
                     {c.name.trim() === "" ? "Untitled campaign" : c.name}
                   </Link>
                   <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-muted" testId="campaign-status" />
