@@ -24,6 +24,8 @@ type Stage = (typeof PROSPECT_STAGES)[number];
  * as a grid, so every cell keeps its column's name. Until the box is 66rem (`--container-people-wide`) the table
  * hides its Company column from the eye, header and cells together (screen readers keep it), and prints the
  * company after the headline as the block does, so Person and the reason are not squeezed to three or four lines.
+ * When nobody on the shown page has a next action, the Next action column is hidden from the eye the same way, so the
+ * reason gets its width instead of a column of dashes.
  */
 const STACK_CELL = "@max-people:min-w-0 @max-people:border-0 @max-people:p-0";
 
@@ -137,6 +139,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
   );
   const now = new Date();
   const items = loaded.data?.items ?? [];
+  const quietNext = items.every((p) => p.nextActionAt === null);
 
   return (
     <section className="mt-section" aria-labelledby="people">
@@ -190,7 +193,9 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                   <th role="columnheader" scope="col" className="font-medium">Stage</th>
                   <th role="columnheader" scope="col" className="font-medium">Score</th>
                   <th role="columnheader" scope="col" className="min-w-56 font-medium">Why the AI scored them so</th>
-                  <th role="columnheader" scope="col" className="font-medium">Next action</th>
+                  <th role="columnheader" scope="col" className={`font-medium ${quietNext ? "sr-only" : ""}`}>
+                    Next action
+                  </th>
                   <th role="columnheader" scope="col">
                     <span className="sr-only">LinkedIn profile</span>
                   </th>
@@ -203,6 +208,7 @@ function People({ campaign }: { readonly campaign: Campaign }) {
                       prospect={p}
                       campaign={campaign}
                       open={open === p.id}
+                      quietNext={quietNext}
                       onToggle={() => setOpen((current) => (current === p.id ? null : p.id))}
                       timeZone={timeZone}
                       now={now}
@@ -238,6 +244,8 @@ function ProspectRow(props: {
   readonly prospect: Prospect;
   readonly campaign: Campaign;
   readonly open: boolean;
+  /** Nobody on the shown page has a next action: the column is for screen readers only. */
+  readonly quietNext: boolean;
   readonly onToggle: () => void;
   readonly timeZone: string;
   readonly now: Date;
@@ -304,7 +312,7 @@ function ProspectRow(props: {
       </td>
       <td
         role="cell"
-        className={`${STACK_CELL} @max-people:col-span-3 @max-people:col-start-2 @max-people:row-start-2 ${p.nextActionAt === null ? "@max-people:sr-only" : ""}`}
+        className={`${STACK_CELL} @max-people:col-span-3 @max-people:col-start-2 @max-people:row-start-2 ${props.quietNext ? "sr-only" : p.nextActionAt === null ? "@max-people:sr-only" : ""}`}
       >
         {p.nextActionAt === null ? (
           <span className="text-muted">

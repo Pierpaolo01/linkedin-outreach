@@ -208,7 +208,7 @@ A green-grey neutral family with one deep green for action, one amber for waitin
 - **Desk Green** (`primary`, #2c5e4f): the main action on a screen ("Open queue", "Approve all 8 shown", "Save and continue", "Start the campaign"), the outline and text of the Approve button, the fill of a budget meter that still has room, the switch when on, the selected radio, the selected discovery source border, and short success sentences ("Saved.").
 
 ### Secondary
-- **Waiting Amber** (`accent` and `warning`, #e5ad42, with `accent-content` #2b1d03 on top): what waits. The count tiles on Home, the count badges in the sidebar, the dot of a campaign waiting for approval, the "logged out" and "search limit reached" session light, the full meter of a spent budget, and the banner when the app does not answer. At 20 to 25% opacity it is the fill of a notice ("Held for review: …", "What you do by hand on LinkedIn also counts."). `accent` and `warning` are the same hex.
+- **Waiting Amber** (`accent` and `warning`, #e5ad42, with `accent-content` #2b1d03 on top): what waits. The count tiles on Home, the count badges in the sidebar, the dot of a campaign waiting for approval, the "logged out" and "search limit reached" session light, and the banner when the app does not answer. At 20 to 25% opacity it is the fill of a notice ("Held for review: …", "What you do by hand on LinkedIn also counts."). `accent` and `warning` are the same hex.
 
 ### Tertiary
 - **Stop Red** (`error`, #b3352b, white text on top): the safety-stop banner, the "LinkedIn needs you" banner, and the sidebar session card while a stop is active. Outside those it appears as text (error sentences, an error line in the activity log), as a dot ("Stopped by safety stop", "Checkpoint", "Restricted"), and at 5 to 15% opacity behind an error message or the "Do not contact" badge.
@@ -234,14 +234,14 @@ A green-grey neutral family with one deep green for action, one amber for waitin
 | Campaign draft, paused, completed, archived; session not checked | Dark Moss | dot + words |
 | Campaign stopped by a safety stop; session checkpoint or restricted | Stop Red | dot + words |
 | Budget with room | Desk Green | meter fill |
-| Budget spent ("Budget spent, resumes …") | Waiting Amber | full meter + sentence |
+| Budget spent ("Budget spent, resumes …"; during a safety stop "Budget spent; it resets …") | Muted (`--color-muted`, #5b625d) | full meter + muted sentence |
 | Score 7 to 10 / 5 to under 7 / under 5 or not scored | Score Mint / Score Sage / Desk Paper with a Hairline Sage edge | square chip with the number |
 | Safety stop | Stop Red | full-width banner + red session card |
 
 ### Named Rules
-**The One Alarm Rule.** A solid Stop Red bar or panel means LinkedIn needs the user: the safety-stop banner, the "LinkedIn needs you" banner, and the session card during a stop. A spent budget is amber and a pause is Dark Moss, so neither can be taken for a stop.
+**The One Alarm Rule.** A solid Stop Red bar or panel means LinkedIn needs the user: the safety-stop banner, the "LinkedIn needs you" banner, and the session card during a stop. A spent budget is a muted meter and a pause is Dark Moss, so neither can be taken for a stop.
 
-**The Amber Waits Rule.** Amber marks something waiting, whether on the user (a count to approve or review) or by itself (a spent budget until tomorrow). It is never the colour of a button.
+**The Amber Waits Rule.** Amber marks what waits for the user (a count to approve or review, a campaign waiting for approval, a notice about a held person). A spent budget is not amber: it is not a problem and waits on nobody, so its meter is the muted tone and its words carry the state. Amber is never the colour of a button.
 
 **The Dot And Words Rule.** A status dot always sits beside its label ("Running", "Paused", "Stopped by safety stop"). No status is shown by colour alone.
 
@@ -312,7 +312,7 @@ Borders are 1px Hairline Sage. Grouped rows are separated by 1px dividers inside
 Built on daisyUI's button, mostly at the small size (2rem high, 0.875rem, 600); the extra-small size (1.5rem high, 0.8125rem) is used inside table rows and the session card.
 - **Shape:** softly rounded (6px), 1px border, no shadow.
 - **Primary:** Desk Green with white text. One per view at most.
-- **Outlined:** Desk Paper with a Hairline Sage border and Ink text, for secondary actions ("Back", "Re-check", "Pause", "Back up now", "Edit messages and timings"). Some are transparent instead of Desk Paper (the ghost variant with the same border); on the page they look the same.
+- **Outlined:** Desk Paper with a Hairline Sage border and Ink text, for secondary actions ("Back", "Re-check", "Pause", "Back up now", "Edit messages and timings"). Pause on a campaign a safety stop has already halted keeps the border with muted words: it steps back but is still a button. Some are transparent instead of Desk Paper (the ghost variant with the same border); on the page they look the same.
 - **Plain:** the daisyUI default (a Sidebar Sage fill, no visible border) for "Open" on Home and "Try again".
 - **Approve / Reject:** Approve is outlined in Desk Green at 50% with Desk Green text and a check icon; Reject is the outlined button with an X icon. From 1024px each shows its key cap (A, R).
 - **Selected:** Dark Moss with light text, for the chosen segment of a joined filter ("Any, 5+, 6+, 7+, 8+", "Everything / Warnings and errors") and for a working day that is on. Unselected segments are Desk Paper.
@@ -356,23 +356,23 @@ Built on daisyUI's button, mostly at the small size (2rem high, 0.875rem, 600); 
 
 ### Navigation
 - **Sidebar:** Sidebar Sage, 16rem, right hairline. From the top: "Outreach", the session card, the menu, and at the bottom the working window in two faded lines ("Working Mon to Fri, 09:00 to 18:00. Working now, until 18:00.").
-- **Items:** daisyUI menu, 0.95rem, 6px radius. The current item is Dark Moss with light text. Campaigns are nested one level under "Campaigns" at body-small, each with its status dot. A 12px gap separates the three groups (what needs the user; campaigns; activity, stats and settings).
+- **Items:** daisyUI menu, 0.95rem, 6px radius. The current item is Dark Moss with light text; exactly one item is current on every page: a campaign's own entry on its page, and "Campaigns" throughout the wizard (new or a draft's). Campaigns are nested one level under "Campaigns" at body-small, each with its status dot. A 12px gap separates the three groups (what needs the user; campaigns; activity, stats and settings).
 - **Session card:** a Desk Paper box in the sidebar with the session light and label ("Connected"), "Last checked 17:56" and an extra-small Re-check button. During a safety stop the whole card turns Stop Red with white text and names the stop.
 - **Phone:** a top bar with the menu button, "Outreach" and the session light; the sidebar slides in as a drawer over an overlay and closes when a link is followed.
 
 ### Safety-stop banner
-The one alarm. A full-width Stop Red bar above the page on every screen, with `role="alert"`: the stop icon (hidden on a phone), "Safety stop. All LinkedIn activity is stopped." at 600, what LinkedIn showed, "What to do: …", when it stopped in body-small, and a white Resume button at the right (full width under the text on a phone). Resume opens the confirm dialog. The same bar, with Re-check, is used when the session needs the user and no stop has been raised yet. While a stop is active, pausable campaigns show a red dot and "Stopped by safety stop", and the sidebar footer reads "Nothing runs on LinkedIn until you resume."
+The one alarm. A full-width Stop Red bar above the page on every screen, with `role="alert"`: the stop icon (on a phone beside the heading, centred on its first line), "Safety stop. All LinkedIn activity is stopped." at 600, what LinkedIn showed, "What to do: …", when it stopped in body-small, and a white Resume button at the right (full width under the text on a phone). Resume opens the confirm dialog. The same bar, with Re-check, is used when the session needs the user and no stop has been raised yet. While a stop is active, pausable campaigns show a red dot and "Stopped by safety stop", and the sidebar footer reads "Nothing runs on LinkedIn until you resume."
 
 The quiet counterpart is the unreachable banner: an amber bar with one sentence and no button, when the app does not answer.
 
 ### Budget meter
-One per budget in "Today's usage": the name at the left, "7 of 11" at the right (the used count at 600, the limit at 65%), and a 6px progress bar under them. The fill is Desk Green while there is room and amber when the budget is spent, with a sentence under it ("Budget spent, resumes tomorrow 09:00"; during warm-up, "Warm-up: today's allowance, rising to 15 a day").
+One per budget in "Today's usage": the name at the left, "7 of 11" at the right (the used count at 600, the limit at 65%), and a 6px progress bar under them. The fill is Desk Green while there is room and the solid muted tone (`--color-muted`) when the budget is spent: quieter than the green bars and never amber, since a spent budget is not a problem. The sentence under it is muted like every other ("Budget spent, resumes tomorrow 09:00"; during a safety stop, when nothing runs until the user resumes, "Budget spent; it resets Monday 09:00"; during warm-up, "Warm-up: today's allowance, rising to 15 a day").
 
 ### Wizard step bar
-Seven numbered steps. From 1024px a left column; below it a horizontal strip that scrolls. Each step is a 1.5rem circle with its number and the step's name at body-small. The current step is Dark Moss with a light circle; other steps are plain with a Hairline Sage circle and a Sidebar Sage hover; steps that cannot be opened yet are at half opacity; a step with a problem has a Stop Red circle. Below the form, a top hairline separates Back and "Save and continue"; the last step's Start button is the medium size.
+Seven numbered steps. From 1024px a left column; below it a horizontal strip that scrolls. Each step is a 1.5rem circle with its number and the step's name at body-small. The current step is Dark Moss with a light circle; other steps are plain with a Hairline Sage circle and a Sidebar Sage hover; steps that cannot be opened yet are at half opacity; a step with a problem has a Stop Red circle. Below the form, a top hairline separates Back and "Save and continue"; the last step's Start button is the medium size. The review marks each step with a check when done, a Stop Red dot when it has a problem, and the same numbered Hairline Sage circle as the strip when it is not finished yet. While steps are unfinished, a plain Ink sentence above Start names them ("Who fits and Messages are not finished yet."), and Start points at it. A refused Start moves the focus to the summary at the top of the review, which names the steps to fix; a refused "Save and continue" moves the focus to the first field the step marked.
 
 ### Confirm dialog
-The native `dialog` with daisyUI's modal: a bottom sheet on a phone, centred from 640px, at most 32rem wide. Title at 1.125rem 600, one or two sentences, then the actions at the right: an outlined way out ("Cancel", "Not yet") and one primary action that says what it does ("I have done this, resume"). A destructive action uses the red button. Escape and the backdrop cancel.
+The native `dialog` with daisyUI's modal: a bottom sheet on a phone, centred from 640px, at most 32rem wide. Title at 1.125rem 600, one or two sentences, then the actions at the right: an outlined way out ("Cancel", "Not yet") and one primary action that says what it does ("I have done this, resume"). A destructive action uses the red button. Escape and the backdrop cancel. While the action runs the primary button keeps its fill and the focus, shows a spinner and says what it is doing ("Approving…", "Archiving…", "Resuming…", "Starting…"; "Working…" by default), and ignores a second press (`aria-disabled`, `aria-busy`); Cancel is disabled, and Escape and the backdrop do nothing until the action ends.
 
 ### Icons
 Five line icons drawn inline in `src/ui/icons.tsx`: check, X, menu, stop (an octagon with an exclamation mark) and external link. All are 24px-grid outlines with a 1.8 stroke, round caps and joins, in the current text colour, shown at 14 to 28px. Nothing else in the product is an icon; meaning is carried by words.
@@ -393,7 +393,7 @@ None is authored. Buttons, switches, the drawer, spinners and skeletons use dais
 - **Do** keep every page free of sideways scrolling at 390px; a wide table scrolls inside its own box.
 
 ### Don't:
-- **Don't** make a spent budget, a pause or a wait look like a safety stop. They are amber or Dark Moss; only a stop is a red bar.
+- **Don't** make a spent budget, a pause or a wait look like a safety stop. They are muted, Dark Moss or amber; only a stop is a red bar.
 - **Don't** show a status by colour alone.
 - **Don't** add drop shadows; the theme's depth is 0.
 - **Don't** set text at 700, in uppercase or with letter-spacing; the system uses 400, 500 and 600 in sentence case.

@@ -19,6 +19,12 @@ export const SECONDARY_BUTTON = "btn border-base-300 bg-base-100 hover:not-disab
 /** A quiet text button: no fill and no border, for an action that must not compete with what sits beside it. */
 export const QUIET_BUTTON = "btn btn-ghost font-medium text-muted";
 
+/**
+ * Added to the secondary button for Pause on a campaign a safety stop has already halted: its words step back to the
+ * muted tone, while its border keeps it a button that can be pressed (pausing it still holds it after a resume).
+ */
+export const HALTED_PAUSE = "text-muted";
+
 /** A button on a Stop Red surface (the safety-stop banner, the red session card). */
 export const ON_RED_BUTTON = "btn border-error-content/40 bg-error-content text-error";
 
@@ -61,11 +67,14 @@ export function Announce({ message, children }: { readonly message?: string | un
   );
 }
 
-/** What went wrong when the user's action failed (a save, a pause, a decision). Nothing when there is no message. */
-export function ActionError({ message, className, testId }: { readonly message: string | undefined; readonly className?: string; readonly testId?: string }) {
+/**
+ * What went wrong when the user's action failed (a save, a pause, a decision). Nothing when there is no message.
+ * With an `id` it can take the focus from the script (`focusInView`), for a summary far from the button that failed.
+ */
+export function ActionError({ message, className, testId, id }: { readonly message: string | undefined; readonly className?: string; readonly testId?: string; readonly id?: string }) {
   if (message === undefined) return null;
   return (
-    <p role="alert" className={`rounded-box bg-error/10 px-3 py-2 text-sm text-error ${className ?? ""}`} data-testid={testId}>
+    <p id={id} tabIndex={id === undefined ? undefined : -1} role="alert" className={`rounded-box bg-error/10 px-3 py-2 text-sm text-error ${className ?? ""}`} data-testid={testId}>
       {message}
     </p>
   );
@@ -295,6 +304,28 @@ export function ScoreChip({ score, size, role }: { readonly score: number | null
       {score === null ? "–" : formatScore(score)}
     </span>
   );
+}
+
+// ------------------------------------------------------------ focus after a refusal
+
+/** Moves the focus to `element` and brings it to the middle of the window (clear of a sticky bar); instantly under reduced motion. */
+export function focusInView(element: HTMLElement) {
+  element.focus({ preventScroll: true });
+  element.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+}
+
+/**
+ * After a refused save: moves the focus to the first control `container` marked, in view (`focusInView`). Found from
+ * the first error line with an id: the control that points at it (`aria-describedby`), or the first control of a group
+ * (a fieldset) that does.
+ */
+export function focusFirstError(container: HTMLElement) {
+  const line = container.querySelector<HTMLElement>('[data-testid="field-error"][id]');
+  if (line === null) return;
+  const owner = container.querySelector<HTMLElement>(`[aria-describedby~="${CSS.escape(line.id)}"]`);
+  const control = owner?.matches("input, select, textarea, button") === true ? owner : owner?.querySelector<HTMLElement>("input, select, textarea, button");
+  if (control === null || control === undefined) return;
+  focusInView(control);
 }
 
 // ------------------------------------------------------------ controls

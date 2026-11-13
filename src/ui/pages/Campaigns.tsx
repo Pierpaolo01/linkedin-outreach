@@ -3,11 +3,10 @@ import { archiveCampaign, listCampaigns, pauseCampaign, resumeCampaign, toApiErr
 import type { Campaign, DiscoveryWait } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { plural } from "../format";
-import { ActionError, EmptyState, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
+import { ActionError, EmptyState, HALTED_PAUSE, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
+import { campaignsSummary, discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
 import { PAGE_TITLE_ID, PageHeader } from "./PageHeader";
 
 /** Every campaign: status, funnel counts, Pause or Resume, Archive. Archived ones are listed apart. */
@@ -55,13 +54,11 @@ export function Campaigns() {
       .finally(() => setArchiveBusy(false));
   };
 
-  const running = current.filter((c) => c.status === "running").length;
-
   return (
     <>
       <PageHeader
         title="Campaigns"
-        aside={loaded.data === undefined ? undefined : `${plural(current.length, "campaign", "campaigns")}, ${running} running`}
+        aside={loaded.data === undefined ? undefined : campaignsSummary(current.map((c) => c.status), stopped)}
         lead="Each campaign finds people, scores them against who you said fits, and invites and messages the ones you approve."
         action={
           <Link to="/campaigns/new" className="btn btn-sm btn-primary">
@@ -108,6 +105,7 @@ export function Campaigns() {
         open={archiving !== null}
         title={`Archive ${archiving?.name ?? "this campaign"}?`}
         confirmLabel="Archive"
+        busyLabel="Archiving…"
         tone="error"
         busy={archiveBusy}
         error={archiveError}
@@ -182,7 +180,7 @@ function CampaignTable(props: {
                     {(PAUSABLE.has(c.status) || c.status === "paused") && (
                       <button
                         type="button"
-                        className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-xs`}
+                        className={`${SECONDARY_BUTTON} btn-xs ${halted ? HALTED_PAUSE : ""}`}
                         disabled={busy}
                         aria-busy={busy}
                         onClick={() => props.onToggle(c)}

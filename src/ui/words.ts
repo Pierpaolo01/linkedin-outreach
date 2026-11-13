@@ -1,7 +1,7 @@
 import type { CampaignStatus, ProspectStage } from "../db/schema";
-import type { Campaign, DiscoveryWait } from "./apiSchemas";
+import type { Budget, BudgetKind, Campaign, DiscoveryWait } from "./apiSchemas";
 import { STEPS } from "./campaignForm";
-import { formatClock, formatWhen, STAGE_LABEL } from "./format";
+import { formatClock, formatResume, formatWhen, plural, STAGE_LABEL } from "./format";
 
 /** More words and dates for the campaign, activity, stats and settings pages. Times are in the app's time zone. */
 
@@ -20,6 +20,41 @@ export const FUNNEL_LABEL: Readonly<Record<FunnelStep, string>> = {
 
 /** Statuses a campaign can be paused from. */
 export const PAUSABLE: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(["finding", "awaiting_approval", "running"]);
+
+/**
+ * The Campaigns page's count: every campaign, and those at work (finding people, waiting for approval or running) as
+ * active. During a safety stop those are the ones the table says "Stopped by safety stop" for, so the count says so too.
+ */
+export function campaignsSummary(statuses: readonly CampaignStatus[], safetyStop: boolean): string {
+  const working = statuses.filter((status) => PAUSABLE.has(status)).length;
+  return `${plural(statuses.length, "campaign", "campaigns")}, ${working} ${safetyStop && working > 0 ? "stopped by safety stop" : "active"}`;
+}
+
+/**
+ * The line under a budget's meter on Home. A spent budget is never "paused" (pausing is the user's choice on one
+ * campaign); it may be spent below today's number when the week's invite budget or LinkedIn's own limit blocks invites.
+ * During a safety stop nothing runs until the user resumes, so the line says only when the budget resets.
+ */
+export function budgetNote(args: {
+  readonly kind: BudgetKind;
+  readonly budget: Budget;
+  /** The invites a day warm-up rises to, when warm-up is on. */
+  readonly warmUpTarget: number | undefined;
+  readonly safetyStop: boolean;
+  readonly timeZone: string;
+  readonly now: Date;
+}): string | undefined {
+  const { budget } = args;
+  if (!budget.open) {
+    if (budget.resumesAt === null) return "Budget spent";
+    const when = formatResume(budget.resumesAt, args.timeZone, args.now);
+    return args.safetyStop ? `Budget spent; it resets ${when}` : `Budget spent, resumes ${when}`;
+  }
+  if (args.kind === "invite" && args.warmUpTarget !== undefined && budget.limit < args.warmUpTarget) {
+    return `Warm-up: today's allowance, rising to ${args.warmUpTarget} a day`;
+  }
+  return undefined;
+}
 
 /** How a campaign's waits count days, as the end of a sentence. */
 export const POLICY_WORDS = { calendar: "every day counts", working_days: "only working days count" } as const;

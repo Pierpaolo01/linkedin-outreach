@@ -3,13 +3,17 @@ import { ActionError, SECONDARY_BUTTON } from "./formParts";
 
 /**
  * A modal question with one action and a way out. Escape or the backdrop count as cancel, except while the action
- * runs (`busy`): then nothing closes it, so the action's failure is still shown where it was asked for.
+ * runs (`busy`): then nothing closes it, so the action's failure is still shown where it was asked for. While busy the
+ * confirm button keeps the focus and its colour and says what it is doing (`busyLabel` beside a spinner); it is
+ * `aria-disabled` and ignores a press rather than `disabled`, which would drop the focus to the page. Cancel is inert.
  */
 export function ConfirmDialog(props: {
   readonly open: boolean;
   readonly title: string;
   readonly children: ReactNode;
   readonly confirmLabel: string;
+  /** What the confirm button says while the action runs, such as "Approving…". */
+  readonly busyLabel?: string;
   readonly cancelLabel?: string;
   readonly tone?: "primary" | "error";
   readonly busy?: boolean;
@@ -21,6 +25,7 @@ export function ConfirmDialog(props: {
   const titleId = useId();
   const bodyId = useId();
   const { open } = props;
+  const busy = props.busy === true;
 
   useEffect(() => {
     const dialog = ref.current;
@@ -60,12 +65,14 @@ export function ConfirmDialog(props: {
           <button
             type="button"
             className={`btn btn-sm ${props.tone === "error" ? "btn-error" : "btn-primary"}`}
-            onClick={props.onConfirm}
-            disabled={props.busy}
-            aria-busy={props.busy}
+            onClick={() => {
+              if (!busy) props.onConfirm();
+            }}
+            aria-disabled={busy || undefined}
+            aria-busy={busy}
           >
-            {props.busy === true && <span className="loading loading-spinner loading-sm" />}
-            {props.confirmLabel}
+            {busy && <span className="loading loading-spinner loading-sm" aria-hidden="true" />}
+            {busy ? (props.busyLabel ?? "Working…") : props.confirmLabel}
           </button>
         </div>
       </div>

@@ -62,6 +62,10 @@ test("Home reads what needs you as sentences and shows today's usage", async ({ 
   await expect(page.getByTestId("usage-message")).toContainText("4 of 10");
   await expect(page.getByTestId("usage-discovery_page")).toContainText("10 of 10");
   await expect(page.getByTestId("usage-discovery_page")).toContainText(/Budget spent, resumes (tomorrow|today|Monday|\w+day) \d\d:\d\d/);
+  // A spent budget is quiet: its meter is the solid muted tone (never amber, never darker than the green bars) and its
+  // line is muted like every other line under a meter. The words carry the state.
+  await expect(page.getByTestId("usage-discovery_page").locator("progress")).toHaveCSS("color", MUTED);
+  await expect(page.getByTestId("usage-discovery_page").locator("p")).toHaveCSS("color", MUTED);
 
   const campaigns = page.getByRole("region", { name: "Campaigns" }).getByRole("table");
   await expect(campaigns).toContainText("Hotel owners, Rome");
@@ -220,13 +224,30 @@ test("a confirm dialog stays open on Escape while its action runs, so a failure 
   await page.getByRole("button", { name: `Approve all ${shown} shown` }).click();
   const dialog = page.getByRole("dialog", { name: `Approve all ${shown} ${shown === 1 ? "prospect" : "prospects"} shown?` });
   const confirm = dialog.getByRole("button", { name: `Approve ${shown}` });
+  let sent = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/approvals/approve-all") sent += 1;
+  });
+  const fill = await confirm.evaluate((button) => getComputedStyle(button).backgroundColor);
   await confirm.click();
-  await expect(confirm).toBeDisabled();
+  // While it runs, the button keeps the focus and its colour, says what it is doing, and ignores a second press; Cancel is inert.
+  const busy = dialog.getByRole("button", { name: "Approving…" });
+  await expect(busy).toBeFocused();
+  await expect(busy).toHaveAttribute("aria-disabled", "true");
+  await expect(busy).toHaveAttribute("aria-busy", "true");
+  await expect(busy).toHaveCSS("background-color", fill);
+  await expect(busy.locator(".loading")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  // Playwright waits for an aria-disabled button to be enabled; this press is meant to land while it is busy.
+  await busy.click({ force: true });
+  expect(sent).toBe(1);
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeVisible();
   release();
   await expect(dialog.getByRole("alert")).toContainText("test: approvals unavailable");
+  await expect(confirm).toBeEnabled();
+  await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
   // Once the action has ended, Escape closes it again.
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -533,6 +554,37 @@ test("every destination in the sidebar opens a page", async ({ page }) => {
   await expect(page.getByText("There is no page at this address.")).toBeVisible();
 });
 
+test("the sidebar marks exactly one item as the current page on every page, a draft's wizard address too", async ({ page }) => {
+  const nav = sidebar(page).getByRole("navigation", { name: "Main" });
+  const { campaigns } = (await (await page.request.get("/api/campaigns")).json()) as { campaigns: { id: number; name: string; status: string }[] };
+  const draft = campaigns.find((c) => c.status === "draft");
+  const listed = campaigns.find((c) => c.status === "running");
+  expect(draft, "the demo has a draft").toBeDefined();
+  expect(listed, "the demo has a running campaign").toBeDefined();
+  for (const [path, current] of [
+    ["/", "Home"],
+    ["/approvals", "Approval queue"],
+    ["/review", "Needs review"],
+    ["/campaigns", "Campaigns"],
+    ["/campaigns/new", "Campaigns"],
+    [`/campaigns/${draft?.id}/edit`, "Campaigns"],
+    [`/campaigns/${listed?.id}`, listed?.name ?? ""],
+    ["/activity", "Activity log"],
+    ["/stats", "Stats"],
+    ["/settings", "Settings"],
+  ] as const) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // The campaigns in the sidebar come with Home's data: wait for them, so a campaign's own entry can be current.
+    await expect(nav.getByRole("link", { name: new RegExp(`^${listed?.name ?? ""}`) })).toBeVisible();
+    const marked = nav.locator('[aria-current="page"]');
+    await expect(marked, path).toHaveCount(1);
+    await expect(marked, path).toHaveAccessibleName(new RegExp(`^${current}( ?,| \\d|$)`));
+    await expect(nav.locator(".menu-active"), path).toHaveCount(1);
+    await expect(marked, path).toHaveClass(/menu-active/);
+  }
+});
+
 test("phone width: the sidebar becomes a menu and nothing scrolls sideways", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const path of ["/", "/approvals", "/review", "/campaigns", "/campaigns/1", "/campaigns/new", "/activity", "/stats", "/settings"]) {
@@ -671,6 +723,8 @@ async function expectFocusRing(locator: ReturnType<Page["locator"]>, rgb: string
 }
 const INK = "rgb(29, 37, 33)";
 const MUTED = "rgb(91, 98, 93)";
+/** Hairline Sage (base-300), the edge of the secondary button. */
+const HAIRLINE = "rgb(220, 224, 216)";
 const ON_MOSS = "rgb(242, 244, 240)";
 const MOSS = "rgb(38, 48, 43)";
 
@@ -799,6 +853,40 @@ test("the log's time and level mark sit on a wrapped message's first line, at ev
   }
 });
 
+// The tests on the stop app that need its stop come before the one that resumes it.
+test("campaigns during a safety stop: the header says how many it stopped, and Pause stays a bordered button", async ({ page }) => {
+  await page.goto(appUrl("stop", "/campaigns"));
+  const statuses = () => page.getByTestId("campaigns-table").getByTestId("campaign-status").allInnerTexts();
+  await expect(page.getByTestId("campaign-row").first()).toBeVisible();
+  const shown = await statuses();
+  const halted = shown.filter((status) => status === "Stopped by safety stop").length;
+  expect(halted).toBeGreaterThan(1);
+  await expect(page.getByText(/^\d+ campaigns?, \d+ (active|stopped by safety stop)$/)).toHaveText(`${shown.length} campaigns, ${halted} stopped by safety stop`);
+  // Pause on a halted campaign steps back (muted words) but stays a bordered button beside Archive's plain text.
+  const pause = page.getByTestId("campaign-row").getByRole("button", { name: /^Pause / }).first();
+  await expect(pause).toHaveCSS("color", MUTED);
+  await expect(pause).toHaveCSS("border-top-style", "solid");
+  await expect(pause).toHaveCSS("border-top-color", HAIRLINE);
+});
+
+test("phone width: the safety-stop banner's icon sits beside its heading, centred on its first line", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(appUrl("stop"));
+  const banner = page.getByTestId("safety-stop");
+  const heading = banner.getByText("Safety stop. All LinkedIn activity is stopped.");
+  await expect(heading).toBeVisible();
+  const icon = await banner.locator("svg").first().boundingBox();
+  const text = await heading.boundingBox();
+  const lineHeight = await heading.evaluate((p) => Number.parseFloat(getComputedStyle(p).lineHeight));
+  expect(icon).not.toBeNull();
+  expect(text).not.toBeNull();
+  if (icon === null || text === null) return;
+  expect(icon.x + icon.width, "the icon is left of the heading").toBeLessThanOrEqual(text.x);
+  expect(Math.abs(icon.y + icon.height / 2 - (text.y + lineHeight / 2)), "the icon is centred on the heading's first line").toBeLessThanOrEqual(1);
+  const resume = await banner.getByRole("button", { name: "Resume" }).boundingBox();
+  expect(resume?.height ?? 0).toBeGreaterThanOrEqual(44);
+});
+
 test("the safety-stop banner says what to do, and Resume asks first", async ({ page }) => {
   // The log's stop line leads with "Safety stop:" and no "Error:" before it; a red dot marks it, and a warning line a ring.
   await page.goto(appUrl("stop", "/activity"));
@@ -831,6 +919,16 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
   await expect(card).toHaveText(/^The dedicated window is still logged in\. (Last checked \d\d:\d\d|Never checked)\.$/);
   await expect(sidebar(page).locator(".status-success")).toHaveCount(0);
 
+  // Nothing runs until the user resumes, so a spent budget says only when it resets, never that work resumes.
+  const spent = page.getByTestId("usage-discovery_page");
+  await expect(spent).toContainText(/Budget spent; it resets (tomorrow|today|\w+day|\d+ \w+) \d\d:\d\d/);
+  await expect(spent).not.toContainText("resumes");
+  // Pause on a campaign the stop has halted steps back but stays a bordered button.
+  const pause = page.getByRole("region", { name: "Campaigns" }).getByRole("button", { name: /^Pause / }).first();
+  await expect(pause).toHaveCSS("color", MUTED);
+  await expect(pause).toHaveCSS("border-top-style", "solid");
+  await expect(pause).toHaveCSS("border-top-color", HAIRLINE);
+
   await banner.getByRole("button", { name: "Resume" }).click();
   const dialog = page.getByRole("dialog", { name: "Resume LinkedIn activity?" });
   await expect(dialog).toContainText("Before you resume: Complete LinkedIn's check in the app's window, then press Resume.");
@@ -844,6 +942,7 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
   await expect(page.getByRole("region", { name: "Campaigns" })).not.toContainText("Stopped by safety stop");
   const home = (await (await page.request.get(appUrl("stop", "/api/home"))).json()) as { safetyStop: unknown };
   expect(home.safetyStop).toBeNull();
+  await expect(spent).toContainText(/Budget spent, resumes /);
 });
 
 test("Re-check updates the session, and an empty app shows its empty states", async ({ page }) => {

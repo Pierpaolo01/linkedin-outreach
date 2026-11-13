@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, resumeCampaign, toApiError } from "../api";
-import type { Budget, BudgetKind, Campaign, Home as HomeData, Settings } from "../apiSchemas";
+import type { BudgetKind, Campaign, Home as HomeData } from "../apiSchemas";
 import { useAppData } from "../appData";
-import { formatResume, formatShort, formatToday, joinWords } from "../format";
-import { ActionError, ActivityMessage, EmptyState, LevelMark, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
+import { formatShort, formatToday, joinWords } from "../format";
+import { ActionError, ActivityMessage, EmptyState, LevelMark, HALTED_PAUSE, haltedBy, LoadError, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
+import { budgetNote, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
 import { PageHeader } from "./PageHeader";
 
 /** Home: what needs the user, the campaigns, today's usage against each budget, and what the app did. */
@@ -242,7 +242,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                       {(PAUSABLE.has(c.status) || c.status === "paused") && (
                         <button
                           type="button"
-                          className={`${halted ? QUIET_BUTTON : SECONDARY_BUTTON} btn-xs`}
+                          className={`${SECONDARY_BUTTON} btn-xs ${halted ? HALTED_PAUSE : ""}`}
                           disabled={busyId === c.id}
                           aria-busy={busyId === c.id}
                           onClick={() => toggle(c)}
@@ -275,19 +275,10 @@ const BUDGET_LABEL: Readonly<Record<BudgetKind, string>> = {
 };
 const BUDGET_ORDER = ["invite", "message", "profile_view", "discovery_page", "withdraw"] as const satisfies readonly BudgetKind[];
 
-function usageNote(kind: BudgetKind, budget: Budget, settings: Settings | undefined, timeZone: string, now: Date): string | undefined {
-  // A spent budget is never "paused": pausing is the user's choice on one campaign. It may be spent
-  // below today's number when the week's invite budget or LinkedIn's own limit blocks invites.
-  if (!budget.open) return `Budget spent${budget.resumesAt === null ? "" : `, resumes ${formatResume(budget.resumesAt, timeZone, now)}`}`;
-  if (kind === "invite" && settings !== undefined && settings.warmUp.enabled && budget.limit < settings.limits.invitesPerDay) {
-    return `Warm-up: today's allowance, rising to ${settings.limits.invitesPerDay} a day`;
-  }
-  return undefined;
-}
-
 function Usage({ home }: { readonly home: HomeData }) {
   const { settings, timeZone } = useAppData();
   const now = new Date();
+  const warmUpTarget = settings?.warmUp.enabled === true ? settings.limits.invitesPerDay : undefined;
   return (
     <section aria-labelledby="home-usage">
       <SectionHead id="home-usage" title="Today’s usage" />
@@ -295,7 +286,7 @@ function Usage({ home }: { readonly home: HomeData }) {
         {BUDGET_ORDER.map((kind) => {
           const budget = home.usage[kind];
           const full = !budget.open;
-          const note = usageNote(kind, budget, settings, timeZone, now);
+          const note = budgetNote({ kind, budget, warmUpTarget, safetyStop: home.safetyStop !== null, timeZone, now });
           return (
             <li key={kind} data-testid={`usage-${kind}`}>
               <div className="flex items-baseline justify-between gap-3">
@@ -305,13 +296,14 @@ function Usage({ home }: { readonly home: HomeData }) {
                   <span className="text-muted"> of {budget.limit}</span>
                 </span>
               </div>
+              {/* A spent budget is quiet (not a problem): its meter is the muted tone, lighter than the green bars and never amber. */}
               <progress
-                className={`progress mt-1.5 h-2 border border-control bg-base-300 ${full ? "progress-neutral" : "progress-primary"}`}
+                className={`progress mt-1.5 h-2 border border-control bg-base-300 ${full ? "text-muted" : "progress-primary"}`}
                 value={Math.min(budget.used, budget.limit)}
                 max={Math.max(budget.limit, 1)}
                 aria-label={`${BUDGET_LABEL[kind]}: ${budget.used} of ${budget.limit} used today`}
               />
-              {note !== undefined && <p className={`mt-1 text-sm ${full ? "text-base-content" : "text-muted"}`}>{note}</p>}
+              {note !== undefined && <p className="mt-1 text-sm text-muted">{note}</p>}
             </li>
           );
         })}

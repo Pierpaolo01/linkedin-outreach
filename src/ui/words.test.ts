@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { capitalised, plainMessage, POLICY_WORDS } from "./words";
+import { budgetNote, campaignsSummary, capitalised, plainMessage, POLICY_WORDS } from "./words";
 
 describe("plainMessage", () => {
   it("puts the session lines in the app's words", () => {
@@ -55,5 +55,43 @@ describe("capitalised", () => {
     expect(capitalised(POLICY_WORDS.working_days)).toBe("Only working days count");
     expect(capitalised("{{first_name}} is not set")).toBe("{{first_name}} is not set");
     expect(capitalised("")).toBe("");
+  });
+});
+
+describe("budgetNote", () => {
+  // Thursday 12 November 2026, 10:00 in Rome; the budget opens again on Monday 16 November at 09:00.
+  const now = new Date("2026-11-12T09:00:00Z");
+  const spent = { used: 10, limit: 10, open: false, resumesAt: "2026-11-16T08:00:00.000Z" };
+  const base = { kind: "discovery_page", timeZone: "Europe/Rome", now, warmUpTarget: undefined } as const;
+
+  it("says when a spent budget resumes", () => {
+    expect(budgetNote({ ...base, budget: spent, safetyStop: false })).toBe("Budget spent, resumes Monday 09:00");
+    expect(budgetNote({ ...base, budget: { ...spent, resumesAt: null }, safetyStop: false })).toBe("Budget spent");
+  });
+
+  // During a safety stop nothing runs until the user resumes, so the card promises no work: only the budget's reset is sure.
+  it("says when a spent budget resets during a safety stop, never that work resumes", () => {
+    expect(budgetNote({ ...base, budget: spent, safetyStop: true })).toBe("Budget spent; it resets Monday 09:00");
+    expect(budgetNote({ ...base, budget: { ...spent, resumesAt: null }, safetyStop: true })).toBe("Budget spent");
+  });
+
+  it("says a warm-up allowance, and nothing for an open budget", () => {
+    const open = { used: 2, limit: 5, open: true, resumesAt: null };
+    expect(budgetNote({ ...base, kind: "invite", budget: open, safetyStop: false, warmUpTarget: 20 })).toBe("Warm-up: today's allowance, rising to 20 a day");
+    expect(budgetNote({ ...base, kind: "invite", budget: open, safetyStop: false })).toBeUndefined();
+    expect(budgetNote({ ...base, budget: open, safetyStop: false, warmUpTarget: 20 })).toBeUndefined();
+  });
+});
+
+describe("campaignsSummary", () => {
+  it("counts every campaign at work as active, in the words the table does not contradict", () => {
+    expect(campaignsSummary(["running", "awaiting_approval", "finding", "paused", "draft"], false)).toBe("5 campaigns, 3 active");
+    expect(campaignsSummary(["paused"], false)).toBe("1 campaign, 0 active");
+  });
+
+  // During a safety stop the table says "Stopped by safety stop" for those campaigns, so the header does too.
+  it("says the campaigns a safety stop halted as stopped", () => {
+    expect(campaignsSummary(["running", "awaiting_approval", "finding", "paused", "draft"], true)).toBe("5 campaigns, 3 stopped by safety stop");
+    expect(campaignsSummary(["paused", "draft"], true)).toBe("2 campaigns, 0 active");
   });
 });

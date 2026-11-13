@@ -155,6 +155,19 @@ p {
   --fontsize: var(--text-caption);
 }
 
+/*
+ * A button whose action is running (a confirm dialog's) keeps its fill and its focus: it is aria-disabled, which daisyUI
+ * draws as disabled, but it is not off, it is busy. Its words and spinner say so; a press is ignored in the script.
+ */
+.btn[aria-busy="true"][aria-disabled="true"] {
+  --btn-bg: var(--btn-color, var(--color-base-200));
+  --btn-border: var(--btn-bg);
+  pointer-events: auto;
+  cursor: progress;
+  color: var(--btn-fg);
+  background-color: var(--btn-bg);
+}
+
 /* A small field, select or textarea shows its value at the size of the sentence and the buttons beside it (14px), not daisyUI's 12px. */
 .input.input-sm,
 .select.select-sm,

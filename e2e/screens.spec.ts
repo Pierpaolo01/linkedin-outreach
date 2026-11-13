@@ -37,10 +37,18 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await page.getByLabel("Search address 1").fill("https://linkedin.com/search/results/people/?keywords=test");
   await page.getByRole("button", { name: "Save and continue" }).click();
 
-  // The review while Who fits is empty: a ring and "(not finished)", the missing text in Ink at 500, and no red before Start.
+  // The review while Who fits is empty: the step's own number in its circle, as on the strip, and "(not finished)"; the
+  // missing text in Ink at 500, and no red before Start.
   await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: "Review and start" }).click();
   const whoFits = page.getByTestId("review-step-3");
   await expect(whoFits.getByRole("heading", { name: "Who fits (not finished)" })).toBeVisible();
+  await expect(whoFits.getByTestId("review-mark")).toHaveText("3");
+  await expect(whoFits.getByTestId("review-mark")).toHaveClass(/bg-base-300/);
+  // A plain sentence by Start says which steps are not finished, and Start points at it.
+  const unfinished = page.getByTestId("start-unfinished");
+  await expect(unfinished).toHaveText("Who fits and Messages are not finished yet.");
+  await expect(unfinished).not.toHaveClass(/text-(error|warning|accent)/);
+  await expect(page.getByRole("button", { name: "Start the campaign" })).toHaveAccessibleDescription("Who fits and Messages are not finished yet.");
   await expect(whoFits.getByText("Not written yet")).toHaveCSS("font-weight", "500");
   await expect(whoFits.locator(".status-error, .text-error")).toHaveCount(0);
   // A row named like its step ("Name" under "Name", "Who fits" under "Who fits") keeps its label for screen readers only.
@@ -88,6 +96,8 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await page.getByRole("button", { name: "Save and review" }).click();
   await page.getByRole("button", { name: "Start the campaign" }).click();
   await expect(page.getByTestId("start-error")).toContainText("The campaign cannot start yet");
+  await expect(page.getByTestId("start-error")).toContainText("Fix Where people come from and Messages, marked below");
+  await expect(page.getByTestId("start-error")).toBeFocused();
   await expect(page.getByTestId("review-step-2")).toContainText("This is not a LinkedIn people search");
   await expect(page.getByTestId("review-step-5")).toContainText("{{nickname}} is not a variable");
   // Its values start with a capital, as their neighbours do.
@@ -221,6 +231,18 @@ test("campaigns: funnel counts follow the engine by themselves, without a click 
   await expect(cells.nth(2)).toHaveText(String(before + 100), { timeout: 25_000 });
 });
 
+test("campaigns: the header counts the campaigns at work as active, as the table's words do", async ({ page }) => {
+  const summary = page.getByText(/^\d+ campaigns?, \d+ (active|stopped by safety stop)$/);
+  const statuses = () => page.getByTestId("campaigns-table").getByTestId("campaign-status").allInnerTexts();
+
+  await page.goto("/campaigns");
+  await expect(page.getByTestId("campaign-row").first()).toBeVisible();
+  const shown = await statuses();
+  const working = shown.filter((status) => ["Finding people", "Waiting for approval", "Running"].includes(status)).length;
+  expect(working, "the demo has more than one campaign at work").toBeGreaterThan(1);
+  await expect(summary).toHaveText(`${shown.length} campaigns, ${working} active`);
+});
+
 test("campaigns: pause and resume, a waiting discovery, and archive after a confirm", async ({ page }) => {
   await page.goto("/campaigns");
   const hotels = row(page, "Hotel owners, Rome");
@@ -343,6 +365,42 @@ test("campaign detail: a narrow People table drops the Company column for the ey
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(companyWidth).toBeGreaterThan(40);
   expect(await tallest(), "a People row runs past three lines at 1440").toBeLessThanOrEqual(89);
+});
+
+test("campaign detail: the Next action column shows only when someone on the shown page has a next action", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const rows = page.getByTestId("prospect-row");
+  const header = page.getByTestId("people-table").getByRole("columnheader", { name: "Next action" });
+  const headerWidth = () => header.evaluate((th) => th.getBoundingClientRect().width);
+  // The cells of the column: Company, Stage, Score, the reason, Next action, Profile.
+  const cellWidths = () => rows.evaluateAll((els) => els.map((el) => el.querySelectorAll('[role="cell"]')[4]?.getBoundingClientRect().width ?? 0));
+
+  // Earlier tests change the demo app's people, so the browser test answers with its own next actions: none, then one.
+  let withOne = false;
+  const at = new Date(Date.now() + 26 * 3_600_000).toISOString();
+  await page.route(
+    (url) => url.pathname === "/api/campaigns/1/prospects",
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { items: Record<string, unknown>[] };
+      const items = json.items.map((item, index) => ({ ...item, nextActionAt: withOne && index === 0 ? at : null }));
+      await route.fulfill({ response, json: { ...json, items } });
+    },
+  );
+
+  // Nobody on this page has a next action: the column is for screen readers only, header and cells together.
+  await page.goto("/campaigns/1");
+  await expect(rows).toHaveCount(20);
+  expect(await headerWidth(), "an empty Next action column shows").toBeLessThanOrEqual(1);
+  expect(Math.max(...(await cellWidths())), "a Next action cell shows without its header").toBeLessThanOrEqual(1);
+  await expect(rows.first().getByRole("cell", { name: "Nothing planned" })).toHaveCount(1);
+
+  // The first person has a next action: the column shows.
+  withOne = true;
+  await page.reload();
+  await expect(rows).toHaveCount(20);
+  await expect.poll(headerWidth).toBeGreaterThan(40);
+  expect(Math.min(...(await cellWidths()))).toBeGreaterThan(40);
 });
 
 test("activity log: warnings and errors only, and one campaign", async ({ page }) => {
@@ -566,4 +624,35 @@ test("wizard on a phone: the step strip shows whole steps at its left edge, the 
     if (item.tag === "DT") expect(Math.abs(gap - 2), "a label is not 2px over its value").toBeLessThanOrEqual(1);
     else expect(Math.abs(gap - 12), "a value is not 12px over the next label").toBeLessThanOrEqual(1);
   }
+});
+
+test("wizard on a phone: a refused Continue or Start takes the focus and the view to what needs fixing", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/campaigns/new");
+  await page.getByLabel("Campaign name").fill("Test campaign for the refusals");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page).toHaveURL(/\/campaigns\/\d+\/edit$/);
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByRole("heading", { name: "Approval" })).toBeFocused();
+
+  // A refused Continue: the first field the step marked takes the focus, in view.
+  const threshold = page.getByLabel("Score threshold, 0 to 10");
+  await threshold.fill("not a number");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(threshold).toHaveAttribute("aria-invalid", "true");
+  await expect(threshold).toBeFocused();
+  await expect(threshold).toBeInViewport();
+  await threshold.fill("7");
+
+  // A refused Start, pressed below the review: the summary above it takes the focus and comes into view, naming the steps.
+  await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: "Review and start" }).click();
+  const start = page.getByRole("button", { name: "Start the campaign" });
+  await start.scrollIntoViewIfNeeded();
+  await start.click();
+  const summary = page.getByTestId("start-error");
+  await expect(summary).toBeFocused();
+  await expect(summary).toBeInViewport({ ratio: 1 });
+  await expect(summary).toHaveAttribute("role", "alert");
+  await expect(summary).toContainText("Fix Who fits and Messages, marked below, then press Start again.");
 });

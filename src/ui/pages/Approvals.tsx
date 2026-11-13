@@ -339,6 +339,7 @@ export function Approvals() {
         open={confirmIds !== null}
         title={`Approve all ${plural(confirmIds?.length ?? 0, "prospect", "prospects")} shown?`}
         confirmLabel={`Approve ${confirmIds?.length ?? 0}`}
+        busyLabel="Approving…"
         busy={approvingAll}
         error={allError}
         onConfirm={() => {

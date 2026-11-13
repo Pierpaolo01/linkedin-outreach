@@ -3,7 +3,7 @@ import { backUpNow, getOps, prospectsCsvUrl, testAi, toApiError, updateSettings 
 import { AI_PROVIDERS, type AiProvider, type AiTest, type BackupResult, type Ops, type Settings as SettingsData, type SettingsPatch } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatWhen } from "../format";
-import { ActionError, Announce, describedByError, Disclosure, errorProps, FieldError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
+import { ActionError, Announce, describedByError, Disclosure, errorProps, FieldError, focusFirstError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows, SwitchRow } from "../formParts";
 import { sessionView } from "../shell/sessionView";
 import { useRecheck } from "../shell/useRecheck";
 import { useLoad, type Loaded } from "../useLoad";
@@ -132,21 +132,6 @@ const PROVIDER_LABEL: Readonly<Record<AiProvider, string>> = {
 
 /** The id of a setting's control (or of a group's error line), from its path: "limits.invitesPerDay" is "setting-limits-invitesPerDay". */
 const fieldId = (path: string) => `setting-${path.replaceAll(".", "-")}`;
-
-/**
- * Moves the focus to the first control the form marked, and brings it to the middle of the window (clear of the sticky
- * save bar). Found from the first error line: the control that points at it (`aria-describedby`), or the first control
- * of a group (a fieldset) that does.
- */
-function focusFirstError(form: HTMLElement) {
-  const line = form.querySelector<HTMLElement>('[data-testid="field-error"][id]');
-  if (line === null) return;
-  const owner = form.querySelector<HTMLElement>(`[aria-describedby~="${CSS.escape(line.id)}"]`);
-  const control = owner?.matches("input, select, textarea, button") === true ? owner : owner?.querySelector<HTMLElement>("input, select, textarea, button");
-  if (control === null || control === undefined) return;
-  control.focus({ preventScroll: true });
-  control.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
-}
 
 // ------------------------------------------------------------ the page
 

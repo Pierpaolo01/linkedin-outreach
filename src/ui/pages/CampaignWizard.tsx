@@ -19,8 +19,23 @@ import {
 } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { formatClock } from "../format";
-import { ActionError, DEF_LIST, DEF_TERM, describedByError, EmptyState, errorProps, Field, FieldError, LoadError, Notice, SECONDARY_BUTTON, SwitchRow } from "../formParts";
+import { formatClock, joinWords } from "../format";
+import {
+  ActionError,
+  DEF_LIST,
+  DEF_TERM,
+  describedByError,
+  EmptyState,
+  errorProps,
+  Field,
+  FieldError,
+  focusFirstError,
+  focusInView,
+  LoadError,
+  Notice,
+  SECONDARY_BUTTON,
+  SwitchRow,
+} from "../formParts";
 import { IconCheck } from "../icons";
 import { Link, navigate } from "../router";
 import { useLoad } from "../useLoad";
@@ -29,6 +44,9 @@ import { PageHeader } from "./PageHeader";
 
 /** The step names, in order: the six steps, then the review. */
 const STEP_TITLES: readonly string[] = [...STEPS.map((s) => s.title), "Review and start"];
+
+/** A step's number circle, on the strip and in the review. Add its fill. */
+const STEP_CIRCLE = "nums flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold";
 
 /** The space between two steps on the strip (`gap-1`). */
 const STRIP_GAP = 4;
@@ -144,7 +162,7 @@ function StepStrip(props: {
                 }`}
               >
                 <span
-                  className={`nums flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                  className={`${STEP_CIRCLE} ${
                     problem
                       ? "border-2 border-error bg-base-100 text-error"
                       : here
@@ -267,6 +285,10 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
   const [startError, setStartError] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [confirmAuto, setConfirmAuto] = useState(false);
+  /** Refused Starts and refused step changes: each one moves the focus (and the view) to what needs fixing, once it shows. */
+  const [startRefusals, setStartRefusals] = useState(0);
+  const [stepRefusals, setStepRefusals] = useState(0);
+  const stepBody = useRef<HTMLDivElement>(null);
   /** What each step held when it was last saved, so the background save skips unchanged steps. */
   const [saved, setSaved] = useState<ReadonlyMap<number, string>>(new Map());
 
@@ -361,6 +383,16 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     if (stepMoved) document.getElementById(STEP_TITLE_ID)?.focus({ preventScroll: true });
   }, [step, stepMoved]);
 
+  // A refused Start: the summary above the review takes the focus and comes into view, wherever Start was pressed.
+  useEffect(() => {
+    const summary = document.getElementById(START_ERROR_ID);
+    if (startRefusals > 0 && summary !== null) focusInView(summary);
+  }, [startRefusals]);
+  // A refused step change: the first field the step marked takes the focus, as a refused save does in Settings.
+  useEffect(() => {
+    if (stepRefusals > 0 && stepBody.current !== null) focusFirstError(stepBody.current);
+  }, [stepRefusals]);
+
   // Save the current step in the background once typing pauses, so nothing is lost.
   const current = form === null || step >= REVIEW ? "" : stepJson(form, step);
   const saveQuietly = useEffectEvent((keys: readonly FormKey[]) => void save(keys, { quiet: true }));
@@ -410,12 +442,16 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     if (step < REVIEW) {
       if (step === 0 && form.name.trim() === "") {
         setErrors((e) => ({ ...e, name: "Give the campaign a name" }));
+        setStepRefusals((n) => n + 1);
         return;
       }
       const { ok } = await save(STEPS[step]?.keys ?? []);
       await drain();
       // Going back never waits on a problem; going on does.
-      if (!ok && next > step) return;
+      if (!ok && next > step) {
+        setStepRefusals((n) => n + 1);
+        return;
+      }
     }
     setStepMoved(true);
     setStep(next);
@@ -432,9 +468,11 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       setStarting(false);
       setConfirmAuto(false);
       setStartError(message);
+      setStartRefusals((n) => n + 1);
     };
     if (!ok) {
-      stop("Some answers could not be saved. They are marked below.");
+      const marked = formNow.current === null ? [] : stepTitlesOf(Object.keys(toFields(formNow.current, ALL_KEYS).errors));
+      stop(marked.length > 0 ? `Some answers could not be saved. Fix ${joinWords(marked)}, marked below.` : "Some answers could not be saved. They are marked below.");
       return;
     }
     // Start only what the review shows: the app's copy after the last save must hold exactly these values.
@@ -453,7 +491,15 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     } catch (failure) {
       const error = toApiError(failure);
       setErrors(error.fields);
-      setStartError(Object.keys(error.fields).length > 0 ? "The campaign cannot start yet. Fix what is marked below, then press Start again." : error.message);
+      const marked = stepTitlesOf(Object.keys(error.fields));
+      setStartError(
+        Object.keys(error.fields).length === 0
+          ? error.message
+          : marked.length > 0
+            ? `The campaign cannot start yet. Fix ${joinWords(marked)}, marked below, then press Start again.`
+            : "The campaign cannot start yet. Fix what is marked below, then press Start again.",
+      );
+      setStartRefusals((n) => n + 1);
       setConfirmAuto(false);
     } finally {
       setStarting(false);
@@ -462,6 +508,8 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
 
   const stepsWithProblems = new Set(Object.keys(errors).map(stepOf));
   const stepsUnfinished = unfinishedSteps(form);
+  /** The unfinished steps by name, in order, for the sentence by Start. */
+  const stillOpen = [...stepsUnfinished].sort((a, b) => a - b).flatMap((s) => STEPS[s]?.title ?? []);
   const created = campaignId !== null;
 
   return (
@@ -475,7 +523,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
 
         <div className="min-w-0">
           <ActionError message={saveError} className="mb-group" />
-          <div key={step} className={stepMoved ? "animate-appear" : undefined}>
+          <div key={step} ref={stepBody} className={stepMoved ? "animate-appear" : undefined}>
             {step === 0 && <NameStep form={form} set={set} errors={errors} onEnter={() => void goTo(1)} />}
             {step === 1 && <SourceStep form={form} set={set} errors={errors} />}
             {step === 2 && <WhoFitsStep form={form} set={set} errors={errors} />}
@@ -494,6 +542,12 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
           </div>
 
           <div className="mt-section flex flex-wrap items-center gap-3 border-t border-base-300 pt-block">
+            {step === REVIEW && stillOpen.length > 0 && (
+              // Said before Start is pressed, in Ink and plain: nothing is wrong yet, it is only not done.
+              <p id={UNFINISHED_ID} className="basis-full text-sm" data-testid="start-unfinished">
+                {joinWords(stillOpen)} {stillOpen.length === 1 ? "is" : "are"} not finished yet.
+              </p>
+            )}
             {step > 0 && (
               <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving || starting} onClick={() => void goTo(step - 1)}>
                 Back
@@ -510,6 +564,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
                 className="btn btn-primary"
                 disabled={starting}
                 aria-busy={starting}
+                aria-describedby={stillOpen.length > 0 ? UNFINISHED_ID : undefined}
                 onClick={() => (form.autoApprove ? setConfirmAuto(true) : void start(false))}
               >
                 {starting && <span className="loading loading-spinner loading-sm" />}
@@ -527,6 +582,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         open={confirmAuto}
         title="Start with auto-approve on?"
         confirmLabel="Start with auto-approve"
+        busyLabel="Starting…"
         tone="error"
         busy={starting}
         onConfirm={() => void start(true)}
@@ -564,6 +620,18 @@ function unfinishedSteps(form: CampaignForm): ReadonlySet<number> {
 
 /** The id of the current step's heading, which takes the focus when the step changes. */
 const STEP_TITLE_ID = "step-title";
+/** The id of the summary of a refused Start, which takes the focus. */
+const START_ERROR_ID = "start-error";
+/** The id of the sentence by Start that names the unfinished steps. */
+const UNFINISHED_ID = "start-unfinished";
+
+/** The names of the steps that hold these fields (`sourceUrls.0`, `firstMessage`), once each, in order. */
+function stepTitlesOf(paths: readonly string[]): string[] {
+  return [...new Set(paths.map(stepOf))]
+    .filter((s) => s < REVIEW)
+    .sort((a, b) => a - b)
+    .flatMap((s) => STEPS[s]?.title ?? []);
+}
 
 function StepFrame({ title, lead, children }: { readonly title: string; readonly lead: string; readonly children: ReactNode }) {
   return (
@@ -870,7 +938,7 @@ function Review({
         Review and start
       </h2>
       <p className="mt-1 max-w-2xl text-base-content">Check everything once more. The app checks it too when you press Start.</p>
-      <ActionError message={startError} className="mt-block" testId="start-error" />
+      <ActionError message={startError} className="mt-block" testId="start-error" id={START_ERROR_ID} />
       <div className="mt-block divide-y divide-base-300 rounded-box border border-base-300">
         {sections.map(({ step, rows }) => {
           const list = problems(step);
@@ -878,13 +946,21 @@ function Review({
             <div key={step} className="px-4 py-4" data-testid={`review-step-${step + 1}`}>
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="flex items-center gap-2 font-semibold">
+                  {/* Every mark takes the number circle's box, so the step names start at one edge. */}
                   {list.length > 0 ? (
-                    <span className="status status-error" aria-hidden="true" />
+                    <span className="flex size-6 shrink-0 items-center justify-center" aria-hidden="true">
+                      <span className="status status-error" />
+                    </span>
                   ) : unfinished.has(step) ? (
-                    // A hollow ring in the control edge (3:1): not done yet. Neither amber nor red, since nothing is wrong yet.
-                    <span className="size-4 shrink-0 rounded-full border-2 border-control" aria-hidden="true" />
+                    // Not done yet: the step's own number in its circle, as on the strip. Not a ring (a ring is a campaign
+                    // that is not working), not amber and not red, since nothing is wrong yet.
+                    <span className={`${STEP_CIRCLE} bg-base-300`} aria-hidden="true" data-testid="review-mark">
+                      {step + 1}
+                    </span>
                   ) : (
-                    <IconCheck className="size-4 text-primary" />
+                    <span className="flex size-6 shrink-0 items-center justify-center" aria-hidden="true">
+                      <IconCheck className="size-4 text-primary" />
+                    </span>
                   )}
                   {STEPS[step]?.title}
                   {list.length === 0 && unfinished.has(step) && <span className="sr-only">(not finished)</span>}

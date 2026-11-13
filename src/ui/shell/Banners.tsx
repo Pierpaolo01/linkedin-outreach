@@ -9,8 +9,21 @@ import { IconStop } from "../icons";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
 
-const BAR = "flex flex-col gap-3 bg-error px-4 py-4 text-error-content sm:flex-row sm:items-center lg:px-10";
-const ON_RED = `${ON_RED_BUTTON} btn-sm shrink-0 sm:ml-auto`;
+/*
+ * Below 640px the icon sits beside the heading, centred on its first line, and the button takes the full width under
+ * the words; from 640px icon, words and button are one row.
+ */
+const BAR = "grid grid-cols-[auto_minmax(0,1fr)] gap-3 bg-error px-4 py-4 text-error-content sm:flex sm:items-center lg:px-10";
+const ON_RED = `${ON_RED_BUTTON} btn-sm shrink-0 max-sm:col-span-2 sm:ml-auto`;
+
+/** The banner's icon: on a phone one line high at the top, so it centres on the heading's first line. */
+function BannerIcon() {
+  return (
+    <span className="flex h-lh items-center sm:h-auto">
+      <IconStop className="size-7 shrink-0" />
+    </span>
+  );
+}
 
 /** The red banner of an active safety stop: what LinkedIn showed, what to do, and Resume (after a confirm). */
 export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
@@ -42,7 +55,7 @@ export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
 
   return (
     <div role="alert" className={BAR} data-testid="safety-stop">
-      <IconStop className="size-7 shrink-0" />
+      <BannerIcon />
       <div className="min-w-0">
         <p className="font-semibold">Safety stop. All LinkedIn activity is stopped.</p>
         <p className="text-error-content/90">
@@ -68,6 +81,7 @@ export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
         open={confirming}
         title="Resume LinkedIn activity?"
         confirmLabel="I have done this, resume"
+        busyLabel="Resuming…"
         cancelLabel="Not yet"
         busy={busy}
         error={error}
@@ -87,7 +101,7 @@ export function SessionBanner({ session, recheck }: { readonly session: Session;
   if (view.problem === undefined) return null;
   return (
     <div role="alert" className={BAR} data-testid="session-problem">
-      <IconStop className="size-7 shrink-0" />
+      <BannerIcon />
       <div className="min-w-0">
         <p className="font-semibold">LinkedIn needs you.</p>
         <p className="text-error-content/90">{view.problem}</p>

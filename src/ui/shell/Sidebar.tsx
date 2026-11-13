@@ -3,6 +3,7 @@ import { formatClock, formatDays, workingNow } from "../format";
 import { ON_RED_BUTTON, QUIET_BUTTON, SECONDARY_BUTTON, StatusDot, statusLabel } from "../formParts";
 import { IconX } from "../icons";
 import { Link } from "../router";
+import { currentNavTarget } from "./currentNav";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
 
@@ -17,6 +18,8 @@ export function Sidebar(props: { readonly path: string; readonly recheck: Rechec
   const { home } = useAppData();
   const campaigns = home?.campaigns ?? [];
   const stopped = home?.safetyStop != null;
+  // Exactly one item is current on every page; the wizard, new or a draft's, is within Campaigns.
+  const current = currentNavTarget(path, campaigns.map((c) => c.id));
   return (
     <aside id={SIDEBAR_ID} className="flex min-h-full w-64 flex-col border-r border-base-300 bg-base-200" aria-label="Sidebar">
       {/* Boxes (the session card, the menu's items) start 12px in; text starts 24px in, the menu's own text inset. */}
@@ -31,14 +34,14 @@ export function Sidebar(props: { readonly path: string; readonly recheck: Rechec
       </div>
       <nav aria-label="Main">
         <ul className="menu w-full gap-0.5 px-3 text-nav">
-          <NavItem to="/" label="Home" path={path} onNavigate={onNavigate} />
-          <NavItem to="/approvals" label="Approval queue" count={home?.needsYou.pendingApproval} path={path} onNavigate={onNavigate} />
-          <NavItem to="/review" label="Needs review" count={home?.needsYou.needsReview} path={path} onNavigate={onNavigate} />
+          <NavItem to="/" label="Home" current={current} onNavigate={onNavigate} />
+          <NavItem to="/approvals" label="Approval queue" count={home?.needsYou.pendingApproval} current={current} onNavigate={onNavigate} />
+          <NavItem to="/review" label="Needs review" count={home?.needsYou.needsReview} current={current} onNavigate={onNavigate} />
           <li className="mt-3">
             <Link
               to="/campaigns"
-              className={path === "/campaigns" || path === "/campaigns/new" ? "menu-active" : ""}
-              aria-current={path === "/campaigns" ? "page" : undefined}
+              className={current === "/campaigns" ? "menu-active" : ""}
+              aria-current={current === "/campaigns" ? "page" : undefined}
               onClick={onNavigate}
             >
               Campaigns
@@ -49,7 +52,7 @@ export function Sidebar(props: { readonly path: string; readonly recheck: Rechec
                   const to = `/campaigns/${c.id}`;
                   return (
                     <li key={c.id}>
-                      <Link to={to} className={`text-sm ${path === to ? "menu-active" : ""}`} aria-current={path === to ? "page" : undefined} onClick={onNavigate}>
+                      <Link to={to} className={`text-sm ${current === to ? "menu-active" : ""}`} aria-current={current === to ? "page" : undefined} onClick={onNavigate}>
                         <StatusDot status={c.status} safetyStop={stopped} />
                         <span className="truncate">{c.name}</span>
                         <span className="sr-only">, {statusLabel(c.status, stopped)}</span>
@@ -61,9 +64,9 @@ export function Sidebar(props: { readonly path: string; readonly recheck: Rechec
             )}
           </li>
           <li className="mt-3" aria-hidden="true" />
-          <NavItem to="/activity" label="Activity log" path={path} onNavigate={onNavigate} />
-          <NavItem to="/stats" label="Stats" path={path} onNavigate={onNavigate} />
-          <NavItem to="/settings" label="Settings" path={path} onNavigate={onNavigate} />
+          <NavItem to="/activity" label="Activity log" current={current} onNavigate={onNavigate} />
+          <NavItem to="/stats" label="Stats" current={current} onNavigate={onNavigate} />
+          <NavItem to="/settings" label="Settings" current={current} onNavigate={onNavigate} />
         </ul>
       </nav>
       <WorkingLine />
@@ -71,8 +74,15 @@ export function Sidebar(props: { readonly path: string; readonly recheck: Rechec
   );
 }
 
-function NavItem(props: { readonly to: string; readonly label: string; readonly path: string; readonly count?: number | undefined; readonly onNavigate: () => void }) {
-  const active = props.path === props.to;
+function NavItem(props: {
+  readonly to: string;
+  readonly label: string;
+  /** The address of the current item (`currentNavTarget`). */
+  readonly current: string | undefined;
+  readonly count?: number | undefined;
+  readonly onNavigate: () => void;
+}) {
+  const active = props.current === props.to;
   return (
     <li>
       <Link to={props.to} className={active ? "menu-active" : ""} aria-current={active ? "page" : undefined} onClick={props.onNavigate}>
