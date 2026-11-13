@@ -37,7 +37,7 @@ describe("createCampaign", () => {
       discoverySource: "recommendations",
       sourceUrls: [],
       batchSize: 25,
-      autoApprove: false,
+      autoApprove: true,
       scoreThreshold: 7,
       openProfileThreshold: 6,
       inviteNote: null,
@@ -151,14 +151,14 @@ describe("startCampaign", () => {
   it("moves a valid draft to finding and logs it", () => {
     const id = seedCampaign(t.db);
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toMatchObject({ ok: true, value: { status: "finding" } });
+    expect(startCampaign(t.db, id, LATER)).toMatchObject({ ok: true, value: { status: "finding" } });
     expect(t.db.select().from(eventLog).all().map((e) => e.message)).toEqual(['Campaign "Test campaign" started']);
   });
 
   it("refuses an invalid draft with field messages and leaves it a draft", () => {
     const id = seedCampaign(t.db, { name: "", scoringBrief: "" });
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toEqual({
+    expect(startCampaign(t.db, id, LATER)).toEqual({
       ok: false,
       kind: "invalid",
       message: "The campaign cannot start yet",
@@ -167,17 +167,16 @@ describe("startCampaign", () => {
     expect(statusOf(id)).toBe("draft");
   });
 
-  it("refuses auto-approve unless confirmed", () => {
+  it("starts with auto-approve on without asking for a confirmation", () => {
     const id = seedCampaign(t.db, { autoApprove: true });
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toMatchObject({ ok: false, kind: "invalid", fields: { autoApprove: expect.any(String) } });
-    expect(startCampaign(t.db, id, { confirmAutoApprove: true }, LATER)).toMatchObject({ ok: true, value: { status: "finding" } });
+    expect(startCampaign(t.db, id, LATER)).toMatchObject({ ok: true, value: { status: "finding", autoApprove: true } });
   });
 
   it("refuses to start a campaign that is not a draft", () => {
     const id = seedCampaign(t.db, { status: "running" });
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toEqual({
+    expect(startCampaign(t.db, id, LATER)).toEqual({
       ok: false,
       kind: "conflict",
       message: "Only a draft can be started; this campaign is running",

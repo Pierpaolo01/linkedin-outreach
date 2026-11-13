@@ -116,3 +116,17 @@ export function renderTemplate(template: string, values: TemplateValues, options
   if (maxLength !== undefined && text.length > maxLength) return failure("too_long", []);
   return { ok: true, text };
 }
+
+/**
+ * The most characters `{{ai_line}}` may have so that `template`, filled with `values`, stays within
+ * `maxLength`; shared equally when the line is used more than once. Zero or less when the rest of
+ * the template fills the limit already. Null when the template has no `{{ai_line}}`, or does not
+ * render for another reason (an unresolved variable): then nothing would be sent either way.
+ */
+export function aiLineRoom(template: string, values: TemplateValues, maxLength: number): number | null {
+  const uses = placeholdersIn(template).filter((placeholder) => placeholder.name === "ai_line").length;
+  if (uses === 0) return null;
+  const probe = renderTemplate(template, { ...values, ai_line: "x" });
+  if (!probe.ok) return null;
+  return Math.floor((maxLength - (probe.text.length - uses)) / uses);
+}

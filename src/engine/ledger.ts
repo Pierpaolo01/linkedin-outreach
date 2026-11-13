@@ -71,6 +71,11 @@ export interface ClaimRequest {
   readonly text: string | null;
   /** What reconcile will need, e.g. `{ userMessagesBefore }`. Replaces any earlier detail. */
   readonly detail?: Record<string, unknown>;
+  /**
+   * A frozen text longer than this is replaced by `text`: LinkedIn refuses a text over its limit
+   * before any effect, so no earlier attempt can have sent it (an invite note over 200 characters).
+   */
+  readonly replaceFrozenLongerThan?: number;
 }
 
 export interface Claim {
@@ -148,7 +153,10 @@ export function claimStep(db: Conn, request: ClaimRequest, now: Date): ClaimResu
 
     const column = FROZEN_COLUMN[step];
     const claimedBefore = existing !== undefined && existing.attempts > 0;
-    const text = column === null ? null : claimedBefore ? row.prospect[column] : request.text;
+    const frozen = column === null || !claimedBefore ? null : row.prospect[column];
+    const limit = request.replaceFrozenLongerThan;
+    const keepFrozen = claimedBefore && !(limit !== undefined && frozen !== null && frozen.length > limit);
+    const text = column === null ? null : keepFrozen ? frozen : request.text;
     if (step !== "invite" && step !== "withdraw" && (text === null || text.trim() === "")) return refuse("no_text");
 
     if (existing === undefined) {

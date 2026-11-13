@@ -18,7 +18,6 @@ import {
   type SetField,
 } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { ConfirmDialog } from "../ConfirmDialog";
 import { formatClock, joinWords, unbroken, withStop } from "../format";
 import {
   ActionError,
@@ -33,7 +32,6 @@ import {
   focusInView,
   hintIdOf,
   LoadError,
-  Notice,
   SECONDARY_BUTTON,
   SwitchRow,
 } from "../formParts";
@@ -341,7 +339,6 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
   const [saveFailed, setSaveFailed] = useState<Said | undefined>(undefined);
   const [startError, setStartError] = useState<string | Failure | undefined>(undefined);
   const [starting, setStarting] = useState(false);
-  const [confirmAuto, setConfirmAuto] = useState(false);
   /** Refused Starts and refused step changes: each one moves the focus (and the view) to what needs fixing, once it shows. */
   const [startRefusals, setStartRefusals] = useState(0);
   const [stepRefusals, setStepRefusals] = useState(0);
@@ -526,7 +523,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     window.scrollTo(0, 0);
   };
 
-  const start = async (confirmAutoApprove: boolean) => {
+  const start = async () => {
     if (campaignId === null) return;
     setStarting(true);
     setStartError(undefined);
@@ -534,7 +531,6 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     await drain();
     const stop = (message: string | undefined) => {
       setStarting(false);
-      setConfirmAuto(false);
       setStartError(message);
       setStartRefusals((n) => n + 1);
     };
@@ -563,7 +559,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       return;
     }
     try {
-      await startCampaign(campaignId, confirmAutoApprove ? { confirmAutoApprove: true } : {});
+      await startCampaign(campaignId);
       refresh();
       navigate(`/campaigns/${campaignId}`);
     } catch (failed) {
@@ -578,7 +574,6 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
             : "The campaign cannot start yet. Fix what is marked below, then press Start the campaign again.",
       );
       setStartRefusals((n) => n + 1);
-      setConfirmAuto(false);
     } finally {
       setStarting(false);
     }
@@ -655,7 +650,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
                 disabled={starting}
                 aria-busy={starting}
                 aria-describedby={stillOpen.length > 0 ? UNFINISHED_ID : undefined}
-                onClick={() => (form.autoApprove ? setConfirmAuto(true) : void start(false))}
+                onClick={() => void start()}
               >
                 {starting && <span className="loading loading-spinner loading-sm" />}
                 Start the campaign
@@ -664,30 +659,16 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
             {step === REVIEW && (
               // During a safety stop nothing runs on LinkedIn until the user resumes, so a started campaign does not find people yet.
               <p className="text-sm text-muted" data-testid="start-note">
-                Once started, the campaign begins finding people{stopped ? " when you resume" : ""}. Nobody is invited before you approve them
-                {form.autoApprove ? ", unless auto-approve is on" : ""}.
+                Once started, the campaign begins finding people{stopped ? " when you resume" : ""}. {form.autoApprove
+                  ? "Everyone who reaches the score threshold is invited and messaged without your review"
+                  : "Nobody is invited before you approve them"}
+                .
               </p>
             )}
           </div>
         </div>
       </div>
 
-      <ConfirmDialog
-        open={confirmAuto}
-        title="Start with auto-approve on?"
-        confirmLabel="Start with auto-approve"
-        busyLabel="Starting…"
-        tone="error"
-        busy={starting}
-        onConfirm={() => void start(true)}
-        onCancel={() => setConfirmAuto(false)}
-      >
-        <p>
-          Everyone who scores {form.scoreThreshold} or more will be invited and messaged without your review. You will not see them in the approval
-          queue first.
-        </p>
-        <p className="text-base-content">To review each person yourself, cancel and turn auto-approve off in the Approval step.</p>
-      </ConfirmDialog>
     </>
   );
 }
@@ -944,14 +925,8 @@ function ApprovalStep({ form, set, errors }: StepProps) {
             checked={form.autoApprove}
             error={errors["autoApprove"]}
             onChange={(on) => set("autoApprove", on)}
-            hint={form.autoApprove ? undefined : "Off: you approve each person before the app invites them."}
+            hint={form.autoApprove ? "On: the app invites and messages everyone who reaches the score threshold." : "Off: you approve each person before the app invites them."}
           />
-          {form.autoApprove && (
-            <Notice tone="note" role="alert" className="mt-3 text-sm">
-              With auto-approve on, the app invites and messages everyone who reaches the score threshold without your review. You will not see
-              them in the approval queue first.
-            </Notice>
-          )}
           <FieldError controlId={ids.auto} message={errors["autoApprove"]} />
         </div>
       </div>

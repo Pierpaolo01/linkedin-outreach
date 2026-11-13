@@ -114,7 +114,7 @@ export function createCampaign(db: Db, patch: CampaignPatch, now: Date): Campaig
   return db.transaction((tx) => {
     const { id } = tx
       .insert(campaigns)
-      .values({ name: "", discoverySource: "recommendations", ...defined(patch), status: "draft", createdAt: now, updatedAt: now })
+      .values({ name: "", discoverySource: "recommendations", autoApprove: true, ...defined(patch), status: "draft", createdAt: now, updatedAt: now })
       .returning({ id: campaigns.id })
       .get();
     const created = viewOf(tx, id);
@@ -155,7 +155,7 @@ export function updateCampaign(
     const changes = defined(patch);
     const live = row.status !== "draft";
     if (live) {
-      const problems = startProblems({ ...view(row, EMPTY_FUNNEL), ...changes }, { confirmAutoApprove: true });
+      const problems = startProblems({ ...view(row, EMPTY_FUNNEL), ...changes });
       if (Object.keys(problems).length > 0) return invalid("These changes cannot be saved while the campaign is live", problems);
     }
     tx.update(campaigns)
@@ -175,14 +175,14 @@ function setStatus(tx: Conn, row: CampaignRow, status: CampaignStatus, message: 
   return viewOf(tx, row.id);
 }
 
-/** Validates the campaign, then `draft → finding`. Auto-approve needs `confirmAutoApprove`. */
-export function startCampaign(db: Db, id: number, { confirmAutoApprove }: { readonly confirmAutoApprove: boolean }, now: Date): Outcome<CampaignView> {
+/** Validates the campaign, then `draft → finding`. */
+export function startCampaign(db: Db, id: number, now: Date): Outcome<CampaignView> {
   return db.transaction((tx) => {
     const row = load(tx, id);
     if (row === undefined) return missing(id);
     const refusal = moveRefusal("start", row.status);
     if (refusal !== null) return conflict(refusal);
-    const problems = startProblems(view(row, EMPTY_FUNNEL), { confirmAutoApprove });
+    const problems = startProblems(view(row, EMPTY_FUNNEL));
     if (Object.keys(problems).length > 0) return invalid("The campaign cannot start yet", problems);
     return done(setStatus(tx, row, "finding", "started", now));
   });

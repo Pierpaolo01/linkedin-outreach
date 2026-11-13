@@ -32,7 +32,7 @@ import type { SendGuard } from "../linkedin/driver";
 import type { Clock, Driver, PersonRef, RandomSource } from "./ports";
 import { checkBudget, type BudgetKind } from "./budget";
 import { lastResumedAt, raiseSafetyStop } from "./safetyStop";
-import { renderTemplate, type RenderResult, type TemplateValues } from "./template";
+import { aiLineRoom, renderTemplate, type RenderResult, type TemplateValues } from "./template";
 import { judgeSend, judgeThread } from "./threadCheck";
 import { addDelay, endOfWorkingWindow, isInWorkingWindow } from "./workingWindow";
 
@@ -524,19 +524,60 @@ function expired(db: Conn, target: Target, step: Step, claim: Claim, at: Date): 
  */
 const CONNECTABLE: ReadonlySet<Profile["connectionState"]> = new Set(["can_connect", "connect_in_more", "follow_only"]);
 
-/** The invite note: the one frozen by an earlier claim (null included) wins; else the campaign's, if it has one. */
-function inviteNote(db: Conn, target: Target): { ok: true; text: string | null } | { ok: false; reason: string } {
+/**
+ * The most characters the AI line may have so the campaign's invite note, filled for this person,
+ * fits LinkedIn's limit. Null when the note has no `{{ai_line}}` or does not render for another reason.
+ */
+export function inviteLineRoom(target: Pick<Target, "campaign" | "person" | "prospect">): number | null {
+  return aiLineRoom(target.campaign.inviteNote ?? "", templateValues(target), INVITE_NOTE_MAX);
+}
+
+/** True when the invite note is too long only because of the AI line: a shorter line would fit. */
+export function aiLineTooLong(target: Pick<Target, "campaign" | "person" | "prospect">): boolean {
+  const room = inviteLineRoom(target);
+  const line = target.prospect.aiLine;
+  return room !== null && room > 0 && line !== null && line.trim().length > room;
+}
+
+type InviteNote =
+  | { readonly ok: true; readonly text: string | null }
+  | { readonly ok: false; readonly reason: string; readonly waitForLine: boolean };
+
+/**
+ * The invite note: the one frozen by an earlier claim (null included) wins; else the campaign's, if
+ * it has one. A frozen note over LinkedIn's limit was never taken (Send is disabled), so it is
+ * written again and the claim replaces it. A note too long only because of the AI line is not held
+ * for review: it waits while scoring writes the line again, shorter.
+ */
+function inviteNote(db: Conn, target: Target): InviteNote {
   const frozen = frozenText(db, "invite", target.prospect.id);
-  if (frozen.frozen) {
-    // A retry sends the text it froze; one frozen under a longer limit can never be taken.
-    if (frozen.text !== null && frozen.text.length > INVITE_NOTE_MAX) {
-      return { ok: false, reason: `The invite note is ${frozen.text.length} characters; LinkedIn takes at most ${INVITE_NOTE_MAX}` };
-    }
-    return { ok: true, text: frozen.text };
-  }
+  if (frozen.frozen && (frozen.text === null || frozen.text.length <= INVITE_NOTE_MAX)) return { ok: true, text: frozen.text };
   const template = target.campaign.inviteNote ?? "";
   if (template.trim() === "") return { ok: true, text: null };
-  return textFor(db, target, "invite", template, "The invite note", INVITE_NOTE_MAX);
+  const rendered = renderTemplate(template, templateValues(target), { maxLength: INVITE_NOTE_MAX });
+  if (rendered.ok) return { ok: true, text: rendered.text };
+  if (rendered.problem === "too_long" && aiLineTooLong(target)) {
+    return { ok: false, reason: `the AI line is too long for the ${INVITE_NOTE_MAX}-character invite note`, waitForLine: true };
+  }
+  return { ok: false, reason: renderProblem("The invite note", rendered), waitForLine: false };
+}
+
+/**
+ * The invite waits for a shorter AI line: the next try is after `RETRY_AFTER_MS`, so other invites
+ * go ahead meanwhile. Scoring, which runs before any invite, writes the line again when the AI is up.
+ */
+function waitForLine(db: Conn, target: Target, reason: string, at: Date): void {
+  const changed = db
+    .update(prospects)
+    .set({ nextActionAt: new Date(at.getTime() + RETRY_AFTER_MS) })
+    .where(and(eq(prospects.id, target.prospect.id), eq(prospects.stage, "approved")))
+    .run().changes;
+  if (changed !== 1) return;
+  logEvent(
+    db,
+    { campaignId: target.campaign.id, prospectId: target.prospect.id, message: `Invite to ${target.person.fullName} waits: ${reason}; the AI writes it again, shorter` },
+    at,
+  );
 }
 
 export async function inviteStep(ctx: StepContext, target: Target): Promise<StepOutcome> {
@@ -557,6 +598,10 @@ export async function inviteStep(ctx: StepContext, target: Target): Promise<Step
   const early = inviteNote(db, target);
   if (!early.ok) {
     const at = clock.now();
+    if (early.waitForLine) {
+      db.transaction((tx) => waitForLine(tx, target, early.reason, at));
+      return idle(`invite: ${name} waits for a shorter AI line`);
+    }
     db.transaction((tx) => needsReview(tx, target, early.reason, at));
     return idle(`invite: ${name} needs review`);
   }
@@ -589,6 +634,10 @@ export async function inviteStep(ctx: StepContext, target: Target): Promise<Step
   const note = inviteNote(db, fresh);
   if (!note.ok) {
     const at = clock.now();
+    if (note.waitForLine) {
+      db.transaction((tx) => waitForLine(tx, fresh, note.reason, at));
+      return loaded(`invite: ${name} waits for a shorter AI line`);
+    }
     db.transaction((tx) => needsReview(tx, fresh, note.reason, at));
     return loaded(`invite: ${name} needs review`);
   }
@@ -596,7 +645,7 @@ export async function inviteStep(ctx: StepContext, target: Target): Promise<Step
 
   const gate = claimGate(ctx, "invite");
   if (!gate.ok) return notClaimed("invite", name, gate);
-  const claimed = claimStep(db, { step: "invite", prospectId: prospect.id, text: noteText }, clock.now());
+  const claimed = claimStep(db, { step: "invite", prospectId: prospect.id, text: noteText, replaceFrozenLongerThan: INVITE_NOTE_MAX }, clock.now());
   if (!claimed.ok) {
     const at = clock.now();
     db.transaction((tx) => {

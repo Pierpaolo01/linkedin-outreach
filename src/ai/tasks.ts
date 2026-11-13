@@ -36,12 +36,16 @@ const cleanedSchema = z.object({
   companyShort: z.string().trim().min(1).nullable(),
 });
 
-/** Short enough that a note of greeting, line and sign-off fits LinkedIn's 200 characters. */
-const MAX_LINE = 140;
-const personalisedSchema = z.object({
-  line: z.string().trim().min(1).max(MAX_LINE).nullable(),
-  evidence: z.string().trim().min(1).nullable(),
-});
+/** The longest line ever asked for; the caller asks for less when the invite note leaves less room. */
+export const MAX_LINE = 140;
+/** Less room than this holds no honest, specific line: the AI is not asked, and there is none. */
+export const MIN_LINE = 20;
+const personalisedSchemaFor = (maxLength: number) =>
+  z.object({
+    line: z.string().trim().min(1).max(maxLength).nullable(),
+    evidence: z.string().trim().min(1).nullable(),
+  });
+type Personalised = z.infer<ReturnType<typeof personalisedSchemaFor>>;
 
 /**
  * A path segment safe to show the model: an array index, or a plain field name (ours, since every
@@ -169,7 +173,7 @@ const MIN_EVIDENCE = 12;
 
 function quotedFrom(profile: ProfileForScoring) {
   const text = profileText(profile);
-  return (value: z.infer<typeof personalisedSchema>): string | null => {
+  return (value: Personalised): string | null => {
     if (value.line === null && value.evidence === null) return null;
     if (value.line === null || value.evidence === null) return "line and evidence must both be text or both be null";
     const quoted = normalise(value.evidence.replace(/^["'“‘]+|["'”’]+$/g, ""));
@@ -215,11 +219,13 @@ export function aiFromProvider(provider: AiProvider): Ai {
     },
 
     async personalise(input) {
+      const maxLength = Math.min(MAX_LINE, input.maxLength ?? MAX_LINE);
+      if (maxLength < MIN_LINE) return { value: null, model: "none" };
       const answer = await ask(provider, {
         name: "personalisation",
         system: PERSONALISE_SYSTEM,
-        prompt: personalisePrompt(input),
-        schema: personalisedSchema,
+        prompt: personalisePrompt({ ...input, maxLength }),
+        schema: personalisedSchemaFor(maxLength),
         extra: quotedFrom(input.profile),
       });
       const { line, evidence } = answer.value;

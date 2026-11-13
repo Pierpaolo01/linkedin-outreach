@@ -40,7 +40,7 @@ export const BLANK_FORM: CampaignForm = {
   targetProspectCount: "",
   scoringBrief: "",
   batchSize: "",
-  autoApprove: false,
+  autoApprove: true,
   scoreThreshold: "",
   openProfileThreshold: "",
   inviteNote: "",

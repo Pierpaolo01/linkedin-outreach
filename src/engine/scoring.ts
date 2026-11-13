@@ -4,7 +4,7 @@
  * safety stop. At most one AI call is made per piece of work; a prospect's profile scoring, cleaned
  * variables and personal line are separate pieces, and only the last one moves it on.
  */
-import { and, asc, count, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, lt, ne } from "drizzle-orm";
 import { z } from "zod";
 import type { Ai, CardForScoring, ProfileForScoring } from "../ai/types";
 import type { ConnectionState } from "../linkedin/parse/profile";
@@ -12,7 +12,7 @@ import { campaigns, people, prospects, type CampaignStatus, type ProspectStage }
 import { availableSource, mayDiscoverMore, rawRecord, rejectFound, ruledOut, targetReached } from "./discovery";
 import { logEvent, type Conn } from "./ledger";
 import type { Clock } from "./ports";
-import { move, type CampaignRow, type PersonRow, type Target } from "./steps";
+import { aiLineTooLong, inviteLineRoom, move, type CampaignRow, type PersonRow, type Target } from "./steps";
 
 /** Cards scored in one AI call. */
 export const CARD_BATCH = 10;
@@ -25,6 +25,8 @@ export type LocalWork =
   | { readonly kind: "reject_card"; readonly target: Target }
   | { readonly kind: "score_cards"; readonly campaign: CampaignRow; readonly targets: readonly Target[] }
   | { readonly kind: "score_profile"; readonly target: Target }
+  /** An approved prospect whose AI line makes the invite note too long: the line is written again within `room`. */
+  | { readonly kind: "shorten_line"; readonly target: Target; readonly room: number }
   | { readonly kind: "campaign_status"; readonly campaign: CampaignRow; readonly from: CampaignStatus; readonly to: CampaignStatus; readonly message: string };
 
 export interface ScoringContext {
@@ -49,6 +51,8 @@ export function pickLocalWork(db: Conn, now: Date, withAi: boolean): LocalWork |
   const belowOpen = foundTargets(db, and(isNotNull(prospects.cardScore), isNull(prospects.score), isNull(people.profileViewedAt), lt(prospects.cardScore, campaigns.openProfileThreshold)), 1)[0];
   if (belowOpen !== undefined) return { kind: "reject_card", target: belowOpen };
   if (withAi) {
+    const long = lineToShorten(db);
+    if (long !== null) return long;
     const first = foundTargets(db, isNull(prospects.cardScore), 1)[0];
     if (first !== undefined) {
       const targets = foundTargets(db, and(isNull(prospects.cardScore), eq(prospects.campaignId, first.campaign.id)), CARD_BATCH);
@@ -58,6 +62,27 @@ export function pickLocalWork(db: Conn, now: Date, withAi: boolean): LocalWork |
     if (viewed !== undefined) return { kind: "score_profile", target: viewed };
   }
   return campaignStatusWork(db, now);
+}
+
+/**
+ * The first approved prospect whose AI line makes the invite note too long, e.g. a line written
+ * before the line was held to the room the note leaves, or a note edited longer since. First of the
+ * AI work, so the invite (which waits meanwhile) is not held up behind scoring.
+ */
+function lineToShorten(db: Conn): LocalWork | null {
+  const rows = db
+    .select({ prospect: prospects, campaign: campaigns, person: people })
+    .from(prospects)
+    .innerJoin(campaigns, eq(campaigns.id, prospects.campaignId))
+    .innerJoin(people, eq(people.id, prospects.personId))
+    .where(and(eq(prospects.stage, "approved"), isNotNull(prospects.aiLine), ne(campaigns.status, "archived")))
+    .orderBy(asc(prospects.approvedAt), asc(prospects.id))
+    .all();
+  for (const target of rows) {
+    const room = inviteLineRoom(target);
+    if (room !== null && aiLineTooLong(target)) return { kind: "shorten_line", target, room };
+  }
+  return null;
 }
 
 function stageCount(db: Conn, campaignId: number, stage: ProspectStage): number {
@@ -262,6 +287,8 @@ export async function runLocalWork(ctx: ScoringContext, ai: Ai | null, work: Loc
       return scoreCards(ctx, needAi(ai), work.campaign, work.targets);
     case "score_profile":
       return scoreProfile(ctx, needAi(ai), work.target);
+    case "shorten_line":
+      return shortenLine(ctx, needAi(ai), work.target, work.room);
     default: {
       const _exhaustive: never = work;
       throw new Error(`unknown local work ${String(_exhaustive)}`);
@@ -359,7 +386,14 @@ async function scoreProfile(ctx: ScoringContext, ai: Ai, target: Target): Promis
   }
 
   if (wantsLine(campaign, prospect.score)) {
-    const answer = await ai.personalise({ profile: profileOf(person), industry: person.industryEvidence, instructions: campaign.personalisationInstructions ?? "" });
+    // The line is held to the room the invite note leaves it, filled for this person (decision 93).
+    const room = inviteLineRoom(target);
+    const answer = await ai.personalise({
+      profile: profileOf(person),
+      industry: person.industryEvidence,
+      instructions: campaign.personalisationInstructions ?? "",
+      ...(room === null ? {} : { maxLength: room }),
+    });
     // The line only with the profile text it rests on: neither is stored when either is missing.
     const kept = answer.value !== null && answer.value.line.trim() !== "" && answer.value.evidence.trim() !== "" ? answer.value : null;
     const at = clock.now();
@@ -376,6 +410,40 @@ async function scoreProfile(ctx: ScoringContext, ai: Ai, target: Target): Promis
   const at = clock.now();
   db.transaction((tx) => decide(tx, target, at));
   return `scoring: ${name} decided`;
+}
+
+/**
+ * Writes an approved prospect's AI line again, within `room`. Stored only if the prospect is still
+ * approved with the same line. With no line the AI can honestly write, `{{ai_line}}` stays empty and
+ * the invite holds the prospect for review, as for any line the profile does not support.
+ */
+async function shortenLine(ctx: ScoringContext, ai: Ai, target: Target, room: number): Promise<string> {
+  const { db, clock } = ctx;
+  const { campaign, person, prospect } = target;
+  const answer = await ai.personalise({
+    profile: profileOf(person),
+    industry: person.industryEvidence,
+    instructions: campaign.personalisationInstructions ?? "",
+    maxLength: room,
+  });
+  const kept = answer.value !== null && answer.value.line.trim() !== "" && answer.value.evidence.trim() !== "" ? answer.value : null;
+  const at = clock.now();
+  const name = person.fullName;
+  const stored = db.transaction((tx) => {
+    const changed = tx
+      .update(prospects)
+      .set({ aiLine: kept?.line ?? null, aiLineEvidence: kept?.evidence ?? null, nextActionAt: null })
+      .where(and(eq(prospects.id, prospect.id), eq(prospects.stage, "approved"), eq(prospects.aiLine, prospect.aiLine ?? "")))
+      .run().changes;
+    if (changed !== 1) return false;
+    const message =
+      kept === null
+        ? `The AI line for ${name} did not fit the invite note, and the AI found no shorter one it could honestly write`
+        : `The AI line for ${name} was written again, shorter, to fit the invite note (${kept.line.length} of ${room} characters)`;
+    logEvent(tx, { campaignId: campaign.id, prospectId: prospect.id, message }, at);
+    return true;
+  });
+  return `scoring: personal line for ${name} ${stored ? "written again" : "changed meanwhile; left as it is"}`;
 }
 
 function currentCampaign(db: Conn, campaign: CampaignRow): CampaignRow {

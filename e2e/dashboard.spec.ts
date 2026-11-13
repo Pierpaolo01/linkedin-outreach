@@ -1315,3 +1315,12 @@ test("phone width: Close this to see them, in the approve-all dialog, is a 44px 
   await close.click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
+
+test("a campaign's people table says why a person is held, under Needs review, without opening the row", async ({ page }) => {
+  await page.goto("/campaigns/1");
+  const held = page.getByTestId("prospect-row").filter({ hasText: "Hotel Prova Termini" });
+  await expect(held.getByTestId("prospect-stage")).toHaveText("Needs review");
+  await expect(held.getByTestId("prospect-review-reason")).toHaveText("Tried 3 times without a confirmed result.");
+  // Nobody else carries a reason.
+  await expect(page.getByTestId("prospect-review-reason")).toHaveCount(1);
+});

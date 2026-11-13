@@ -321,7 +321,19 @@ describe("personalise", () => {
     const answer = await aiFromProvider(provider).personalise(input);
     expect(answer.value?.line).toBe("Ho visto che ristrutturate cascine.");
     expect(requests).toHaveLength(2);
-    expect(nth(requests, 0).system).toMatch(/at most 140 characters/);
+    expect(nth(requests, 0).prompt).toMatch(/at most 140 characters/);
+  });
+
+  it("holds the line to the room the caller gives, the space the invite note leaves for it", async () => {
+    const evidence = "We renovate old farmhouses in the Bergamo valleys";
+    const { provider, requests } = stubProvider([
+      JSON.stringify({ line: "Ho visto che ristrutturate vecchie cascine nelle valli bergamasche.", evidence }),
+      JSON.stringify({ line: "Ho visto che ristrutturate cascine.", evidence }),
+    ]);
+    const answer = await aiFromProvider(provider).personalise({ ...input, maxLength: 40 });
+    expect(answer.value?.line).toBe("Ho visto che ristrutturate cascine.");
+    expect(requests).toHaveLength(2);
+    expect(nth(requests, 0).prompt).toMatch(/at most 40 characters/);
   });
 
   it("retries a line without evidence", async () => {

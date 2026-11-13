@@ -99,17 +99,17 @@ describe("isPeopleSearchUrl", () => {
 
 describe("startProblems", () => {
   it("finds nothing wrong with a complete campaign", () => {
-    expect(startProblems(ready, { confirmAutoApprove: false })).toEqual({});
+    expect(startProblems(ready)).toEqual({});
   });
 
   it("needs a name", () => {
-    expect(startProblems({ ...ready, name: "  " }, { confirmAutoApprove: false })).toEqual({
+    expect(startProblems({ ...ready, name: "  " })).toEqual({
       name: "Give the campaign a name",
     });
   });
 
   it("needs at least one search URL for a people-search campaign", () => {
-    expect(startProblems({ ...ready, sourceUrls: [] }, { confirmAutoApprove: false })).toEqual({
+    expect(startProblems({ ...ready, sourceUrls: [] })).toEqual({
       sourceUrls: "Add at least one LinkedIn people-search URL",
     });
   });
@@ -117,7 +117,6 @@ describe("startProblems", () => {
   it("names each search URL that is not a LinkedIn people search", () => {
     const problems = startProblems(
       { ...ready, sourceUrls: [ready.sourceUrls[0] ?? "", "https://www.linkedin.com/in/test-person-1/"] },
-      { confirmAutoApprove: false },
     );
     expect(problems).toEqual({
       "sourceUrls.1": "This is not a LinkedIn people search. Copy the address of a search on www.linkedin.com/search/results/people/",
@@ -125,17 +124,17 @@ describe("startProblems", () => {
   });
 
   it("needs no URL for a recommendations campaign", () => {
-    expect(startProblems({ ...ready, discoverySource: "recommendations", sourceUrls: [] }, { confirmAutoApprove: false })).toEqual({});
+    expect(startProblems({ ...ready, discoverySource: "recommendations", sourceUrls: [] })).toEqual({});
   });
 
   it("needs a scoring brief", () => {
-    expect(startProblems({ ...ready, scoringBrief: "" }, { confirmAutoApprove: false })).toEqual({
+    expect(startProblems({ ...ready, scoringBrief: "" })).toEqual({
       scoringBrief: "Describe who fits this campaign and who does not",
     });
   });
 
   it("needs a first message", () => {
-    expect(startProblems({ ...ready, firstMessage: " " }, { confirmAutoApprove: false })).toEqual({
+    expect(startProblems({ ...ready, firstMessage: " " })).toEqual({
       firstMessage: "Write the first message",
     });
   });
@@ -143,7 +142,6 @@ describe("startProblems", () => {
   it("refuses an unknown variable in any template", () => {
     const problems = startProblems(
       { ...ready, firstMessage: "Hi {{firstname}}", followUp: "Any news, {{nome}}?" },
-      { confirmAutoApprove: false },
     );
     expect(problems).toEqual({
       firstMessage:
@@ -153,32 +151,32 @@ describe("startProblems", () => {
   });
 
   it("refuses broken braces", () => {
-    expect(startProblems({ ...ready, firstMessage: "Hi {{first_name}" }, { confirmAutoApprove: false })).toEqual({
+    expect(startProblems({ ...ready, firstMessage: "Hi {{first_name}" })).toEqual({
       firstMessage: "The braces do not match. Write variables as {{first_name}}",
     });
   });
 
   it("refuses {{ai_line}} while personalisation is off", () => {
-    expect(startProblems({ ...ready, firstMessage: "Hi. {{ai_line}}", aiPersonalise: false }, { confirmAutoApprove: false })).toEqual({
+    expect(startProblems({ ...ready, firstMessage: "Hi. {{ai_line}}", aiPersonalise: false })).toEqual({
       firstMessage: "{{ai_line}} is written by the AI only when personalisation is on. Turn it on or remove {{ai_line}}",
     });
-    expect(startProblems({ ...ready, firstMessage: "Hi. {{ai_line}}", aiPersonalise: true }, { confirmAutoApprove: false })).toEqual({});
+    expect(startProblems({ ...ready, firstMessage: "Hi. {{ai_line}}", aiPersonalise: true })).toEqual({});
   });
 
   it("refuses an invite note longer than 200 characters once filled with long sample values", () => {
     // 150 characters of text plus {{company}}: fine with a short company, too long with a long one.
     const note = `${"x".repeat(150)} {{company}}`;
-    const problems = startProblems({ ...ready, inviteNote: note }, { confirmAutoApprove: false });
+    const problems = startProblems({ ...ready, inviteNote: note });
     expect(problems.inviteNote).toMatch(/^The invite note must be at most 200 characters with the variables filled in\. With long sample values it comes to \d+\.$/);
   });
 
   it("accepts no invite note", () => {
-    expect(startProblems({ ...ready, inviteNote: null }, { confirmAutoApprove: false })).toEqual({});
-    expect(startProblems({ ...ready, inviteNote: "" }, { confirmAutoApprove: false })).toEqual({});
+    expect(startProblems({ ...ready, inviteNote: null })).toEqual({});
+    expect(startProblems({ ...ready, inviteNote: "" })).toEqual({});
   });
 
   it("keeps the open-profile threshold at or below the score threshold", () => {
-    expect(startProblems({ ...ready, scoreThreshold: 5, openProfileThreshold: 6 }, { confirmAutoApprove: false })).toEqual({
+    expect(startProblems({ ...ready, scoreThreshold: 5, openProfileThreshold: 6 })).toEqual({
       openProfileThreshold: "The open-profile threshold must not be above the score threshold (5)",
     });
   });
@@ -186,7 +184,6 @@ describe("startProblems", () => {
   it("keeps each minimum delay at or below its maximum", () => {
     const problems = startProblems(
       { ...ready, acceptToMessageMinHours: 50, acceptToMessageMaxHours: 48, followUpDelayMinHours: 72, followUpDelayMaxHours: 24 },
-      { confirmAutoApprove: false },
     );
     expect(problems).toEqual({
       acceptToMessageMinHours: "The shortest wait must not be longer than the longest (48 hours)",
@@ -194,11 +191,8 @@ describe("startProblems", () => {
     });
   });
 
-  it("refuses auto-approve unless confirmed", () => {
-    expect(startProblems({ ...ready, autoApprove: true }, { confirmAutoApprove: false })).toEqual({
-      autoApprove: "Auto-approve sends without your review. Confirm that this is what you want.",
-    });
-    expect(startProblems({ ...ready, autoApprove: true }, { confirmAutoApprove: true })).toEqual({});
+  it("lets a campaign with auto-approve on start", () => {
+    expect(startProblems({ ...ready, autoApprove: true })).toEqual({});
   });
 });
 

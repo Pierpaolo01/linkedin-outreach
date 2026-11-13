@@ -343,7 +343,7 @@ export interface StubAiOptions {
 
 export interface StubAi extends Ai {
   /** Each call, in order: the method name and, for scoreCards, how many cards. */
-  readonly calls: { readonly method: keyof Ai; readonly cards?: number }[];
+  readonly calls: { readonly method: keyof Ai; readonly cards?: number; readonly maxLength?: number }[];
   readonly options: StubAiOptions;
 }
 
@@ -384,8 +384,9 @@ export function stubAi(options: StubAiOptions = {}): StubAi {
       };
       return { value, model: "stub-clean" };
     },
-    async personalise({ profile }) {
-      called("personalise");
+    async personalise({ profile, maxLength }) {
+      calls.push({ method: "personalise", ...(maxLength === undefined ? {} : { maxLength }) });
+      if (options.failWith != null) throw options.failWith;
       const value = options.personalise === undefined ? { line: `Your work at ${profile.currentCompany ?? "your company"} stands out`, evidence: profile.headline ?? "" } : options.personalise(profile.publicId);
       return { value, model: "stub-personalise" };
     },

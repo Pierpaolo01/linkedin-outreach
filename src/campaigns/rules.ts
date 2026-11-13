@@ -163,7 +163,7 @@ function templateProblem(template: string | null, rule: TemplateRule): string | 
  * What stops this campaign from starting, by field; empty when it may start. Also used for edits
  * to a started campaign, so a live campaign never holds a template the engine would refuse.
  */
-export function startProblems(c: CampaignFields, { confirmAutoApprove }: { readonly confirmAutoApprove: boolean }): FieldProblems {
+export function startProblems(c: CampaignFields): FieldProblems {
   const problems: Record<string, string> = {};
   const note = (field: string, problem: string | null) => {
     if (problem !== null) problems[field] = problem;
@@ -193,9 +193,6 @@ export function startProblems(c: CampaignFields, { confirmAutoApprove }: { reado
   if (c.acceptToMessageMinHours > c.acceptToMessageMaxHours) note("acceptToMessageMinHours", longest(c.acceptToMessageMaxHours));
   if (c.followUpDelayMinHours > c.followUpDelayMaxHours) note("followUpDelayMinHours", longest(c.followUpDelayMaxHours));
 
-  if (c.autoApprove && !confirmAutoApprove) {
-    note("autoApprove", "Auto-approve sends without your review. Confirm that this is what you want.");
-  }
   return problems;
 }
 
