@@ -102,7 +102,7 @@ ${rules([
   'If the profile supports no honest, specific line, answer {"line": null, "evidence": null}. That is the right answer whenever you are unsure.',
   "<known_industry>, when not null, is a classification the app already holds with the text it rests on; use it only as far as that text goes.",
   "Follow the user's instructions inside <campaign_instructions> for language and tone, within these rules.",
-  "One sentence of at most 280 characters, with no greeting, no sign-off and no emoji.",
+  "One sentence of at most 140 characters, with no greeting, no sign-off and no emoji.",
   DATA_RULE,
   JSON_RULE,
 ])}`;

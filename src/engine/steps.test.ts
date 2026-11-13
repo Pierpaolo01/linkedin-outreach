@@ -81,7 +81,7 @@ describe("invite", () => {
 
   it.each([
     ["an unresolved variable", "Hi {{company}}", /unresolved variable \(company\)/],
-    ["a note over 300 characters", "x".repeat(301), /too long/],
+    ["a note over 200 characters", "x".repeat(201), /too long/],
   ])("holds the prospect for review on %s, without loading LinkedIn", async (_label, note, reason) => {
     const c = campaign({ inviteNote: note });
     const p = approved(c);
@@ -170,6 +170,17 @@ describe("invite", () => {
       expect(stage(p.prospectId)).toBe("needs_review");
     },
   );
+
+  it("holds for review a retry whose frozen note is over 200 characters, without loading LinkedIn", async () => {
+    // A note frozen by an attempt made while LinkedIn's limit was thought to be 300 (2026-11-13).
+    const p = approved(campaign({ inviteNote: "Hi {{first_name}}" }));
+    kit.db.insert(actions).values({ type: "invite", status: "planned", idempotencyKey: `invite:${p.prospectId}`, prospectId: p.prospectId, attempts: 1, startedAt: new Date(START.getTime() - HOUR) }).run();
+    kit.db.update(prospects).set({ inviteNoteSent: "x".repeat(217) }).where(eq(prospects.id, p.prospectId)).run();
+    await kit.engine.tick();
+    expect(stage(p.prospectId)).toBe("needs_review");
+    expect(prospect(kit, p.prospectId).reviewReason).toMatch(/217 characters/);
+    expect(kit.world.log).toHaveLength(0);
+  });
 
   it("never sends a step whose row was already claimed: the claim fails and the prospect is held", async () => {
     const p = approved(campaign());

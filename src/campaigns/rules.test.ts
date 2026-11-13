@@ -165,11 +165,11 @@ describe("startProblems", () => {
     expect(startProblems({ ...ready, firstMessage: "Hi. {{ai_line}}", aiPersonalise: true }, { confirmAutoApprove: false })).toEqual({});
   });
 
-  it("refuses an invite note longer than 300 characters once filled with long sample values", () => {
-    // 250 characters of text plus {{company}}: fine with a short company, too long with a long one.
-    const note = `${"x".repeat(250)} {{company}}`;
+  it("refuses an invite note longer than 200 characters once filled with long sample values", () => {
+    // 150 characters of text plus {{company}}: fine with a short company, too long with a long one.
+    const note = `${"x".repeat(150)} {{company}}`;
     const problems = startProblems({ ...ready, inviteNote: note }, { confirmAutoApprove: false });
-    expect(problems.inviteNote).toMatch(/^The invite note must be at most 300 characters with the variables filled in\. With long sample values it comes to \d+\.$/);
+    expect(problems.inviteNote).toMatch(/^The invite note must be at most 200 characters with the variables filled in\. With long sample values it comes to \d+\.$/);
   });
 
   it("accepts no invite note", () => {
@@ -295,13 +295,13 @@ describe("previewTexts", () => {
     });
   });
 
-  it("reports an invite note over 300 characters for this person", () => {
-    const preview = previewTexts({ inviteNote: "y".repeat(301), firstMessage: "Hi", followUp: "Again", aiPersonalise: false }, values, { aiLineToCome: false });
+  it("reports an invite note over 200 characters for this person", () => {
+    const preview = previewTexts({ inviteNote: "y".repeat(201), firstMessage: "Hi", followUp: "Again", aiPersonalise: false }, values, { aiLineToCome: false });
     expect(preview.inviteNote).toEqual({
       ok: false,
       problem: "too_long",
       variables: [],
-      message: "Longer than 300 characters (301)",
+      message: "Longer than 200 characters (201)",
     });
     expect(preview.followUp).toEqual({ ok: true, text: "Again", length: 5 });
   });

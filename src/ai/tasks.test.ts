@@ -312,6 +312,18 @@ describe("personalise", () => {
     expect(nth(requests, 1).prompt).toMatch(/word for word/);
   });
 
+  it("retries a line over 140 characters, so the invite note it fills stays within LinkedIn's 200", async () => {
+    const evidence = "We renovate old farmhouses in the Bergamo valleys";
+    const { provider, requests } = stubProvider([
+      JSON.stringify({ line: `Ho visto che ristrutturate cascine ${"x".repeat(120)}.`, evidence }),
+      JSON.stringify({ line: "Ho visto che ristrutturate cascine.", evidence }),
+    ]);
+    const answer = await aiFromProvider(provider).personalise(input);
+    expect(answer.value?.line).toBe("Ho visto che ristrutturate cascine.");
+    expect(requests).toHaveLength(2);
+    expect(nth(requests, 0).system).toMatch(/at most 140 characters/);
+  });
+
   it("retries a line without evidence", async () => {
     const { provider, requests } = stubProvider([
       JSON.stringify({ line: "Nice farmhouses.", evidence: null }),

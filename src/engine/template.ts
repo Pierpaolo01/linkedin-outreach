@@ -54,6 +54,18 @@ function literalsOf(template: string, placeholders: readonly Placeholder[]): str
   return literals;
 }
 
+/**
+ * The AI line's closing full stop, when the template puts punctuation straight after it: the AI
+ * writes a sentence, and "{{ai_line}}, would like to connect" must not read "business.,". An
+ * ellipsis is kept. Only the AI line: another value's stop may be an abbreviation's ("Acme Inc.").
+ */
+function withoutDoubledStop(value: string, after: string): string {
+  if (!/^[.,;:!?]/.test(after)) return value;
+  const trimmed = value.trimEnd();
+  if (!trimmed.endsWith(".") || trimmed.endsWith("..")) return value;
+  return trimmed.slice(0, -1);
+}
+
 function failure(problem: Exclude<RenderResult, { ok: true }>["problem"], variables: readonly string[]): RenderResult {
   return { ok: false, problem, variables };
 }
@@ -90,7 +102,9 @@ export function renderTemplate(template: string, values: TemplateValues, options
 
   let rendered = literals[0] ?? "";
   placeholders.forEach((placeholder, index) => {
-    rendered += (resolved.get(placeholder.name) ?? "") + (literals[index + 1] ?? "");
+    const after = literals[index + 1] ?? "";
+    const value = resolved.get(placeholder.name) ?? "";
+    rendered += (placeholder.name === "ai_line" ? withoutDoubledStop(value, after) : value) + after;
   });
   if (DOUBLE_BRACE.test(rendered)) {
     const withBraces = names.filter((name) => /[{}]/.test(resolved.get(name) ?? ""));

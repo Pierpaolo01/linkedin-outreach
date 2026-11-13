@@ -125,7 +125,7 @@ export const LONG_SAMPLE_VALUES = {
   title: "Head of Business Development and Strategic Partnerships",
   location: "Reggio nell'Emilia, Emilia-Romagna, Italy",
   industry: "Industrial Machinery Manufacturing",
-  ai_line: "I read your recent post about bringing lean production methods to small family-owned manufacturers and found the part about supplier visits useful.",
+  ai_line: "I read your recent post about bringing lean production methods to small family-owned manufacturers and found the part on suppliers useful.",
 } as const satisfies Required<TemplateValues>;
 
 const VARIABLE_LIST = `Use ${TEMPLATE_VARIABLES.slice(0, -1)

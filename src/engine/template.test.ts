@@ -41,6 +41,22 @@ describe("renderTemplate", () => {
     expect(renderTemplate("Hi {{first_name}}", { first_name: "$& $1 $$ M" })).toEqual({ ok: true, text: "Hi $& $1 $$ M" });
   });
 
+  it("drops a value's full stop when the template puts punctuation right after it", () => {
+    const template = "Hey {{first_name}}, {{ai_line}}, would like to connect!";
+    expect(renderTemplate(template, { first_name: "Edzard", ai_line: "I saw your agency's work." })).toEqual({
+      ok: true,
+      text: "Hey Edzard, I saw your agency's work, would like to connect!",
+    });
+    expect(renderTemplate("{{ai_line}}. Talk soon", { ai_line: "Great post." })).toEqual({ ok: true, text: "Great post. Talk soon" });
+    expect(renderTemplate("{{ai_line}}!", { ai_line: "Nice." })).toEqual({ ok: true, text: "Nice!" });
+  });
+
+  it("keeps a value's full stop before a space or a word, and keeps an ellipsis", () => {
+    expect(renderTemplate("{{ai_line}} Would like to connect", { ai_line: "Great post." })).toEqual({ ok: true, text: "Great post. Would like to connect" });
+    expect(renderTemplate("{{ai_line}}, ok", { ai_line: "Wait..." })).toEqual({ ok: true, text: "Wait..., ok" });
+    expect(renderTemplate("{{company}}, hi", { company: "Acme Inc." })).toEqual({ ok: true, text: "Acme Inc., hi" });
+  });
+
   it("leaves single braces in the text alone", () => {
     expect(renderTemplate("Hi {first_name} :-} {{first_name}}", marco)).toEqual({
       ok: true,

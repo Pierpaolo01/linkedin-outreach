@@ -81,12 +81,12 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await note.fill("test note for ");
   await page.getByRole("button", { name: "Insert First name" }).click();
   await expect(note).toHaveValue("test note for {{first_name}}");
-  // The counter beside the note is the template's own length; the 300 belongs to the filled-in text, in the preview.
+  // The counter beside the note is the template's own length; the 200 belongs to the filled-in text, in the preview.
   await expect(page.getByTestId("note-count")).toHaveText("Template: 28\u00a0characters");
   await first.fill("test first message {{first_name}} {{nickname}}");
   const preview = page.getByTestId("preview");
   await expect(preview).toContainText("test note for Anna");
-  await expect(preview).toContainText("18 of 300\u00a0characters");
+  await expect(preview).toContainText("18 of 200\u00a0characters");
   // What the variables filled in is set apart, as in the approval queue.
   await expect(preview.getByTestId("sent-text").first().locator(".font-medium")).toHaveText(["Anna"]);
   await expect(preview).toContainText("{{nickname}} is not a variable");

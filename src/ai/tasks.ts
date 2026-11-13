@@ -36,7 +36,8 @@ const cleanedSchema = z.object({
   companyShort: z.string().trim().min(1).nullable(),
 });
 
-const MAX_LINE = 280;
+/** Short enough that a note of greeting, line and sign-off fits LinkedIn's 200 characters. */
+const MAX_LINE = 140;
 const personalisedSchema = z.object({
   line: z.string().trim().min(1).max(MAX_LINE).nullable(),
   evidence: z.string().trim().min(1).nullable(),

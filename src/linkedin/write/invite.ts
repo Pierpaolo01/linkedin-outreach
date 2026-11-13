@@ -95,7 +95,7 @@ export async function sendInvite(deps: WriteDeps, person: PersonRef, note: strin
     case "email_required":
       return emailRequired(deps);
     case "note_quota":
-      return refuse(deps, "LinkedIn offers no personalised note now; nothing was sent");
+      return closeAnd(deps, "note_quota");
     case "pending":
       // Sent at the click, with no dialog: right only when no note was asked for.
       return text === null ? "sent" : giveUp(deps, "the invitation went out at the click on Connect, without the note");
@@ -109,7 +109,7 @@ export async function sendInvite(deps: WriteDeps, person: PersonRef, note: strin
         const next = await page.waitFor((shown) => only(inviteScreen(shown, wording), ["note", "note_quota", "limit"]), timeoutOf(deps));
         if (next === undefined) return giveUp(deps, "the note box did not appear after Add a note");
         if (next === "limit") return limitHit(deps);
-        if (next === "note_quota") return refuse(deps, "LinkedIn offers no personalised note now; nothing was sent");
+        if (next === "note_quota") return closeAnd(deps, "note_quota");
         return withNote(deps, text, wording, guard);
       }
       if ((await page.clickUnless(inDialog(wording.sendWithoutNote), expiryOf(page, guard))) !== undefined) return closeAnd(deps, "expired");
@@ -128,7 +128,7 @@ async function withNote(deps: WriteDeps, text: string, wording: WriteWording, gu
   if (pastDeadline(page, guard)) return closeAnd(deps, "expired");
   await page.type(box, text);
   // A box with a shorter limit than ours cuts the note silently.
-  if (!sameText(await page.value(box), text)) return refuse(deps, "the note box does not hold the note as typed; nothing was sent");
+  if (!sameText(await page.value(box), text)) return closeAnd(deps, "note_not_taken");
   if ((await page.clickUnless(inDialog(wording.sendInvitation), expiryOf(page, guard))) !== undefined) return closeAnd(deps, "expired");
   return confirmSent(deps, wording);
 }

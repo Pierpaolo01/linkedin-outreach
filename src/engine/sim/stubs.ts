@@ -278,7 +278,7 @@ export function inviter(flaws: InviterFlaws = {}): EngineModule {
         hold(db, due.prospectId, `profile shows ${profile.connectionState}`);
         return { did: `held ${due.publicId}`, wakeAt: new Date(clock.now().getTime() + GAP_MS) };
       }
-      const note = due.inviteNote === null ? null : renderTemplate(due.inviteNote, { first_name: due.firstName, company: due.company }, { maxLength: 300 });
+      const note = due.inviteNote === null ? null : renderTemplate(due.inviteNote, { first_name: due.firstName, company: due.company }, { maxLength: 200 });
       if (note !== null && !note.ok) {
         hold(db, due.prospectId, `note: ${note.problem}`);
         return { did: `held ${due.publicId}`, wakeAt: new Date(clock.now().getTime() + GAP_MS) };

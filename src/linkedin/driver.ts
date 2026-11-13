@@ -234,7 +234,16 @@ export interface SendGuard {
  * deadline had passed and nothing was done; the others are refusals the engine turns into needs
  * review.
  */
-export type InviteResult = "sent" | "already_pending" | "already_connected" | "not_offered" | "expired";
+export type InviteResult =
+  | "sent"
+  | "already_pending"
+  | "already_connected"
+  | "not_offered"
+  | "expired"
+  /** No free personalised note is left this month; nothing was sent (dialog closed). */
+  | "note_quota"
+  /** The note box did not hold the note as typed (LinkedIn took fewer characters); nothing was sent (dialog closed). */
+  | "note_not_taken";
 
 export type WithdrawResult = "withdrawn" | "not_pending" | "expired";
 

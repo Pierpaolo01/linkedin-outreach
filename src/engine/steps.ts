@@ -74,7 +74,8 @@ const RETRY_AFTER_MS = 30 * MINUTE_MS;
 const MAX_RECONCILE_FAILURES = 3;
 /** Unexpected pages in a row that raise a safety stop. */
 const UNEXPECTED_STREAK = 3;
-export const INVITE_NOTE_MAX = 300;
+/** LinkedIn takes at most 200 characters in an invite note on a free account (seen live 2026-11-13: "217/200", Send disabled). */
+export const INVITE_NOTE_MAX = 200;
 
 const SAFETY_KINDS: ReadonlySet<LinkedInErrorKind> = new Set(["logged_out", "checkpoint", "restricted", "limit_hit"]);
 
@@ -521,7 +522,13 @@ const CONNECTABLE: ReadonlySet<Profile["connectionState"]> = new Set(["can_conne
 /** The invite note: the one frozen by an earlier claim (null included) wins; else the campaign's, if it has one. */
 function inviteNote(db: Conn, target: Target): { ok: true; text: string | null } | { ok: false; reason: string } {
   const frozen = frozenText(db, "invite", target.prospect.id);
-  if (frozen.frozen) return { ok: true, text: frozen.text };
+  if (frozen.frozen) {
+    // A retry sends the text it froze; one frozen under a longer limit can never be taken.
+    if (frozen.text !== null && frozen.text.length > INVITE_NOTE_MAX) {
+      return { ok: false, reason: `The invite note is ${frozen.text.length} characters; LinkedIn takes at most ${INVITE_NOTE_MAX}` };
+    }
+    return { ok: true, text: frozen.text };
+  }
   const template = target.campaign.inviteNote ?? "";
   if (template.trim() === "") return { ok: true, text: null };
   return textFor(db, target, "invite", template, "The invite note", INVITE_NOTE_MAX);
