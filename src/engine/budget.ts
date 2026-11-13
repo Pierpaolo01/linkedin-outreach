@@ -26,7 +26,9 @@ export interface BudgetAnswer {
 const LEDGER_TYPES = {
   invite: ["invite"],
   message: ["message"],
-  profile_view: ["profile_view"],
+  // Sending an invite loads the person's profile again (the write's own check of who it is), so every
+  // invite is a profile view as well as an invite.
+  profile_view: ["profile_view", "invite"],
   discovery_page: ["search_page", "recommendation_page"],
   withdraw: ["withdraw"],
 } as const satisfies Record<BudgetKind, readonly [ActionType, ...ActionType[]]>;
@@ -93,7 +95,7 @@ function invitesBlockedUntil(db: Db, now: Date): Date | null {
 }
 
 /** Why `kind` is closed now, each with when it opens again; empty when open. */
-function refusals(db: Db, settings: Settings, kind: BudgetKind, now: Date, used: number, limit: number): Refusal[] {
+function refusals(db: Db, settings: Settings, kind: BudgetKind, now: Date, used: number, limit: number, need: number): Refusal[] {
   const { timeZone } = settings;
   const found: Refusal[] = [];
   if (kind === "invite") {
@@ -106,17 +108,18 @@ function refusals(db: Db, settings: Settings, kind: BudgetKind, now: Date, used:
       found.push({ reason: "week_limit", resumesAt: nextWorkingInstant(settings, weekEnd) });
     }
   }
-  if (used >= limit) {
+  if (used + need > limit) {
     found.push({ reason: "day_limit", resumesAt: nextWorkingInstant(settings, startOfNextDay(timeZone, now)) });
   }
   return found;
 }
 
-export function checkBudget(db: Db, settings: Settings, kind: BudgetKind, now: Date): BudgetAnswer {
+/** `need`: how many units of `kind` the step about to run uses; allowed only when all of them are left today. */
+export function checkBudget(db: Db, settings: Settings, kind: BudgetKind, now: Date, need = 1): BudgetAnswer {
   const used = countClaimed(db, kind, startOfDay(settings.timeZone, now), startOfNextDay(settings.timeZone, now));
   const limit = dayLimit(db, settings, kind, now);
   // The reason that lasts longest wins; on a tie the earlier entry (block, then week, then day).
-  const latest = refusals(db, settings, kind, now, used, limit).reduce<Refusal | null>(
+  const latest = refusals(db, settings, kind, now, used, limit, need).reduce<Refusal | null>(
     (best, next) => (best === null || next.resumesAt.getTime() > best.resumesAt.getTime() ? next : best),
     null,
   );

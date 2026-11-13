@@ -86,6 +86,27 @@ describe("checkBudget, day budgets", () => {
     });
   });
 
+  it("counts every invite as a profile view too: sending one loads the person's profile again", () => {
+    const settings = settingsWith({ limits: { profileViewsPerDay: 3 } });
+    addRows("profile_view", "2026-11-11T08:00:00Z");
+    addRows("invite", "2026-11-11T08:01:00Z");
+    expect(checkBudget(opened.db, settings, "profile_view", now)).toMatchObject({ allowed: true, used: 2, limit: 3 });
+    expect(checkBudget(opened.db, settings, "invite", now).used).toBe(1);
+  });
+
+  it("allows a step that needs several units only when all of them are left", () => {
+    const settings = settingsWith({ limits: { profileViewsPerDay: 3 } });
+    addRows("profile_view", "2026-11-11T08:00:00Z", { count: 2 });
+    expect(checkBudget(opened.db, settings, "profile_view", now).allowed).toBe(true);
+    expect(checkBudget(opened.db, settings, "profile_view", now, 2)).toMatchObject({
+      allowed: false,
+      reason: "day_limit",
+      used: 2,
+      limit: 3,
+      resumesAt: TOMORROW_0900,
+    });
+  });
+
   it("counts a row from local midnight on, not one a millisecond before", () => {
     const settings = settingsWith({ limits: { messagesPerDay: 10 } });
     addRows("message", "2026-11-10T22:59:59.999Z"); // 10 Nov, 23:59:59.999 local
@@ -334,7 +355,7 @@ describe("usageToday", () => {
     expect(usageToday(opened.db, settings, now)).toEqual({
       invite: { used: 2, limit: 7 },
       message: { used: 3, limit: 10 },
-      profile_view: { used: 4, limit: 40 },
+      profile_view: { used: 6, limit: 40 }, // 4 views, and the 2 invites each load a profile
       discovery_page: { used: 2, limit: 10 },
       withdraw: { used: 0, limit: 10 },
     });

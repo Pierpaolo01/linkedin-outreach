@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { campaigns, eventLog } from "../db/schema";
+import { campaigns, eventLog, prospects } from "../db/schema";
 import {
   archiveCampaign,
   createCampaign,
@@ -110,6 +110,16 @@ describe("updateCampaign", () => {
         notice: "Saved. Edits apply only to steps not yet sent; texts already sent stay as they were.",
       },
     });
+  });
+
+  it("turns auto-approve on for a started campaign and approves whoever already waits", () => {
+    const id = seedCampaign(t.db, { status: "awaiting_approval", autoApprove: false });
+    const waiting = seedProspect(t.db, id, seedPerson(t.db, 1), "pending_approval");
+
+    expect(updateCampaign(t.db, id, { autoApprove: true }, LATER)).toMatchObject({ ok: true, value: { campaign: { autoApprove: true } } });
+    const row = t.db.select().from(prospects).where(eq(prospects.id, waiting)).get();
+    expect(row).toMatchObject({ stage: "approved", approvedAt: LATER });
+    expect(statusOf(id)).toBe("running");
   });
 
   it("refuses other fields of a started campaign", () => {

@@ -177,19 +177,20 @@ function run(ctx: StepContext, work: DueWork): Promise<StepOutcome> {
 
 // ---------------------------------------------------------------- picking due work
 
-/** Whether every budget in `kinds` is open; each budget is asked at most once per tick. */
-type BudgetGate = (kinds: readonly BudgetKind[]) => boolean;
+/** Whether every budget in `kinds` has `need` units left (one by default); each answer is asked at most once per tick. */
+type BudgetGate = (kinds: readonly BudgetKind[], need?: number) => boolean;
 
 function budgetGate(db: Db, settings: Settings, now: Date): BudgetGate {
-  const answers = new Map<BudgetKind, boolean>();
-  const allowed = (kind: BudgetKind): boolean => {
-    const known = answers.get(kind);
-    if (known !== undefined) return known;
-    const answer = checkBudget(db, settings, kind, now).allowed;
-    answers.set(kind, answer);
-    return answer;
-  };
-  return (kinds) => kinds.every(allowed);
+  const answers = new Map<string, boolean>();
+  return (kinds, need = 1) =>
+    kinds.every((kind) => {
+      const key = `${kind}:${need}`;
+      const known = answers.get(key);
+      if (known !== undefined) return known;
+      const answer = checkBudget(db, settings, kind, now, need).allowed;
+      answers.set(key, answer);
+      return answer;
+    });
 }
 
 /** Unknown step rows that still decide the prospect's current stage (the step of that stage). */
@@ -433,7 +434,8 @@ function pickOutreach(db: Db, now: Date, open: BudgetGate): DueWork | null {
   // 6. Invites. Only a prospect with an approval time: an approval by the user (or the campaign's
   // auto-approve) is the one way in, whatever else moved it to approved.
   const toInvite = candidates(db, unknown, "approved", sql<number>`${prospects.approvedAt}`, and(isNotNull(prospects.approvedAt), dueBy(now)));
-  if (toInvite.length > 0 && open(["invite", "profile_view"])) {
+  // Two profile views: the handler's read, then the send's own load of the profile.
+  if (toInvite.length > 0 && open(["invite"]) && open(["profile_view"], 2)) {
     const target = inTurn(db, "invite", toInvite);
     if (target !== null) return { kind: "invite", target };
   }

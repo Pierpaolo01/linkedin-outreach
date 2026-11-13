@@ -472,21 +472,23 @@ type ClaimGate =
  * Asked immediately before every claim, with the settings read again and the current time: the
  * tick checked the window and the budgets when it started, but the read before the claim may have
  * returned much later (the laptop slept while the page loaded), and the user may have lowered a
- * limit meanwhile. Refused outside working time, in its last minutes, or with the step's budget
- * closed; the caller then claims nothing and returns, and a later tick starts over with a fresh read.
+ * limit meanwhile. Refused outside working time, in its last minutes, or with any of the step's
+ * budgets closed; the caller then claims nothing and returns, and a later tick starts over with a fresh read.
  *
  * Allowed, it gives the deadline the driver checks right before the effect: the end of the current
  * working window, so a send the laptop sleeps through does not click the next morning (decision 45).
  */
-function claimGate(ctx: StepContext, kind: BudgetKind): ClaimGate {
+function claimGate(ctx: StepContext, ...kinds: readonly [BudgetKind, ...BudgetKind[]]): ClaimGate {
   const settings = getSettings(ctx.db);
   const now = ctx.clock.now();
   if (!isInWorkingWindow(settings, now)) return { ok: false, why: "after_hours" };
   const end = endOfWorkingWindow(settings, now);
   // The same margin as the tick: a read that wakes at 17:59:55 is not followed by a send after 18:00.
   if (end.getTime() - now.getTime() <= WINDOW_END_MARGIN_MS) return { ok: false, why: "after_hours" };
-  const budget = checkBudget(ctx.db, settings, kind, now);
-  if (!budget.allowed) return { ok: false, why: "budget", kind, resumesAt: budget.resumesAt };
+  for (const kind of kinds) {
+    const budget = checkBudget(ctx.db, settings, kind, now);
+    if (!budget.allowed) return { ok: false, why: "budget", kind, resumesAt: budget.resumesAt };
+  }
   // `end` is the first instant outside the window and the driver's deadline is inclusive, so the
   // deadline is the last instant inside it: at closing time exactly, nothing goes out.
   return { ok: true, guard: { notAfter: new Date(end.getTime() - 1) } };
@@ -643,7 +645,8 @@ export async function inviteStep(ctx: StepContext, target: Target): Promise<Step
   }
   const noteText = note.text;
 
-  const gate = claimGate(ctx, "invite");
+  // The read above is counted; the send loads the profile once more, so one profile view must still be left.
+  const gate = claimGate(ctx, "invite", "profile_view");
   if (!gate.ok) return notClaimed("invite", name, gate);
   const claimed = claimStep(db, { step: "invite", prospectId: prospect.id, text: noteText, replaceFrozenLongerThan: INVITE_NOTE_MAX }, clock.now());
   if (!claimed.ok) {

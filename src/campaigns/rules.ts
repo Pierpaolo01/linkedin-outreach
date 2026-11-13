@@ -60,8 +60,9 @@ export type CampaignPatch = z.infer<typeof campaignFieldsSchema>;
 /** All of a campaign's wizard fields, as stored. */
 export type CampaignFields = { readonly [K in keyof CampaignPatch]-?: Exclude<CampaignPatch[K], undefined> };
 
-/** Templates and timings: the fields a campaign may still change once it has started. */
+/** Templates, timings and auto-approve (decision 94): the fields a campaign may still change once it has started. */
 export const LIVE_EDITABLE_FIELDS = [
+  "autoApprove",
   "inviteNote",
   "firstMessage",
   "followUp",

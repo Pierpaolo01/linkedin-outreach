@@ -301,11 +301,12 @@ export function approveShown(db: Db, prospectIds: readonly number[], now: Date):
 
 /**
  * Approves every prospect of the campaign waiting for approval, at or above `minScore` when given.
- * Not served by the API (which approves only what the user was shown, `approveShown`): the engine
- * simulation's user approves his whole queue with it.
+ * Not served by the API as such (which approves only what the user was shown, `approveShown`): the
+ * engine simulation's user approves his whole queue with it, and turning auto-approve on for a
+ * started campaign approves its queue with it.
  */
 export function approveAll(
-  db: Db,
+  db: Conn,
   { campaignId, minScore }: { readonly campaignId: number; readonly minScore: number | null },
   now: Date,
 ): Outcome<{ readonly approved: number; readonly campaignStatus: CampaignStatus }> {

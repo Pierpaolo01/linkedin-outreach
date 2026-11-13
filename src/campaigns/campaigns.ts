@@ -8,6 +8,7 @@ import type { Db } from "../db/index";
 import { campaigns, people, prospects, type CampaignStatus } from "../db/schema";
 import { logEvent, type Conn } from "../engine/ledger";
 import { templateValues } from "../engine/steps";
+import { approveAll } from "./prospects";
 import { conflict, done, invalid, notFound, type Outcome } from "./results";
 import {
   isPausable,
@@ -162,6 +163,8 @@ export function updateCampaign(
       .set({ ...changes, updatedAt: now })
       .where(eq(campaigns.id, id))
       .run();
+    // Auto-approve turned on for a started campaign: whoever already waits for approval goes ahead too.
+    if (live && changes.autoApprove === true && !row.autoApprove) approveAll(tx, { campaignId: id, minScore: null }, now);
     const campaign = viewOf(tx, id);
     logEvent(tx, { campaignId: id, message: `Campaign "${campaign.name}" edited: ${Object.keys(changes).join(", ") || "nothing"}` }, now);
     return done({ campaign, notice: live ? LIVE_EDIT_NOTICE : null });
