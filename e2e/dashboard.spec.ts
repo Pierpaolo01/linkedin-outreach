@@ -859,9 +859,10 @@ test("phone width: the menu is a modal; Escape and the overlay close it and give
   await expect(nav).toBeVisible();
   await expect(nav.getByRole("link", { name: "Home" })).toBeFocused();
   const close = sidebar(page).getByRole("button", { name: "Close menu" });
-  const closeBox = await close.boundingBox();
-  expect(closeBox?.width ?? 0, "Close menu is too small to tap").toBeGreaterThanOrEqual(44);
-  expect(closeBox?.height ?? 0, "Close menu is too small to tap").toBeGreaterThanOrEqual(44);
+  // The layout size, not the bounding box: the box is a fraction of a pixel short while the drawer still slides in.
+  const closeSize = await close.evaluate((el) => ({ width: (el as HTMLElement).offsetWidth, height: (el as HTMLElement).offsetHeight }));
+  expect(closeSize.width, "Close menu is too small to tap").toBeGreaterThanOrEqual(44);
+  expect(closeSize.height, "Close menu is too small to tap").toBeGreaterThanOrEqual(44);
   await close.click();
   await expect(nav).toBeHidden();
   await expect(button).toBeFocused();
