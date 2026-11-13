@@ -191,9 +191,13 @@ export function writePageFor(page: Page, { random = Math.random, sleep = realSle
     },
     async value(target) {
       const box = await only(target);
-      return box.evaluate((el) =>
-        el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement ? el.value : el instanceof HTMLElement ? el.innerText : "",
-      );
+      // No instanceof: LinkedIn's dialog elements can come from another realm (its interop outlet),
+      // where `el instanceof HTMLTextAreaElement` is false and innerText of a textarea is "".
+      return box.evaluate((el) => {
+        const tag = el.tagName.toLowerCase();
+        if (tag === "textarea" || tag === "input") return (el as HTMLTextAreaElement).value;
+        return (el as HTMLElement).innerText ?? el.textContent ?? "";
+      });
     },
     async dismiss() {
       await page.keyboard.press("Escape");

@@ -162,6 +162,22 @@ describe("write locators in real Chrome, offline", { timeout: 60_000 }, () => {
     expect(await write.value(box)).toBe(text);
   });
 
+  it("reads back a note box made by another realm, as LinkedIn's interop outlet is (2026-11-13)", async (ctx) => {
+    if (context === undefined) ctx.skip();
+    // Live, the box held the note (200/200 shown) yet read back "": instanceof checks fail across realms.
+    const { page, write } = await show('<html lang="en"><body><dialog open id="d"></dialog><iframe id="f"></iframe></body></html>');
+    await page.evaluate(() => {
+      const frame = document.getElementById("f") as HTMLIFrameElement;
+      const box = frame.contentDocument?.createElement("textarea");
+      if (box === undefined) throw new Error("no frame document");
+      box.setAttribute("aria-label", "note");
+      document.getElementById("d")?.appendChild(box);
+    });
+    const box: Target = { roles: ["textbox"], within: writeStructure.dialog };
+    await write.type(box, "Hey Luc, would like to connect!");
+    expect(await write.value(box)).toBe("Hey Luc, would like to connect!");
+  });
+
   it("aborts every request a page makes", async (ctx) => {
     if (context === undefined) ctx.skip();
     const { page } = await show('<html><body><img src="https://blocked.invalid/probe.png"></body></html>');
