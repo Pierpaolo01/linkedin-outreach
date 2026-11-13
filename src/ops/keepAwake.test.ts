@@ -1,4 +1,3 @@
-import { execFileSync, spawn as nodeSpawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -89,39 +88,6 @@ describe("createKeepAwake", () => {
     keepAwake.update({ wanted: true });
     expect(fake.children[0]?.signals).toEqual(["SIGTERM"]);
     expect(fake.calls).toHaveLength(1);
-  });
-});
-
-describe("caffeinate -w (real process)", () => {
-  function caffeinatePids(appPid: number): number[] {
-    try {
-      return execFileSync("pgrep", ["-f", `caffeinate -i -w ${appPid}$`], { encoding: "utf8" })
-        .trim()
-        .split("\n")
-        .map(Number);
-    } catch {
-      return [];
-    }
-  }
-
-  async function waitFor(check: () => boolean, ms = 3000): Promise<boolean> {
-    const end = Date.now() + ms;
-    while (Date.now() < end) {
-      if (check()) return true;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    return check();
-  }
-
-  it("leaves no caffeinate behind when the app dies without calling stop", async () => {
-    const app = nodeSpawn("sleep", ["30"], { stdio: "ignore" });
-    const appPid = app.pid ?? 0;
-    const keepAwake = createKeepAwake({ spawn: nodeSpawn, pid: appPid });
-    keepAwake.update({ wanted: true });
-    expect(await waitFor(() => caffeinatePids(appPid).length === 1)).toBe(true);
-
-    app.kill("SIGKILL");
-    expect(await waitFor(() => caffeinatePids(appPid).length === 0)).toBe(true);
   });
 });
 

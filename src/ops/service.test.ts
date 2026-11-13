@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -142,13 +142,6 @@ describe("servicePlist", () => {
     expect(servicePlist({ ...spec, repoDir: "/Users/a&b/<repo>" })).toContain(
       "<string>/Users/a&amp;b/&lt;repo&gt;</string>",
     );
-  });
-
-  it("is a valid property list", async () => {
-    const file = join(dir, "check.plist");
-    writeFileSync(file, plist);
-    const { execFileSync } = await import("node:child_process");
-    expect(execFileSync("plutil", ["-lint", file], { encoding: "utf8" })).toContain("OK");
   });
 });
 

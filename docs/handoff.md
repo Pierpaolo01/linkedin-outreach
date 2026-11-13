@@ -4,6 +4,8 @@ For a fresh build session. Written 2026-11-11 from the principal's review of the
 
 Sources: [build-readiness capture](../inbox/2026-11-11-linkedin-build-readiness-request.md) (the principal's verbatim comments), ADR-025 in `Atlas/decisions.md`.
 
+**CI update, 2026-11-13:** the principal approved Ubuntu for routine verification to avoid paid Mac runners. The original macOS CI requirement below is superseded by decision 86 in `docs/decisions.md`. Keep native Mac checks available locally through `npm run verify:macos`; the app's macOS target is unchanged.
+
 ## 1. Mission
 
 Build the tool in spec v1.2 end to end: a local web app that runs LinkedIn outreach (invite, message after acceptance, one follow-up) through a dedicated Chrome window, with a dashboard, a SQLite database and an AI scoring step. You build and verify everything yourself. The principal reviews at five milestone gates and gives feedback there. Stop at each gate and wait.
