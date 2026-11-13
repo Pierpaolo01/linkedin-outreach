@@ -164,7 +164,7 @@ function SkipLink({ to, className, children }: { readonly to: string; readonly c
     <a
       href={`#${to}`}
       onClick={skip}
-      className={`skip-link rounded-field border border-base-300 bg-base-100 px-3 py-2 font-medium ${className ?? ""}`}
+      className={`skip-link rounded-field border border-base-300 bg-base-100 px-3 py-2 font-medium max-lg:min-h-11 ${className ?? ""}`}
     >
       {children}
     </a>

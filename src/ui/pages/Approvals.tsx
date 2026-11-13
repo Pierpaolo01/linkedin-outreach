@@ -7,6 +7,7 @@ import { formatScore, plural } from "../format";
 import { ActionError, Announce, CampaignSelect, Disclosure, EmptyState, FilledText, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
+import { failure, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const SCORE_STEPS = [0, 5, 6, 7, 8] as const;
@@ -50,7 +51,7 @@ export function Approvals() {
    * count, the keyboard order and the tests' rows. Kept apart from the loaded list, which may load again meanwhile.
    */
   const [leaving, setLeaving] = useState<ReadonlyMap<number, Leaving>>(new Map());
-  const [rowErrors, setRowErrors] = useState<ReadonlyMap<number, string>>(new Map());
+  const [rowErrors, setRowErrors] = useState<ReadonlyMap<number, Failure>>(new Map());
   const [decided, setDecided] = useState(0);
   const [notice, setNotice] = useState<string | undefined>(undefined);
   /** What a screen reader hears when a decision lands: the row leaving the list is the only other sign. */
@@ -58,7 +59,7 @@ export function Approvals() {
   /** The ids on screen when "Approve all" was pressed: exactly what the dialog approves. */
   const [confirmIds, setConfirmIds] = useState<readonly number[] | null>(null);
   const [approvingAll, setApprovingAll] = useState(false);
-  const [allError, setAllError] = useState<string | undefined>(undefined);
+  const [allError, setAllError] = useState<Failure | undefined>(undefined);
   /** Single decisions sent and not answered yet. */
   const [deciding, setDeciding] = useState(0);
   const rows = useRef(new Map<number, HTMLDivElement>());
@@ -102,7 +103,7 @@ export function Approvals() {
 
   const without = (id: number) => (set: ReadonlySet<number>) => new Set([...set].filter((x) => x !== id));
   const notLeaving = (id: number) => (map: ReadonlyMap<number, Leaving>) => new Map([...map].filter(([x]) => x !== id));
-  const withoutError = (id: number) => (map: ReadonlyMap<number, string>) => new Map([...map].filter(([x]) => x !== id));
+  const withoutError = (id: number) => (map: ReadonlyMap<number, Failure>) => new Map([...map].filter(([x]) => x !== id));
 
   const focusRow = (id: number | undefined) => {
     if (id !== undefined) rows.current.get(id)?.focus();
@@ -124,17 +125,18 @@ export function Approvals() {
         setInStep((n) => (n === undefined ? n : n - 1));
         refresh();
       })
-      .catch((failure: unknown) => {
-        const error = toApiError(failure);
+      .catch((failed: unknown) => {
+        const error = toApiError(failed);
         if (error.status === 409 || error.status === 404) {
           // Decided somewhere else meanwhile: it stays out of the queue.
-          setNotice(`${item.person.fullName} was already decided: ${error.message}`);
+          setNotice(`${item.person.fullName} was already decided elsewhere, so they have left the queue.`);
           refresh();
           return;
         }
         setGone(without(item.id));
         setLeaving(notLeaving(item.id));
-        setRowErrors((map) => new Map(map).set(item.id, `Could not ${decision} ${item.person.fullName}: ${error.message}`));
+        const press = decision === "approve" ? "Approve" : "Reject";
+        setRowErrors((map) => new Map(map).set(item.id, failure(`${item.person.fullName} was not ${press.toLowerCase()}d. They are still in the queue; press ${press} again.`, error)));
       })
       .finally(() => setDeciding((n) => n - 1));
   };
@@ -177,7 +179,9 @@ export function Approvals() {
         setNotice(`${approved} approved${skipped === 0 ? "" : `, ${skipped} no longer waiting`}.`);
         setConfirmIds(null);
       })
-      .catch((failure: unknown) => setAllError(`Could not approve them all: ${toApiError(failure).message}`))
+      .catch((failed: unknown) =>
+        setAllError(failure(`Nobody was approved. They are still in the queue; press Approve ${ids.length} again, or Cancel.`, toApiError(failed))),
+      )
       .finally(() => {
         setApprovingAll(false);
         loaded.reload();
@@ -272,7 +276,7 @@ export function Approvals() {
       <Announce message={said}>{notice !== undefined && <p className="text-sm text-primary">{notice}</p>}</Announce>
 
       {loaded.status === "error" ? (
-        <LoadError what="the approval queue" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the approval queue" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.status === "loading" ? (
         <SkeletonRows rows={3} rowClassName="h-40" />
       ) : items.length === 0 ? (
@@ -383,7 +387,7 @@ function Row({
   /** Undefined until known: the texts then show without the filled-in values set apart. */
   readonly templates: Templates | undefined;
   readonly showCampaign: boolean;
-  readonly error: string | undefined;
+  readonly error: Failure | undefined;
   readonly onDecide?: (decision: Decision) => void;
   readonly onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
   readonly register?: (element: HTMLDivElement | null) => void;

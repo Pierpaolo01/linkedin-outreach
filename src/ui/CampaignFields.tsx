@@ -2,6 +2,7 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { previewCampaign } from "./api";
 import type { PreviewText } from "./apiSchemas";
 import { INVITE_NOTE_MAX, VARIABLES, type CampaignForm, type FieldErrors, type SetField } from "./campaignForm";
+import { NBSP } from "./format";
 import { describedByError, errorProps, FieldError, FilledText, hintIdOf, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
 import { Link } from "./router";
 import { useLoad } from "./useLoad";
@@ -96,11 +97,11 @@ export function MessageFields({
               </label>
               {/* The template's own length; the limit is for the filled-in text, which the preview counts. Red past the limit, which a save refuses too. */}
               <span className={`nums text-sm ${noteLength > INVITE_NOTE_MAX ? "font-medium text-error" : "text-muted"}`} data-testid="note-count">
-                Template: {noteLength} characters
+                Template: {noteLength}{NBSP}characters
               </span>
             </div>
             <p id={hintIdOf(ids.inviteNote)} className="text-sm text-muted">
-              Sent with the invite. Leave it empty to invite without a note. LinkedIn allows {INVITE_NOTE_MAX} characters once the variables are filled
+              Sent with the invite. Leave it empty to invite without a note. LinkedIn allows {INVITE_NOTE_MAX}{NBSP}characters once the variables are filled
               in; the preview shows the real length.
             </p>
             <div className="mt-1.5">{textBox("inviteNote", 3, "Your invite note")}</div>
@@ -198,7 +199,7 @@ function TemplatePreview(props: {
     <aside aria-label="Preview" className="min-w-0 @preview:sticky @preview:top-6 @preview:self-start" data-testid="preview">
       <h3 className="font-semibold">Preview</h3>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the preview" message={loaded.error.message} onRetry={loaded.reload} className="mt-2 text-sm" />
+        <LoadError what="the preview" error={loaded.error} onRetry={loaded.reload} className="mt-2 text-sm" />
       ) : loaded.data === undefined ? (
         <div className="skeleton mt-2 h-40 w-full" />
       ) : (
@@ -236,7 +237,7 @@ function PreviewLine(props: { readonly label: string; readonly text: PreviewText
         </p>
         {label === "Invite note" && (
           <p className="nums text-caption text-muted">
-            {text.length} of {INVITE_NOTE_MAX} characters
+            {text.length} of {INVITE_NOTE_MAX}{NBSP}characters
           </p>
         )}
       </>

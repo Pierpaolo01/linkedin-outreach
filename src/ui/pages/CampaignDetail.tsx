@@ -1,15 +1,36 @@
-import { Fragment, useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { getCampaign, listCampaignProspects, pauseCampaign, prospectsCsvUrl, resumeCampaign, setDoNotContact, toApiError, updateCampaign } from "../api";
 import { PROSPECT_STAGES, type Campaign, type Prospect } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { formFromCampaign, LIVE_KEYS, toFields, withoutErrors, type CampaignForm, type FieldErrors, type SetField } from "../campaignForm";
 import { MessageFields, TimingFields } from "../CampaignFields";
-import { ActionError, Announce, DEF_LIST, DEF_TERM, EmptyState, FilledText, HALTED_PAUSE, haltedBy, LoadError, Notice, Pager, ScoreChip, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine, SwitchRow, TOOLBAR } from "../formParts";
+import {
+  ActionError,
+  Announce,
+  DEF_LIST,
+  DEF_TERM,
+  EmptyState,
+  FilledText,
+  focusFirstError,
+  focusInView,
+  HALTED_PAUSE,
+  haltedBy,
+  LoadError,
+  Notice,
+  Pager,
+  ScoreChip,
+  SECONDARY_BUTTON,
+  SectionHead,
+  SkeletonRows,
+  StatusLine,
+  SwitchRow,
+  TOOLBAR,
+} from "../formParts";
 import { IconChevron, IconExternal } from "../icons";
-import { tabTitle } from "../format";
+import { NBSP, tabTitle, unbroken } from "../format";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { discoveryWaitSentence, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextActionWhen, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords } from "../words";
+import { discoveryWaitSentence, failure, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextActionWhen, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords, toggleFailure, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
 const PAGE_SIZE = 25;
@@ -40,7 +61,7 @@ export function CampaignDetail({ id }: { readonly id: string }) {
     return (
       <>
         <PageHeader title="Campaign" />
-        <LoadError what="the campaign" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the campaign" error={loaded.error} onRetry={loaded.reload} />
       </>
     );
   }
@@ -66,7 +87,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
     document.title = tabTitle(campaign.name.trim() === "" ? "Untitled campaign" : campaign.name);
   }, [campaign.name]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const wait = home?.campaigns.find((c) => c.id === campaign.id)?.discoveryWait ?? null;
   const stopped = home?.safetyStop != null;
   const halted = haltedBy(campaign.status, stopped);
@@ -79,7 +100,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
         onChanged();
         refresh();
       })
-      .catch((failure: unknown) => setError(toApiError(failure).message))
+      .catch((failed: unknown) => setError(toggleFailure({ name: undefined, resuming: campaign.status === "paused", said: toApiError(failed) })))
       .finally(() => setBusy(false));
   };
 
@@ -101,12 +122,12 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
           </Link>
         )}
         <p className="text-sm text-muted">
-          {campaign.discoverySource === "search" ? `From ${campaign.sourceUrls.length === 1 ? "a people search" : `${campaign.sourceUrls.length} people searches`}` : "From LinkedIn's recommendations"}
+          {campaign.discoverySource === "search" ? `From ${campaign.sourceUrls.length === 1 ? "a people search" : `${campaign.sourceUrls.length}${NBSP}people searches`}` : "From LinkedIn's recommendations"}
           {campaign.autoApprove ? ". Auto-approve is on" : ""}.
         </p>
       </div>
       {wait !== null && <p className="mt-2 text-sm text-base-content">{discoveryWaitSentence({ wait, timeZone, safetyStop: stopped })}</p>}
-      <ActionError message={error} className="mt-group" />
+      <ActionError message={error} className="mt-group" takeFocus />
 
       <ol className="mt-group grid grid-cols-3 gap-px overflow-hidden rounded-box border border-base-300 bg-base-300 sm:grid-cols-6" aria-label="Funnel" data-testid="funnel">
         {FUNNEL.map((step) => (
@@ -173,7 +194,7 @@ function People({ campaign, safetyStop }: { readonly campaign: Campaign; readonl
       </div>
 
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the people" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the people" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <SkeletonRows rows={4} rowClassName="h-12" />
       ) : items.length === 0 ? (
@@ -193,7 +214,8 @@ function People({ campaign, safetyStop }: { readonly campaign: Campaign; readonl
                   <th role="columnheader" scope="col" className="font-medium">Stage</th>
                   <th role="columnheader" scope="col" className="font-medium">Score</th>
                   <th role="columnheader" scope="col" className="min-w-56 font-medium">Why the AI scored them so</th>
-                  <th role="columnheader" scope="col" className={`font-medium ${quietNext ? "sr-only" : ""}`}>
+                  {/* Wide enough for the longest time phrase ("Tomorrow at 23:38") on one line beside the reason. */}
+                  <th role="columnheader" scope="col" className={`font-medium ${quietNext ? "sr-only" : "min-w-36"}`}>
                     Next action
                   </th>
                   <th role="columnheader" scope="col">
@@ -402,7 +424,7 @@ function ProspectDetail(props: { readonly prospect: Prospect; readonly campaign:
   const { prospect: p, campaign, timeZone, onChanged } = props;
   const [doNotContact, setDnc] = useState(p.person.doNotContact);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const switchId = useId();
 
   const change = (on: boolean) => {
@@ -411,9 +433,9 @@ function ProspectDetail(props: { readonly prospect: Prospect; readonly campaign:
     setDnc(on);
     setDoNotContact(p.person.id, on)
       .then(onChanged)
-      .catch((failure: unknown) => {
+      .catch((failed: unknown) => {
         setDnc(!on);
-        setError(`Could not change it: ${toApiError(failure).message}`);
+        setError(failure(`Do not contact was not ${on ? "turned on" : "turned off"}. The switch is back as it was; press it again.`, toApiError(failed)));
       })
       .finally(() => setBusy(false));
   };
@@ -475,7 +497,7 @@ function ProspectDetail(props: { readonly prospect: Prospect; readonly campaign:
           onChange={change}
           hint="The app never invites or messages this person, in any campaign."
         />
-        <ActionError message={error} className="mt-2" />
+        <ActionError message={error} className="mt-2" takeFocus />
       </div>
     </div>
   );
@@ -535,9 +557,9 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
             <dd>{campaign.aiPersonalise ? "On" : "Off"}</dd>
             <dt className={`${DEF_TERM} text-muted`}>Waits</dt>
             <dd>
-              First message {campaign.acceptToMessageMinHours} to {campaign.acceptToMessageMaxHours} hours after they accept; follow-up{" "}
-              {campaign.followUpDelayMinHours} to {campaign.followUpDelayMaxHours} hours after that; {POLICY_WORDS[campaign.delayPolicy]}. Unaccepted
-              invites are withdrawn after {campaign.withdrawAfterDays} days.
+              First message {unbroken(`${campaign.acceptToMessageMinHours} to ${campaign.acceptToMessageMaxHours} hours`)} after they accept; follow-up{" "}
+              {unbroken(`${campaign.followUpDelayMinHours} to ${campaign.followUpDelayMaxHours} hours`)} after that; {POLICY_WORDS[campaign.delayPolicy]}. Unaccepted
+              invites are withdrawn after {unbroken(`${campaign.withdrawAfterDays} days`)}.
             </dd>
           </dl>
         </div>
@@ -546,11 +568,26 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
   );
 }
 
+/** The id of the live edit's summary, which takes the focus when a refused save has no field to mark. */
+const LIVE_EDIT_ERROR_ID = "live-edit-error";
+
 function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign; readonly onCancel: () => void; readonly onSaved: (notice: string) => void }) {
   const [form, setForm] = useState<CampaignForm>(() => formFromCampaign(campaign));
   const [errors, setErrors] = useState<FieldErrors>({});
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<string | Failure | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  /** Counts refused saves, so each one moves the focus once its marks have rendered. */
+  const [refusals, setRefusals] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+
+  // A refused save: the first field it marked takes the focus, in view, as in the wizard and Settings; with no field
+  // marked (the request failed), the summary above Save changes takes it.
+  useEffect(() => {
+    if (refusals === 0 || box.current === null) return;
+    if (focusFirstError(box.current)) return;
+    const summary = document.getElementById(LIVE_EDIT_ERROR_ID);
+    if (summary !== null) focusInView(summary);
+  }, [refusals]);
 
   const set: SetField = (key, value) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -561,30 +598,36 @@ function LiveEdit({ campaign, onCancel, onSaved }: { readonly campaign: Campaign
     const { fields, errors: local } = toFields(form, LIVE_KEYS);
     if (Object.keys(local).length > 0) {
       setErrors(local);
-      setError("Some fields need attention. They are marked below.");
+      setError("Nothing was saved: some fields need attention. Fix the ones marked above, then press Save changes again.");
+      setRefusals((n) => n + 1);
       return;
     }
     setSaving(true);
     setError(undefined);
     updateCampaign(campaign.id, fields)
       .then((result) => onSaved(result.notice ?? "Saved."))
-      .catch((failure: unknown) => {
-        const apiError = toApiError(failure);
+      .catch((failed: unknown) => {
+        const apiError = toApiError(failed);
         setErrors(apiError.fields);
-        setError(Object.keys(apiError.fields).length > 0 ? `${apiError.message}. They are marked below.` : apiError.message);
+        setError(
+          Object.keys(apiError.fields).length > 0
+            ? "Nothing was saved: some fields need attention. Fix the ones marked above, then press Save changes again."
+            : failure("The changes were not saved. They are still in the form; press Save changes again.", apiError),
+        );
+        setRefusals((n) => n + 1);
       })
       .finally(() => setSaving(false));
   };
 
   return (
-    <div className="rounded-box border border-base-300 p-card" data-testid="live-edit">
+    <div ref={box} className="rounded-box border border-base-300 p-card" data-testid="live-edit">
       <Notice tone="note" className="mb-block">
         Edits apply only to steps not yet sent. Texts already sent stay as they were.
       </Notice>
       <MessageFields campaignId={campaign.id} form={form} set={set} errors={errors} />
       <h3 className="mt-section mb-group font-semibold">Timings</h3>
       <TimingFields form={form} set={set} errors={errors} />
-      <ActionError message={error} className="mt-block" />
+      <ActionError message={error} className="mt-block" id={LIVE_EDIT_ERROR_ID} testId="live-edit-error" />
       <div className="mt-block flex gap-3">
         <button type="button" className="btn btn-sm btn-primary" disabled={saving} aria-busy={saving} onClick={save}>
           {saving && <span className="loading loading-spinner loading-xs" />}

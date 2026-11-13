@@ -5,6 +5,7 @@ import { useAppData } from "../appData";
 import { EmptyState, LoadError, SkeletonRows, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { useLoad } from "../useLoad";
+import { unbroken } from "../format";
 import { formatHours } from "../words";
 import { PageHeader } from "./PageHeader";
 
@@ -56,7 +57,7 @@ function Rate({ value, part, whole, of }: { readonly value: number | null; reado
           Not enough data yet
         </Value>
         <p className="nums text-sm text-muted">
-          {part} of {whole} {of}
+          {unbroken(`${part} of ${whole} ${of}`)}
         </p>
       </>
     );
@@ -65,7 +66,7 @@ function Rate({ value, part, whole, of }: { readonly value: number | null; reado
     <>
       <Value className="nums text-2xl leading-7 font-semibold">{Math.round(value * 100)}%</Value>
       <p className="nums text-sm text-muted">
-        {part} of {whole} {of}
+        {unbroken(`${part} of ${whole} ${of}`)}
       </p>
     </>
   );
@@ -85,7 +86,7 @@ export function Stats() {
         lead={`How each campaign is doing. A rate shows once at least ${ENOUGH} people are behind it. Replies are counted only until the follow-up is sent.`}
       />
       {loaded.status === "error" ? (
-        <LoadError what="the stats" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the stats" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <SkeletonRows rows={4} rowClassName="h-14" />
       ) : rows.length === 0 ? (

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { resumeSafetyStop, toApiError } from "../api";
 import type { SafetyStop, Session } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { asSentence, formatWhen } from "../format";
-import { ON_RED_BUTTON } from "../formParts";
+import { focusInView, ON_RED_BUTTON } from "../formParts";
+import { failure, type Failure } from "../words";
 import { IconStop } from "../icons";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
@@ -30,7 +31,7 @@ export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
   const { timeZone, refresh } = useAppData();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const now = new Date();
   const whatToDo = asSentence(stop.whatToDo);
 
@@ -42,13 +43,13 @@ export function SafetyStopBanner({ stop }: { readonly stop: SafetyStop }) {
         setConfirming(false);
         refresh();
       })
-      .catch((failure: unknown) => {
-        const apiError = toApiError(failure);
+      .catch((failed: unknown) => {
+        const apiError = toApiError(failed);
         // Someone already resumed it (another tab): nothing left to do.
         if (apiError.status === 409) {
           setConfirming(false);
           refresh();
-        } else setError(apiError.message);
+        } else setError(failure("The safety stop was not lifted. Nothing runs on LinkedIn yet; press the button again, or Not yet.", apiError));
       })
       .finally(() => setBusy(false));
   };
@@ -105,8 +106,9 @@ export function SessionBanner({ session, recheck }: { readonly session: Session;
       <div className="min-w-0">
         <p className="font-semibold">LinkedIn needs you.</p>
         <p className="text-error-content/90">{view.problem}</p>
+        {recheck.error?.from === "banner" && <RecheckFailed failure={recheck.error} onRed className="mt-1.5" />}
       </div>
-      <button type="button" className={ON_RED} disabled={recheck.checking} aria-busy={recheck.checking} onClick={recheck.run}>
+      <button type="button" className={ON_RED} disabled={recheck.checking} aria-busy={recheck.checking} onClick={() => recheck.run("banner")}>
         {recheck.checking && <span className="loading loading-spinner loading-sm" />}
         Re-check
       </button>
@@ -119,6 +121,23 @@ export function UnreachableBanner({ message }: { readonly message: string }) {
   return (
     <div role="status" className="bg-warning px-4 py-3 text-warning-content lg:px-10">
       {message}
+    </div>
+  );
+}
+
+/**
+ * A Re-check that did not finish, said beside the button that was pressed: what failed and what to do, then what the
+ * app said, apart. It takes the focus when it appears, since the button was off while the check ran.
+ */
+export function RecheckFailed({ failure: failed, onRed, className }: { readonly failure: Failure; readonly onRed: boolean; readonly className?: string }) {
+  const line = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (line.current !== null) focusInView(line.current);
+  }, [failed]);
+  return (
+    <div ref={line} role="alert" tabIndex={-1} className={`text-sm ${className ?? ""}`} data-testid="recheck-error">
+      <p className={onRed ? "font-medium" : "text-error"}>{failed.text}</p>
+      {failed.detail !== undefined && <p className={onRed ? "text-error-content/90" : "text-muted"}>{failed.detail}</p>}
     </div>
   );
 }

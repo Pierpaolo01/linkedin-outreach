@@ -1,7 +1,7 @@
 import type { CampaignStatus, ProspectStage } from "../db/schema";
 import type { Budget, BudgetKind, Campaign, DiscoveryWait } from "./apiSchemas";
 import { STEPS } from "./campaignForm";
-import { formatClock, formatResume, formatWhen, plural, STAGE_LABEL } from "./format";
+import { formatClock, formatResume, formatWhen, NBSP, plural, STAGE_LABEL, unbroken, withStop } from "./format";
 
 /** More words and dates for the campaign, activity, stats and settings pages. Times are in the app's time zone. */
 
@@ -33,25 +33,21 @@ export function campaignsSummary(statuses: readonly CampaignStatus[], safetyStop
 /**
  * The line under a budget's meter on Home. A spent budget is never "paused" (pausing is the user's choice on one
  * campaign); it may be spent below today's number when the week's invite budget or LinkedIn's own limit blocks invites.
- * During a safety stop nothing runs until the user resumes, so the line says only when the budget resets.
+ * One form in every state: "Budget spent; it resets Monday 09:00" is true whether or not a safety stop holds the work,
+ * so it never promises that work resumes.
  */
 export function budgetNote(args: {
   readonly kind: BudgetKind;
   readonly budget: Budget;
   /** The invites a day warm-up rises to, when warm-up is on. */
   readonly warmUpTarget: number | undefined;
-  readonly safetyStop: boolean;
   readonly timeZone: string;
   readonly now: Date;
 }): string | undefined {
   const { budget } = args;
-  if (!budget.open) {
-    if (budget.resumesAt === null) return "Budget spent";
-    const when = formatResume(budget.resumesAt, args.timeZone, args.now);
-    return args.safetyStop ? `Budget spent; it resets ${when}` : `Budget spent, resumes ${when}`;
-  }
+  if (!budget.open) return budget.resumesAt === null ? "Budget spent" : `Budget spent; it resets ${formatResume(budget.resumesAt, args.timeZone, args.now)}`;
   if (args.kind === "invite" && args.warmUpTarget !== undefined && budget.limit < args.warmUpTarget) {
-    return `Warm-up: today's allowance, rising to ${args.warmUpTarget} a day`;
+    return `Warm-up: today's allowance, rising to ${args.warmUpTarget}${NBSP}a${NBSP}day`;
   }
   return undefined;
 }
@@ -74,13 +70,13 @@ export function stageWords(stage: ProspectStage): string {
 
 /** "1 December 2026". */
 export function formatDate(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat(LOCALE, { timeZone, day: "numeric", month: "long", year: "numeric" }).format(new Date(iso));
+  return unbroken(new Intl.DateTimeFormat(LOCALE, { timeZone, day: "numeric", month: "long", year: "numeric" }).format(new Date(iso)));
 }
 
 /** "12 Nov 10:42": a full timestamp for logs and histories. */
 export function formatStamp(iso: string, timeZone: string): string {
   const day = new Intl.DateTimeFormat(LOCALE, { timeZone, day: "numeric", month: "short" }).format(new Date(iso));
-  return `${day} ${formatClock(iso, timeZone)}`;
+  return unbroken(`${day} ${formatClock(iso, timeZone)}`);
 }
 
 /**
@@ -117,26 +113,26 @@ export function discoveryWaitSentence(args: { readonly wait: DiscoveryWait; read
 export function formatHours(hours: number): string {
   if (hours < 48) {
     const rounded = Math.round(hours);
-    return `${rounded} ${rounded === 1 ? "hour" : "hours"}`;
+    return plural(rounded, "hour", "hours");
   }
-  const days = Math.round((hours / 24) * 10) / 10;
-  return `${days} days`;
+  return `${Math.round((hours / 24) * 10) / 10}${NBSP}days`;
 }
 
 /** "2.4 MB". */
 export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024) return `${bytes}${NBSP}bytes`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}${NBSP}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}${NBSP}MB`;
 }
 
 /**
- * When a prospect's next step is planned: "today at 10:42", or "due now" when the moment has passed. During a safety
- * stop no step is sent at its time, so it says "after you resume" instead of a time that would not hold.
+ * When a prospect's next step is planned, as a value in the People table's column (so with a capital, like the
+ * column's other values): "Today at 10:42", or "Due now" when the moment has passed. During a safety stop no step is
+ * sent at its time, so it says "After you resume" instead of a time that would not hold.
  */
 export function nextActionWhen(args: { readonly at: string; readonly timeZone: string; readonly now: Date; readonly safetyStop: boolean }): string {
-  if (args.safetyStop) return "after you resume";
-  return new Date(args.at).getTime() <= args.now.getTime() ? "due now" : formatWhen(args.at, args.timeZone, args.now);
+  if (args.safetyStop) return "After you resume";
+  return new Date(args.at).getTime() <= args.now.getTime() ? "Due now" : capitalised(formatWhen(args.at, args.timeZone, args.now));
 }
 
 /** What the app does next for a prospect in this stage; undefined when nothing more is planned. */
@@ -234,9 +230,15 @@ function campaignLine(line: { readonly name: string; readonly lead: CampaignLead
  * spent", as Home says it, without "today's", since the line may be from an earlier day; a campaign that starts
  * running on an approval says so as a sentence). A line about one campaign does not name it again where the row
  * shows the campaign beside it (`campaignShown`, the activity log); elsewhere (Home) the name stays, in quotes.
+ * Every line ends as a sentence, with one full stop (`withStop`), whether the app rewrote it or passed it through.
  * The server's own strings stay as they are (backlog D-10).
  */
 export function plainMessage(text: string, where: { readonly campaign?: string | undefined; readonly campaignShown?: boolean } = {}): string {
+  return withStop(plainWords(text, where));
+}
+
+/** `plainMessage` before its ending is made a sentence's. */
+function plainWords(text: string, where: { readonly campaign?: string | undefined; readonly campaignShown?: boolean }): string {
   const session = /^LinkedIn session: (\w+)$/.exec(text);
   if (session?.[1] !== undefined) return `Checked LinkedIn: ${sessionWords(session[1])}.`;
   const lead = campaignLead(text, where.campaign);
@@ -253,4 +255,37 @@ export function plainMessage(text: string, where: { readonly campaign?: string |
     return `Outside the working window: ${rest.replace(/_/g, " ")}`;
   }
   return text.replace(/_/g, " ");
+}
+
+/**
+ * A failed action as the user reads it: `text` says what failed, what state things are in and what to do, in the app's
+ * words; `detail` is what was said about it, shown apart and quieter, never glued on: "What the app said: …" for the
+ * app's own answer, or the dashboard's sentence when the app did not answer at all.
+ */
+export interface Failure {
+  readonly text: string;
+  readonly detail: string | undefined;
+}
+
+/** What came back about a failure: the app's answer, or (status 0) the dashboard's own sentence when it did not answer. */
+export interface Said {
+  readonly message: string;
+  readonly status: number;
+}
+
+/** A failure with what was said about it (`said`: an answer, or the app's message as a string) as a sentence's end, apart. */
+export function failure(text: string, said?: Said | string): Failure {
+  const { message, status } = typeof said === "string" ? { message: said, status: 200 } : (said ?? { message: "", status: 200 });
+  const words = withStop(message);
+  if (words === "") return { text, detail: undefined };
+  return { text, detail: status === 0 ? words : `What the app said: ${words}` };
+}
+
+/** A Pause or Resume that failed, on a campaign named `name` (undefined on the campaign's own page). */
+export function toggleFailure(args: { readonly name: string | undefined; readonly resuming: boolean; readonly said: Said }): Failure {
+  const which = args.name === undefined ? "The campaign" : `Campaign "${args.name}"`;
+  return failure(
+    args.resuming ? `${which} was not resumed. It is still paused; press Resume again.` : `${which} was not paused. Nothing changed; press Pause again.`,
+    args.said,
+  );
 }

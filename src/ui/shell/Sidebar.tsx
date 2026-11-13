@@ -3,6 +3,7 @@ import { formatClock, formatDays, workingNow } from "../format";
 import { ON_RED_BUTTON, QUIET_BUTTON, SECONDARY_BUTTON, StatusDot, statusLabel } from "../formParts";
 import { IconX } from "../icons";
 import { Link } from "../router";
+import { RecheckFailed } from "./Banners";
 import { currentNavTarget } from "./currentNav";
 import { sessionView, STOP_REASON } from "./sessionView";
 import type { Recheck } from "./useRecheck";
@@ -128,7 +129,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
     <div className={`mt-3 rounded-box px-3 py-2.5 text-sm ${stop === null ? "bg-base-100" : "bg-error text-error-content"}`}>
       {stop !== null && (
         <p className="mb-1.5 font-semibold">
-          Safety stop: {STOP_REASON[stop.reason].short.toLowerCase()}, since {formatClock(stop.raisedAt, timeZone)}
+          Safety stop: {STOP_REASON[stop.reason].short.toLowerCase()}, since {formatClock(stop.raisedAt, timeZone)}.
         </p>
       )}
       {/* During a stop the window's sentence takes the card's width, with Re-check under it. */}
@@ -151,7 +152,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
           className={`${stop === null ? SECONDARY_BUTTON : ON_RED_BUTTON} btn-xs shrink-0`}
           disabled={recheck.checking}
           aria-busy={recheck.checking}
-          onClick={recheck.run}
+          onClick={() => recheck.run("sidebar")}
         >
           {recheck.checking && <span className="loading loading-spinner loading-xs" />}
           Re-check
@@ -162,11 +163,7 @@ function SessionCard({ recheck }: { readonly recheck: Recheck }) {
           {checked}
         </p>
       )}
-      {recheck.error !== undefined && (
-        <p role="alert" className={`mt-1.5 ${stop === null ? "text-error" : ""}`}>
-          {recheck.error}
-        </p>
-      )}
+      {recheck.error?.from === "sidebar" && <RecheckFailed failure={recheck.error} onRed={stop !== null} className="mt-1.5" />}
     </div>
   );
 }

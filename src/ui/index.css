@@ -142,9 +142,13 @@ body {
   color: var(--color-base-content);
 }
 
-/* A paragraph never ends on one short word ("follow-" / "up."). */
+/*
+ * A paragraph never ends on one short word ("follow-" / "up."). Only the wrap style: the `text-wrap` shorthand would
+ * also set the wrap mode back to "wrap" and, unlayered, beat every `whitespace-nowrap` on a paragraph (a time in the
+ * People table broke as "today at" / "07:38").
+ */
 p {
-  text-wrap: pretty;
+  text-wrap-style: pretty;
 }
 
 .btn.btn-sm {

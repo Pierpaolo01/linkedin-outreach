@@ -2,11 +2,12 @@ import { useState } from "react";
 import { archiveCampaign, listCampaigns, pauseCampaign, resumeCampaign, toApiError } from "../api";
 import type { Campaign, DiscoveryWait } from "../apiSchemas";
 import { useAppData } from "../appData";
+import { unbroken } from "../format";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ActionError, EmptyState, HALTED_PAUSE, haltedBy, LoadError, QUIET_BUTTON, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { campaignsSummary, discoveryWaitSentence, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
+import { campaignsSummary, discoveryWaitSentence, failure, FUNNEL, FUNNEL_LABEL, PAUSABLE, toggleFailure, type Failure } from "../words";
 import { PAGE_TITLE_ID, PageHeader } from "./PageHeader";
 
 /** Every campaign: status, funnel counts, Pause or Resume, Archive. Archived ones are listed apart. */
@@ -16,10 +17,10 @@ export function Campaigns() {
   const key = `${(home?.campaigns ?? []).map((c) => `${c.id}:${c.status}`).join(",")}|${home?.needsYou.pendingApproval ?? ""}`;
   const loaded = useLoad(listCampaigns, key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const [archiving, setArchiving] = useState<Campaign | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
-  const [archiveError, setArchiveError] = useState<string | undefined>(undefined);
+  const [archiveError, setArchiveError] = useState<Failure | undefined>(undefined);
   const [showArchived, setShowArchived] = useState(false);
 
   const all = loaded.data?.campaigns ?? [];
@@ -36,7 +37,7 @@ export function Campaigns() {
         loaded.reload();
         refresh();
       })
-      .catch((failure: unknown) => setError(`Could not change ${campaign.name}: ${toApiError(failure).message}`))
+      .catch((failed: unknown) => setError(toggleFailure({ name: campaign.name, resuming: campaign.status === "paused", said: toApiError(failed) })))
       .finally(() => setBusyId(null));
   };
 
@@ -50,7 +51,7 @@ export function Campaigns() {
         loaded.reload();
         refresh();
       })
-      .catch((failure: unknown) => setArchiveError(toApiError(failure).message))
+      .catch((failed: unknown) => setArchiveError(failure("The campaign was not archived. Nothing changed; press Archive again, or Cancel to keep it.", toApiError(failed))))
       .finally(() => setArchiveBusy(false));
   };
 
@@ -67,10 +68,10 @@ export function Campaigns() {
         }
       />
 
-      <ActionError message={error} className="mb-group" />
+      <ActionError message={error} className="mb-group" takeFocus />
 
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the campaigns" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <SkeletonRows rows={4} rowClassName="h-16" />
       ) : current.length === 0 ? (
@@ -162,7 +163,7 @@ function CampaignTable(props: {
                   <StatusLine status={c.status} safetyStop={props.stopped} className="mt-0.5 text-sm text-muted" testId="campaign-status" />
                   {wait !== null && <p className="mt-1 text-sm text-base-content @funnel:max-w-sm">{discoveryWaitSentence({ wait, timeZone, safetyStop: props.stopped })}</p>}
                   <p className="mt-0.5 text-sm text-muted @funnel:hidden">
-                    {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
+                    {unbroken(`${c.funnel.found} found`)}, {unbroken(`${c.funnel.invited} invited`)}, {unbroken(`${c.funnel.replied} replied`)}
                   </p>
                 </th>
                 {FUNNEL.map((step) => (

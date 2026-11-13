@@ -2,12 +2,12 @@ import { useState } from "react";
 import { listActivity, listApprovals, listCampaigns, listReview, pauseCampaign, resumeCampaign, toApiError } from "../api";
 import type { BudgetKind, Campaign, Home as HomeData } from "../apiSchemas";
 import { useAppData } from "../appData";
-import { formatShort, formatToday, joinWords } from "../format";
+import { formatShort, formatToday, joinWords, unbroken } from "../format";
 import { ActionError, ActivityMessage, EmptyState, LevelMark, HALTED_PAUSE, haltedBy, LoadError, SECONDARY_BUTTON, SectionHead, SkeletonRows, StatusLine } from "../formParts";
 import { IconCheck } from "../icons";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
-import { budgetNote, FUNNEL, FUNNEL_LABEL, PAUSABLE } from "../words";
+import { budgetNote, FUNNEL, FUNNEL_LABEL, PAUSABLE, toggleFailure, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
 /** Home: what needs the user, the campaigns, today's usage against each budget, and what the app did. */
@@ -18,7 +18,7 @@ export function Home() {
     <>
       <PageHeader title="Home" aside={formatToday(timeZone, now)} />
       {home === undefined && homeError !== undefined ? (
-        <LoadError what="Home" message={homeError.message} onRetry={refresh} />
+        <LoadError what="Home" error={homeError} onRetry={refresh} />
       ) : home === undefined ? (
         <HomeLoading />
       ) : (
@@ -162,7 +162,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
   const key = `${home.campaigns.map((c) => `${c.id}:${c.status}`).join(",")}|${home.needsYou.pendingApproval}`;
   const loaded = useLoad(listCampaigns, key, { keepPrevious: true, refreshEveryMs: FOLLOW_ENGINE_MS });
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
   const stopped = home.safetyStop !== null;
 
   const campaigns = (loaded.data?.campaigns ?? []).filter((c) => c.status !== "archived");
@@ -175,7 +175,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
         loaded.reload();
         refresh();
       })
-      .catch((failure: unknown) => setError(`Could not change ${campaign.name}: ${toApiError(failure).message}`))
+      .catch((failed: unknown) => setError(toggleFailure({ name: campaign.name, resuming: campaign.status === "paused", said: toApiError(failed) })))
       .finally(() => setBusyId(null));
   };
 
@@ -186,9 +186,9 @@ function Campaigns({ home }: { readonly home: HomeData }) {
           All campaigns
         </Link>
       </SectionHead>
-      <ActionError message={error} className="mb-group" />
+      <ActionError message={error} className="mb-group" takeFocus />
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the campaigns" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the campaigns" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <SkeletonRows rows={4} rowClassName="h-16" />
       ) : campaigns.length === 0 ? (
@@ -230,7 +230,7 @@ function Campaigns({ home }: { readonly home: HomeData }) {
                       </Link>
                       <StatusLine status={c.status} safetyStop={stopped} className="mt-0.5 text-sm text-muted" />
                       <p className="mt-0.5 text-sm text-muted @funnel:hidden">
-                        {c.funnel.found} found, {c.funnel.invited} invited, {c.funnel.replied} replied
+                        {unbroken(`${c.funnel.found} found`)}, {unbroken(`${c.funnel.invited} invited`)}, {unbroken(`${c.funnel.replied} replied`)}
                       </p>
                     </th>
                     {FUNNEL.map((step) => (
@@ -286,7 +286,7 @@ function Usage({ home }: { readonly home: HomeData }) {
         {BUDGET_ORDER.map((kind) => {
           const budget = home.usage[kind];
           const full = !budget.open;
-          const note = budgetNote({ kind, budget, warmUpTarget, safetyStop: home.safetyStop !== null, timeZone, now });
+          const note = budgetNote({ kind, budget, warmUpTarget, timeZone, now });
           return (
             <li key={kind} data-testid={`usage-${kind}`}>
               <div className="flex items-baseline justify-between gap-3">
@@ -335,7 +335,7 @@ function RecentActivity({ home }: { readonly home: HomeData }) {
         </Link>
       </SectionHead>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the activity log" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <div role="status" aria-label="Loading" className="skeleton h-42 w-full" />
       ) : items.length === 0 ? (

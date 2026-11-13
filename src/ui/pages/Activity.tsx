@@ -102,7 +102,7 @@ export function Activity() {
       </div>
 
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the activity log" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the activity log" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <SkeletonRows rows={6} rowClassName="h-5" />
       ) : items.length === 0 ? (

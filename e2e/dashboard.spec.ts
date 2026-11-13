@@ -61,7 +61,9 @@ test("Home reads what needs you as sentences and shows today's usage", async ({ 
 
   await expect(page.getByTestId("usage-message")).toContainText("4 of 10");
   await expect(page.getByTestId("usage-discovery_page")).toContainText("10 of 10");
-  await expect(page.getByTestId("usage-discovery_page")).toContainText(/Budget spent, resumes (tomorrow|today|Monday|\w+day) \d\d:\d\d/);
+  // One form in every state: when the budget resets, which is true with or without a safety stop. The time is one phrase.
+  await expect(page.getByTestId("usage-discovery_page")).toContainText(/Budget spent; it resets (tomorrow|today|\w+day|\d+\s\w+)\u00a0\d\d:\d\d/);
+  await expect(page.getByTestId("usage-discovery_page")).not.toContainText("resumes");
   // A spent budget is quiet: its meter is the solid muted tone (never amber, never darker than the green bars) and its
   // line is muted like every other line under a meter. The words carry the state.
   // The full meter is the control tone, lighter than the muted words (so it is not the darkest block in the card), on
@@ -90,7 +92,8 @@ test("Home: a failed first load says so in words, with a button to try again", a
   let failing = true;
   await page.route("**/api/home", (route) => (failing ? route.fulfill({ status: 500, json: { error: "test: home unavailable" } }) : route.fallback()));
   await page.goto("/");
-  await expect(page.getByText("Could not load Home: test: home unavailable")).toBeVisible();
+  await expect(page.getByText("Could not load Home. Nothing was changed; press Try again.")).toBeVisible();
+  await expect(page.getByText("What the app said: test: home unavailable.")).toBeVisible();
   failing = false;
   await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByTestId("needs-you")).toBeVisible();
@@ -632,6 +635,21 @@ test("the activity log does not repeat a line's campaign beside its campaign col
   for (const text of await home.getByRole("listitem").allInnerTexts()) expect(text).not.toMatch(/Campaign [^"]/);
 });
 
+test("every line in the activity log and on Home ends as a sentence, whether the app rewrote it or passed it through", async ({ page }) => {
+  await page.goto("/activity");
+  const lines = page.getByTestId("activity-line");
+  await expect(lines.first()).toBeVisible();
+  const logged = await lines.evaluateAll((els) => els.map((el) => (el.children[1]?.textContent ?? "").trim()));
+  expect(logged.length).toBeGreaterThan(5);
+  expect(logged.filter((line) => !/[.!?…]$/.test(line)), "lines without a full stop").toEqual([]);
+  expect(logged.filter((line) => /\.\.$/.test(line)), "lines with two full stops").toEqual([]);
+  await page.goto("/");
+  const home = page.getByRole("region", { name: "What the app did" }).getByRole("listitem");
+  await expect(home.first()).toBeVisible();
+  const said = await home.evaluateAll((els) => els.map((el) => (el.children[1]?.textContent ?? "").trim()));
+  expect(said.filter((line) => !/[.!?…]$/.test(line)), "Home lines without a full stop").toEqual([]);
+});
+
 test("phone width: the sidebar becomes a menu and nothing scrolls sideways", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const path of ["/", "/approvals", "/review", "/campaigns", "/campaigns/1", "/campaigns/new", "/activity", "/stats", "/settings"]) {
@@ -909,7 +927,7 @@ test("campaigns during a safety stop: the header says how many it stopped, and P
   const shown = await statuses();
   const halted = shown.filter((status) => status === "Stopped by safety stop").length;
   expect(halted).toBeGreaterThan(1);
-  await expect(page.getByText(/^\d+ campaigns?, \d+ (active|stopped by safety stop)$/)).toHaveText(`${shown.length} campaigns, ${halted} stopped by safety stop`);
+  await expect(page.getByText(/^\d+\scampaigns?, \d+ (active|stopped by safety stop)$/)).toHaveText(`${shown.length}\u00a0campaigns, ${halted} stopped by safety stop`);
   // Pause on a halted campaign steps back (muted words) but stays a bordered button beside Archive's plain text.
   const pause = page.getByTestId("campaign-row").getByRole("button", { name: /^Pause / }).first();
   await expect(pause).toHaveCSS("color", MUTED);
@@ -922,7 +940,7 @@ test("during a safety stop nothing promises work at a time: Campaigns, a campaig
   await page.goto(appUrl("stop", "/campaigns"));
   const trades = page.getByTestId("campaign-row").filter({ has: page.getByRole("link", { name: "Local trades, Milan", exact: true }) });
   // Only what stays true either way: when LinkedIn's limit resets, never when finding people resumes.
-  await expect(trades).toContainText(/LinkedIn's monthly search limit is reached\. It resets on 1 \w+ \d{4}\./);
+  await expect(trades).toContainText(/LinkedIn's monthly search limit is reached\. It resets on 1\s\w+\s\d{4}\./);
   await expect(page.getByTestId("campaigns-table").first()).not.toContainText(/resumes|looks again|tomorrow/);
 
   // A campaign's people with a planned step, one later today and one already due: both wait for the resume.
@@ -939,11 +957,11 @@ test("during a safety stop nothing promises work at a time: Campaigns, a campaig
   );
   await trades.getByRole("link", { name: "Local trades, Milan", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Local trades, Milan");
-  await expect(page.getByText(/^LinkedIn's monthly search limit is reached\. It resets on 1 \w+ \d{4}\.$/)).toBeVisible();
+  await expect(page.getByText(/^LinkedIn's monthly search limit is reached\. It resets on 1\s\w+\s\d{4}\.$/)).toBeVisible();
   await expect(page.getByText(/It resumes on|looks again/)).toHaveCount(0);
   const when = page.getByTestId("people-table").getByTestId("next-action-when");
   await expect(when).toHaveCount(2);
-  expect(await when.allInnerTexts()).toEqual(["after you resume", "after you resume"]);
+  expect(await when.allInnerTexts()).toEqual(["After you resume", "After you resume"]);
   await expect(page.getByTestId("people-table")).not.toContainText(/due now|today at|tomorrow at/);
   // Pause on the halted campaign is the bordered secondary button with muted words, as on Home and Campaigns.
   const pause = page.getByRole("button", { name: "Pause", exact: true });
@@ -1012,7 +1030,7 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
 
   // Nothing runs until the user resumes, so a spent budget says only when it resets, never that work resumes.
   const spent = page.getByTestId("usage-discovery_page");
-  await expect(spent).toContainText(/Budget spent; it resets (tomorrow|today|\w+day|\d+ \w+) \d\d:\d\d/);
+  await expect(spent).toContainText(/Budget spent; it resets (tomorrow|today|\w+day|\d+\s\w+)\s\d\d:\d\d/);
   await expect(spent).not.toContainText("resumes");
   // Pause on a campaign the stop has halted steps back but stays a bordered button.
   const pause = page.getByRole("region", { name: "Campaigns" }).getByRole("button", { name: /^Pause / }).first();
@@ -1033,7 +1051,9 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
   await expect(page.getByRole("region", { name: "Campaigns" })).not.toContainText("Stopped by safety stop");
   const home = (await (await page.request.get(appUrl("stop", "/api/home"))).json()) as { safetyStop: unknown };
   expect(home.safetyStop).toBeNull();
-  await expect(spent).toContainText(/Budget spent, resumes /);
+  // After the resume the caption keeps its one form.
+  await expect(spent).toContainText(/Budget spent; it resets /);
+  await expect(spent).not.toContainText("resumes");
 });
 
 test("Re-check updates the session, and an empty app shows its empty states", async ({ page }) => {

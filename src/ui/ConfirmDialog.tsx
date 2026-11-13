@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { ActionError, SECONDARY_BUTTON } from "./formParts";
+import type { Failure } from "./words";
 
 /**
  * A modal question with one action and a way out. Escape or the backdrop count as cancel, except while the action
@@ -17,7 +18,7 @@ export function ConfirmDialog(props: {
   readonly cancelLabel?: string;
   readonly tone?: "primary" | "error";
   readonly busy?: boolean;
-  readonly error?: string | undefined;
+  readonly error?: string | Failure | undefined;
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }) {

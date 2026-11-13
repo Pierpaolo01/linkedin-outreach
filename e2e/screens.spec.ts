@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Request } from "@playwright/test";
+import { appUrl } from "./apps";
 
 // A route handler that re-fetches a response can still be running when its test ends (the dashboard
 // polls). Let such a handler finish or fail quietly instead of failing a test that already passed.
@@ -81,11 +82,11 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await page.getByRole("button", { name: "Insert First name" }).click();
   await expect(note).toHaveValue("test note for {{first_name}}");
   // The counter beside the note is the template's own length; the 300 belongs to the filled-in text, in the preview.
-  await expect(page.getByTestId("note-count")).toHaveText("Template: 28 characters");
+  await expect(page.getByTestId("note-count")).toHaveText("Template: 28\u00a0characters");
   await first.fill("test first message {{first_name}} {{nickname}}");
   const preview = page.getByTestId("preview");
   await expect(preview).toContainText("test note for Anna");
-  await expect(preview).toContainText("18 of 300 characters");
+  await expect(preview).toContainText("18 of 300\u00a0characters");
   // What the variables filled in is set apart, as in the approval queue.
   await expect(preview.getByTestId("sent-text").first().locator(".font-medium")).toHaveText(["Anna"]);
   await expect(preview).toContainText("{{nickname}} is not a variable");
@@ -232,7 +233,7 @@ test("campaigns: funnel counts follow the engine by themselves, without a click 
 });
 
 test("campaigns: the header counts the campaigns at work as active, as the table's words do", async ({ page }) => {
-  const summary = page.getByText(/^\d+ campaigns?, \d+ (active|stopped by safety stop)$/);
+  const summary = page.getByText(/^\d+\scampaigns?, \d+ (active|stopped by safety stop)$/);
   const statuses = () => page.getByTestId("campaigns-table").getByTestId("campaign-status").allInnerTexts();
 
   await page.goto("/campaigns");
@@ -240,7 +241,7 @@ test("campaigns: the header counts the campaigns at work as active, as the table
   const shown = await statuses();
   const working = shown.filter((status) => ["Finding people", "Waiting for approval", "Running"].includes(status)).length;
   expect(working, "the demo has more than one campaign at work").toBeGreaterThan(1);
-  await expect(summary).toHaveText(`${shown.length} campaigns, ${working} active`);
+  await expect(summary).toHaveText(`${shown.length}\u00a0campaigns, ${working} active`);
 });
 
 test("campaigns: pause and resume, a waiting discovery, and archive after a confirm", async ({ page }) => {
@@ -251,7 +252,7 @@ test("campaigns: pause and resume, a waiting discovery, and archive after a conf
   await hotels.getByRole("button", { name: "Resume Hotel owners, Rome" }).click();
   await expect(hotels.getByTestId("campaign-status")).toHaveText("Running");
 
-  await expect(row(page, "Local trades, Milan")).toContainText(/LinkedIn's monthly search limit is reached\. It resumes on 1 \w+ \d{4}\./);
+  await expect(row(page, "Local trades, Milan")).toContainText(/LinkedIn's monthly search limit is reached\. It resumes on 1\s\w+\s\d{4}\./);
   await expect(row(page, "Restaurants, Naples")).toContainText("there is nobody more to find");
 
   const draft = row(page, "Dentists, Bologna");
@@ -448,7 +449,7 @@ test("stats: the labels, rates and Not enough data yet", async ({ page }) => {
   await expect(hotels).toContainText("30 hours");
   // One reply out of four first messages: too few for a percentage.
   await expect(hotels.getByTestId("not-enough")).toHaveText("Not enough data yet");
-  await expect(hotels).toContainText("1 of 4 messaged");
+  await expect(hotels).toContainText("1\u00a0of\u00a04\u00a0messaged");
   await expect(page.getByTestId("stats-row").filter({ hasText: "Architects, Turin" }).getByTestId("not-enough")).toHaveCount(2);
 
   // In the table, the large figures and the small sentence and count beside them share one baseline.
@@ -470,14 +471,14 @@ test("settings: the dedicated window section says the session state, when it was
   await page.goto("/settings");
   const section = page.getByRole("region", { name: "Dedicated window" });
   await expect(section.getByTestId("linkedin-window-state")).toHaveText("Logged in");
-  await expect(section.getByTestId("linkedin-window-checked")).toHaveText(/^(Last checked (today|yesterday|on .+) at \d\d:\d\d|Never checked)\.$/);
-  await expect(section).toContainText("log in again in the app\u2019s own Chrome window, not in your usual browser, then press Re-check.");
+  await expect(section.getByTestId("linkedin-window-checked")).toHaveText(/^(Last checked (today|yesterday|on.+)\sat\s\d\d:\d\d|Never checked)\.$/);
+  await expect(section).toContainText("log in again in the dedicated window, not in your usual browser, then press Re-check.");
 
   const recheck = section.getByRole("button", { name: "Re-check" });
   await recheck.click();
   await expect(recheck).toBeEnabled();
   await expect(section.getByTestId("linkedin-window-state")).toHaveText("Logged in");
-  await expect(section.getByTestId("linkedin-window-checked")).toHaveText(/^Last checked today at \d\d:\d\d\.$/);
+  await expect(section.getByTestId("linkedin-window-checked")).toHaveText(/^Last checked today\sat\s\d\d:\d\d\.$/);
 });
 
 test("settings: a failed first load says so in words, tries again by itself, and has a button to try again", async ({ page }) => {
@@ -496,7 +497,9 @@ test("settings: a failed first load says so in words, tries again by itself, and
 
   // Two failures, then the app answers: the page appears without a click.
   await page.goto("/settings");
-  await expect(page.getByText("Could not load the settings: test: settings unavailable")).toBeVisible();
+  // What failed and what to do, then what the app said, apart.
+  await expect(page.getByText("Could not load the settings. Nothing was changed; press Try again.")).toBeVisible();
+  await expect(page.getByText("What the app said: test: settings unavailable.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save settings" })).toBeVisible({ timeout: 10_000 });
   expect(asked).toBe(3);
@@ -504,7 +507,7 @@ test("settings: a failed first load says so in words, tries again by itself, and
   // It keeps failing: the error stays, and Try again loads it once the app answers.
   failures = 1_000;
   await page.reload();
-  await expect(page.getByText("Could not load the settings: test: settings unavailable")).toBeVisible();
+  await expect(page.getByText("Could not load the settings. Nothing was changed; press Try again.")).toBeVisible();
   failures = 0;
   await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByRole("button", { name: "Save settings" })).toBeVisible();
@@ -528,7 +531,7 @@ test("settings: a refused save shows the problem in place, a good one saves; AI 
   const invites = page.getByLabel("Invites per day");
   await invites.fill("many");
   await page.getByRole("button", { name: "Save settings" }).click();
-  await expect(page.getByTestId("settings-result")).toHaveText("Some settings need attention. They are marked.");
+  await expect(page.getByTestId("settings-result")).toHaveText("Nothing was saved: some settings need attention. Fix the marked ones, then press Save settings again.");
   await expect(invites).toBeFocused();
   await expect(invites).toBeInViewport();
 
@@ -536,7 +539,7 @@ test("settings: a refused save shows the problem in place, a good one saves; AI 
   await invites.fill("-1");
   await page.getByLabel("End of the working day").focus();
   await page.getByRole("button", { name: "Save settings" }).click();
-  await expect(page.getByTestId("settings-result")).toHaveText("Nothing was saved: some settings are not valid. They are marked.");
+  await expect(page.getByTestId("settings-result")).toHaveText("Nothing was saved: some settings are not valid. Fix the marked ones, then press Save settings again.");
   await expect(page.getByText("Enter 0 or more.")).toBeVisible();
   // Refused by the app: the focus goes to the first field it marked, in sight.
   await expect(invites).toBeFocused();
@@ -704,7 +707,10 @@ test("wizard on a phone: a save that fails with no marked field brings its messa
   await next.scrollIntoViewIfNeeded();
   await next.click();
   const failed = page.getByTestId("save-error");
-  await expect(failed).toContainText("Could not save the draft: Test failure");
+  // What happened, what is safe and what to do; what the app said apart, in the muted tone.
+  await expect(failed.locator("p").first()).toHaveText("The draft was not saved. Your changes are still on this page; press Save and continue again.");
+  await expect(failed.locator("p").nth(1)).toHaveText("What the app said: Test failure.");
+  await expect(failed.locator("p").nth(1)).toHaveCSS("color", MUTED_TONE);
   await expect(failed).toBeFocused();
   await expect(failed).toBeInViewport({ ratio: 1 });
   await expect(page.getByRole("heading", { name: "Messages", level: 2 })).toBeVisible();
@@ -791,8 +797,13 @@ test("settings: hints describe their fields, the AI fields show the error edge, 
   await page.getByLabel("Model").fill("test-model-2");
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.getByRole("button", { name: "Save settings" }).click();
-  await expect(page.getByTestId("settings-result")).toHaveText("Test failure");
-  await expect(page.getByTestId("settings-result")).toBeInViewport({ ratio: 1 });
+  const result = page.getByTestId("settings-result");
+  await expect(result.locator("p").first()).toHaveText("Nothing was saved. Your changes are still on this page; press Save settings again.");
+  await expect(result.locator("p").nth(1)).toHaveText("What the app said: Test failure.");
+  await expect(result.locator("p").nth(1)).toHaveCSS("color", MUTED_TONE);
+  await expect(result).toBeInViewport({ ratio: 1 });
+  // Save settings was off while it ran: the message takes the focus.
+  await expect(result).toBeFocused();
 });
 
 test("campaign detail at 1440: an opened person's Do not contact sits under the texts, so no column leaves an empty block", async ({ page }) => {
@@ -821,4 +832,122 @@ test("campaign detail at 1440: an opened person's Do not contact sits under the 
   const phoneHistory = await detail.getByRole("heading", { name: "History" }).boundingBox();
   const phoneCard = await detail.getByTestId("dnc-card").boundingBox();
   expect((phoneCard?.y ?? 0) > (phoneHistory?.y ?? 0), "on a phone Do not contact is not after History").toBe(true);
+});
+
+// ------------------------------------------------------------ council review, round 5
+
+const STOP_RED = "rgb(179, 53, 43)";
+const MUTED_TONE = "rgb(91, 98, 93)";
+
+test("wizard: a refused step is marked in the review by its number in a red edge, never the safety stop's red dot; the step list says Not finished", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/campaigns/new");
+  await page.getByLabel("Campaign name").fill("Test review marks");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page).toHaveURL(/\/campaigns\/\d+\/edit$/);
+  for (const next of ["Who fits", "Approval", "Messages"]) {
+    await page.getByRole("button", { name: "Save and continue" }).click();
+    await expect(page.getByRole("heading", { name: next, level: 2 })).toBeVisible();
+  }
+  // From 1024px a passed, unfinished step says so in words under its name, muted, and once to a screen reader.
+  const strip = page.getByRole("navigation", { name: "Wizard steps" });
+  const whoFits = strip.getByRole("button", { name: /Who fits/ });
+  const words = whoFits.getByTestId("step-not-finished");
+  await expect(words).toBeVisible();
+  await expect(words).toHaveText("Not finished");
+  await expect(words).toHaveCSS("color", MUTED_TONE);
+  await expect(whoFits).toHaveAccessibleName("Who fits Not finished");
+  await expect(strip.getByRole("button", { name: /Timings/ }).getByTestId("step-not-finished")).toHaveCount(0);
+
+  await strip.getByRole("button", { name: /Review and start/ }).click();
+  await page.getByRole("button", { name: "Start the campaign" }).click();
+  await expect(page.getByTestId("start-error")).toBeFocused();
+  // The refused block: its number in a Stop Red edge, as the strip marks a step with a problem.
+  const mark = page.getByTestId("review-step-3").getByTestId("review-mark");
+  await expect(mark).toHaveText("3");
+  await expect(mark).toHaveCSS("border-top-color", STOP_RED);
+  await expect(mark).toHaveCSS("border-top-width", "2px");
+  await expect(page.getByTestId("review-step-3").getByRole("heading", { level: 3 })).toHaveAccessibleName(/needs attention/);
+  // The filled red dot means a safety stop: nowhere in the wizard.
+  await expect(page.locator("main .status-error")).toHaveCount(0);
+  // Every error line ends as a sentence, though the app's rules write some without a full stop.
+  const lines = await page.getByTestId("field-error").allInnerTexts();
+  expect(lines.length).toBeGreaterThan(0);
+  expect(lines.filter((line) => !/[.!?]$/.test(line.trim()))).toEqual([]);
+});
+
+test("campaign detail: a Next action time is one line high, starts with a capital, at 1440 and 1280", async ({ page }) => {
+  const later = new Date(Date.now() + 2 * 3_600_000).toISOString();
+  const tomorrow = new Date(Date.now() + 26 * 3_600_000).toISOString();
+  await page.route(
+    (url) => url.pathname === "/api/campaigns/1/prospects",
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { items: Record<string, unknown>[] };
+      const items = json.items.map((item, index) => ({ ...item, nextActionAt: index === 0 ? later : index < 4 ? tomorrow : null }));
+      await route.fulfill({ response, json: { ...json, items } });
+    },
+  );
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/campaigns/1");
+    const when = page.getByTestId("people-table").getByTestId("next-action-when");
+    await expect(when).toHaveCount(4);
+    for (const text of await when.allInnerTexts()) expect(text).toMatch(/^(Today|Tomorrow)\u00a0at\u00a0\d\d:\d\d$/);
+    const heights = await when.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
+    for (const lines of heights) expect(lines, `a time broke across lines at ${width}`).toBeLessThan(1.5);
+  }
+});
+
+test("edit a live campaign on a phone: a refused save focuses the first marked field and says it is above; a failed one focuses its message", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/campaigns/1");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hotel owners, Rome");
+  await page.getByRole("button", { name: "Edit messages and timings" }).click();
+  const form = page.getByTestId("live-edit");
+  const followUp = form.getByLabel(/^Follow-up/);
+  await followUp.fill("test follow-up {{oops}}");
+  const save = form.getByRole("button", { name: "Save changes" });
+  await save.scrollIntoViewIfNeeded();
+  await save.click();
+  await expect(followUp).toHaveAttribute("aria-invalid", "true");
+  await expect(followUp).toBeFocused();
+  await expect(followUp).toBeInViewport();
+  const summary = form.getByTestId("live-edit-error");
+  await expect(summary).toContainText("marked above");
+  await expect(summary).not.toContainText("below");
+
+  // A save the app could not make, with nothing to mark: the message takes the focus, with what the app said apart.
+  await followUp.fill("test follow-up for {{first_name}}");
+  await page.route(
+    (url) => url.pathname === "/api/campaigns/1",
+    async (route) => (route.request().method() === "PATCH" ? route.fulfill({ status: 500, json: { error: "Test failure" } }) : route.fallback()),
+  );
+  await save.click();
+  await expect(summary).toBeFocused();
+  await expect(summary).toBeInViewport({ ratio: 1 });
+  await expect(summary.locator("p").first()).toHaveText("The changes were not saved. They are still in the form; press Save changes again.");
+  await expect(summary.locator("p").nth(1)).toHaveText("What the app said: Test failure.");
+  await expect(summary.locator("p").nth(1)).toHaveCSS("color", MUTED_TONE);
+});
+
+test("dates in sentences never break: a waiting discovery's reset date is one phrase", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // The stop app's stop is lifted by an earlier test, so the sentence may say either; the date is one phrase in both.
+  await page.goto(appUrl("stop", "/campaigns"));
+  const trades = row(page, "Local trades, Milan");
+  const sentence = trades.getByText(/It (resets|resumes) on/);
+  await expect(sentence).toBeVisible();
+  expect(await sentence.innerText()).toMatch(/It (resets|resumes) on 1\u00a0\w+\u00a0\d{4}\./);
+  // One line holds the date: the box around "1 December 2026" is one line high.
+  const lines = await sentence.evaluate((el) => {
+    const text = el.firstChild;
+    const at = el.textContent?.search(/1\u00a0\w+\u00a0\d{4}/) ?? -1;
+    if (text === null || at < 0) return 0;
+    const range = document.createRange();
+    range.setStart(text, at);
+    range.setEnd(text, at + (/1\u00a0\w+\u00a0\d{4}/.exec(el.textContent ?? "")?.[0].length ?? 0));
+    return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+  });
+  expect(lines).toBe(1);
 });

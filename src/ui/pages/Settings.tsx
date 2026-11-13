@@ -7,7 +7,7 @@ import { ActionError, Announce, describedByError, Disclosure, errorProps, FieldE
 import { sessionView } from "../shell/sessionView";
 import { useRecheck } from "../shell/useRecheck";
 import { useLoad, type Loaded } from "../useLoad";
-import { formatBytes, formatDate } from "../words";
+import { failure, formatBytes, formatDate, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
 // ------------------------------------------------------------ the form
@@ -156,7 +156,7 @@ export function Settings() {
         {settingsError === undefined ? (
           <SkeletonRows rows={4} rowClassName="h-16" className="max-w-3xl" />
         ) : (
-          <LoadError what="the settings" message={settingsError.message} onRetry={refreshSettings} />
+          <LoadError what="the settings" error={settingsError} onRetry={refreshSettings} />
         )}
       </>
     );
@@ -169,8 +169,14 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
   const [form, setForm] = useState<Form>(() => toForm(settings));
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string } | undefined>(undefined);
+  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string; readonly detail?: string | undefined } | undefined>(undefined);
   const ops = useLoad(getOps, "ops");
+  /** How many saves failed with nothing to mark: each one moves the focus to the save bar's message (Save settings was off while it ran). */
+  const [failedSaves, setFailedSaves] = useState(0);
+  const resultLine = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (failedSaves > 0) resultLine.current?.focus({ preventScroll: true });
+  }, [failedSaves]);
   const ids = { zone: useId(), start: useId(), end: useId(), model: useId(), provider: useId(), warm: useId(), awake: useId() };
   /** How many saves were refused with marked fields: each one moves the focus to the first of them, once they show. */
   const [refusals, setRefusals] = useState(0);
@@ -194,7 +200,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
     const built = toPatch(form, base);
     if (Object.keys(built.errors).length > 0) {
       setErrors(built.errors);
-      setResult({ ok: false, text: "Some settings need attention. They are marked." });
+      setResult({ ok: false, text: "Nothing was saved: some settings need attention. Fix the marked ones, then press Save settings again." });
       setRefusals((n) => n + 1);
       return;
     }
@@ -208,11 +214,16 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         setResult({ ok: true, text: "Settings saved." });
         onSaved();
       })
-      .catch((failure: unknown) => {
-        const error = toApiError(failure);
+      .catch((failed: unknown) => {
+        const error = toApiError(failed);
         setErrors(Object.fromEntries(Object.entries(error.fields).map(([path, message]) => [path, words(message)])));
-        setResult({ ok: false, text: Object.keys(error.fields).length > 0 ? "Nothing was saved: some settings are not valid. They are marked." : error.message });
-        if (Object.keys(error.fields).length > 0) setRefusals((n) => n + 1);
+        if (Object.keys(error.fields).length > 0) {
+          setResult({ ok: false, text: "Nothing was saved: some settings are not valid. Fix the marked ones, then press Save settings again." });
+          setRefusals((n) => n + 1);
+        } else {
+          setResult({ ok: false, ...failure("Nothing was saved. Your changes are still on this page; press Save settings again.", error) });
+          setFailedSaves((n) => n + 1);
+        }
       })
       .finally(() => setSaving(false));
   };
@@ -532,9 +543,12 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
             Undo changes
           </button>
         )}
-        <p role="status" className={`text-sm ${result === undefined ? "text-muted" : result.ok ? "text-primary" : "text-error"}`} data-testid="settings-result">
-          {result?.text ?? (dirty ? "You have changes that are not saved." : "No changes to save.")}
-        </p>
+        <div ref={resultLine} role="status" tabIndex={-1} className="min-w-0 text-sm" data-testid="settings-result">
+          <p className={result === undefined ? "text-muted" : result.ok ? "text-primary" : "text-error"}>
+            {result?.text ?? (dirty ? "You have changes that are not saved." : "No changes to save.")}
+          </p>
+          {result?.detail !== undefined && <p className="text-muted">{result.detail}</p>}
+        </div>
       </div>
     </>
   );
@@ -609,15 +623,15 @@ function LinkedInWindow() {
             </p>
             {view.problem !== undefined && <p className="mt-1 text-sm">{view.problem}</p>}
           </div>
-          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={recheck.checking} aria-busy={recheck.checking} onClick={recheck.run}>
+          <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={recheck.checking} aria-busy={recheck.checking} onClick={() => recheck.run("settings")}>
             {recheck.checking && <span className="loading loading-spinner loading-xs" />}
             Re-check
           </button>
         </div>
       )}
-      <ActionError message={recheck.error} className="mt-2" />
+      <ActionError message={recheck.error} className="mt-2" takeFocus />
       <p className="mt-group text-sm text-base-content">
-        If LinkedIn logs the app out, log in again in the app&rsquo;s own Chrome window, not in your usual browser, then press Re-check.
+        If LinkedIn logs the app out, log in again in the dedicated window, not in your usual browser, then press Re-check.
       </p>
     </Section>
   );
@@ -628,7 +642,13 @@ function LinkedInWindow() {
 function AiTestButton({ blocked }: { readonly blocked: boolean }) {
   const [running, setRunning] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [outcome, setOutcome] = useState<AiTest | { readonly failed: string } | undefined>(undefined);
+  const [outcome, setOutcome] = useState<AiTest | { readonly failed: Failure } | undefined>(undefined);
+  const resultBox = useRef<HTMLDivElement>(null);
+  // A test that could not run, or an AI that answered with a problem: the result takes the focus (Test the AI was off while it ran).
+  const problem = outcome !== undefined && ("failed" in outcome || !outcome.ok);
+  useEffect(() => {
+    if (problem) resultBox.current?.focus({ preventScroll: true });
+  }, [problem, outcome]);
 
   useEffect(() => {
     if (!running) return;
@@ -642,7 +662,7 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
     setOutcome(undefined);
     testAi()
       .then(setOutcome)
-      .catch((failure: unknown) => setOutcome({ failed: toApiError(failure).message }))
+      .catch((failed: unknown) => setOutcome({ failed: failure("The test did not run. Your settings are unchanged; press Test the AI to try again.", toApiError(failed)) }))
       .finally(() => setRunning(false));
   };
 
@@ -662,12 +682,17 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
       </div>
       {outcome !== undefined && (
         <div
+          ref={resultBox}
           role="status"
+          tabIndex={-1}
           data-testid="ai-test-result"
           className={`mt-3 rounded-field px-3 py-2 text-sm ${"failed" in outcome || !outcome.ok ? "bg-error/10 text-error" : "bg-score-high/60"}`}
         >
           {"failed" in outcome ? (
-            <p>The test could not run: {outcome.failed}</p>
+            <>
+              <p>{outcome.failed.text}</p>
+              {outcome.failed.detail !== undefined && <p className="text-muted">{outcome.failed.detail}</p>}
+            </>
           ) : (
             <>
               <p>{asSentence(outcome.message)}</p>
@@ -690,7 +715,10 @@ function backupDay(date: string, timeZone: string): string {
   return Number.isNaN(new Date(day).getTime()) ? date : formatDate(day, /^\d{4}-\d{2}-\d{2}$/.test(date) ? "UTC" : timeZone);
 }
 
-function backupWords(result: BackupResult): { readonly ok: boolean; readonly text: string } {
+/** What a failed backup says to do: earlier copies are untouched, and the button can be pressed again. */
+const BACKUP_FAILED = "The backup did not run. Your earlier backups are kept; press Back up now again.";
+
+function backupWords(result: BackupResult): { readonly ok: boolean; readonly text: string; readonly detail?: string | undefined } {
   const file = result.file?.split("/").at(-1);
   switch (result.kind) {
     case "created":
@@ -698,7 +726,7 @@ function backupWords(result: BackupResult): { readonly ok: boolean; readonly tex
     case "skipped":
       return { ok: true, text: result.message == null ? `Today's backup${file === undefined ? "" : `, ${file},`} is already there.` : asSentence(result.message) };
     case "failed":
-      return { ok: false, text: result.message == null ? "The backup failed." : asSentence(result.message) };
+      return { ok: false, ...failure(BACKUP_FAILED, result.message ?? undefined) };
     default: {
       const _exhaustive: never = result.kind;
       return _exhaustive;
@@ -709,7 +737,12 @@ function backupWords(result: BackupResult): { readonly ok: boolean; readonly tex
 function Backups({ ops }: { readonly ops: OpsLoad }) {
   const { timeZone } = useAppData();
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string } | undefined>(undefined);
+  const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string; readonly detail?: string | undefined } | undefined>(undefined);
+  const resultLine = useRef<HTMLDivElement>(null);
+  // A failed backup: its message takes the focus (Back up now was off while it ran).
+  useEffect(() => {
+    if (result?.ok === false) resultLine.current?.focus({ preventScroll: true });
+  }, [result]);
 
   const backUp = () => {
     setBusy(true);
@@ -719,7 +752,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
         setResult(backupWords(answer));
         ops.reload();
       })
-      .catch((failure: unknown) => setResult({ ok: false, text: `The backup failed: ${toApiError(failure).message}` }))
+      .catch((failed: unknown) => setResult({ ok: false, ...failure(BACKUP_FAILED, toApiError(failed)) }))
       .finally(() => setBusy(false));
   };
 
@@ -728,7 +761,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Backups" lead="The app copies its database once a day and keeps the last seven copies.">
       {ops.status === "error" && ops.data === undefined ? (
-        <LoadError what="the backups" message={ops.error.message} onRetry={ops.reload} />
+        <LoadError what="the backups" error={ops.error} onRetry={ops.reload} />
       ) : ops.data === undefined ? (
         <div className="skeleton h-20 w-full" />
       ) : backups.length === 0 ? (
@@ -752,9 +785,10 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
         </button>
         <Announce>
           {result !== undefined && (
-            <p className={`text-sm ${result.ok ? "text-primary" : "text-error"}`} data-testid="backup-result">
-              {result.text}
-            </p>
+            <div ref={resultLine} tabIndex={-1} className="text-sm" data-testid="backup-result">
+              <p className={result.ok ? "text-primary" : "text-error"}>{result.text}</p>
+              {result.detail !== undefined && <p className="text-muted">{result.detail}</p>}
+            </div>
           )}
         </Announce>
       </div>
@@ -795,7 +829,7 @@ function AutoStart({ ops }: { readonly ops: OpsLoad }) {
   return (
     <Section title="Start at login" lead="Whether the app starts by itself when you log in to the Mac.">
       {ops.status === "error" && ops.data === undefined ? (
-        <LoadError what="whether it is set up" message={ops.error.message} onRetry={ops.reload} />
+        <LoadError what="whether it is set up" error={ops.error} onRetry={ops.reload} />
       ) : service !== undefined && !service.installed ? (
         // Plain information, not amber: starting at login is optional, and nothing waits on the user without it.
         <Notice tone="note" className="text-sm">

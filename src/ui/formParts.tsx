@@ -1,9 +1,9 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { CampaignStatus, EventLevel } from "../db/schema";
-import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone } from "./format";
+import { CAMPAIGN_STATUS_DOT, CAMPAIGN_STATUS_LABEL, formatScore, scoreTone, withStop } from "./format";
 import { filledSegments } from "./filled";
 import { IconChevron, IconWarning } from "./icons";
-import { PAUSABLE, plainMessage } from "./words";
+import { failure, PAUSABLE, plainMessage, type Failure, type Said } from "./words";
 
 /**
  * The pieces every page shares, so each look is decided in one place: the button recipes, the three
@@ -61,12 +61,15 @@ export function describedByError(groupId: string, message: string | undefined, o
   return describedBy(message === undefined ? undefined : errorIdOf(groupId), options.hint);
 }
 
-/** The server's (or the form's) message for one field, under it. Pass the control's id so the control can point at it. */
+/**
+ * The server's (or the form's) message for one field, under it, ending as a sentence (the server's rules write some
+ * without a full stop). Pass the control's id so the control can point at it.
+ */
 export function FieldError({ controlId, message }: { readonly controlId?: string; readonly message: string | undefined }) {
   if (message === undefined) return null;
   return (
     <p id={controlId === undefined ? undefined : errorIdOf(controlId)} role="alert" className="mt-1 text-sm text-error" data-testid="field-error">
-      {message}
+      {withStop(message)}
     </p>
   );
 }
@@ -85,26 +88,61 @@ export function Announce({ message, children }: { readonly message?: string | un
   );
 }
 
+/** What was said about a failure ("What the app said: …"), set apart from the app's own words and quieter. */
+function FailureDetail({ detail }: { readonly detail: string | undefined }) {
+  if (detail === undefined) return null;
+  return <p className="mt-0.5 text-muted">{detail}</p>;
+}
+
 /**
  * What went wrong when the user's action failed (a save, a pause, a decision). Nothing when there is no message.
- * With an `id` it can take the focus from the script (`focusInView`), for a summary far from the button that failed.
+ * A `Failure` says what failed, what state things are in and what to do, with the server's words apart under it.
+ * With an `id` it can take the focus from the script (`focusInView`), for a summary far from the button that failed;
+ * with `takeFocus` it takes the focus itself each time a new message appears (the button that failed was disabled
+ * while it worked, so the focus had nowhere to stay).
  */
-export function ActionError({ message, className, testId, id }: { readonly message: string | undefined; readonly className?: string; readonly testId?: string; readonly id?: string }) {
+export function ActionError({
+  message,
+  className,
+  testId,
+  id,
+  takeFocus = false,
+}: {
+  readonly message: string | Failure | undefined;
+  readonly className?: string;
+  readonly testId?: string;
+  readonly id?: string;
+  readonly takeFocus?: boolean;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (takeFocus && message !== undefined && box.current !== null) focusInView(box.current);
+  }, [takeFocus, message]);
   if (message === undefined) return null;
+  const { text, detail } = typeof message === "string" ? { text: message, detail: undefined } : message;
   return (
-    <p id={id} tabIndex={id === undefined ? undefined : -1} role="alert" className={`rounded-box bg-error/10 px-3 py-2 text-sm text-error ${className ?? ""}`} data-testid={testId}>
-      {message}
-    </p>
+    <div
+      ref={box}
+      id={id}
+      tabIndex={id === undefined && !takeFocus ? undefined : -1}
+      role="alert"
+      className={`rounded-box bg-error/10 px-3 py-2 text-sm ${className ?? ""}`}
+      data-testid={testId}
+    >
+      <p className="text-error">{text}</p>
+      <FailureDetail detail={detail} />
+    </div>
   );
 }
 
 /** The box a page or section shows when its data could not load, with a way to try again. */
-export function LoadError(props: { readonly what: string; readonly message: string; readonly onRetry: () => void; readonly className?: string }) {
+export function LoadError(props: { readonly what: string; readonly error: Said; readonly onRetry: () => void; readonly className?: string }) {
   return (
     <div role="alert" className={`flex flex-wrap items-center gap-3 rounded-box border border-error/40 bg-error/5 p-4 ${props.className ?? ""}`}>
-      <p className="text-error">
-        Could not load {props.what}: {props.message}
-      </p>
+      <div className="min-w-0">
+        <p className="text-error">Could not load {props.what}. Nothing was changed; press Try again.</p>
+        <FailureDetail detail={failure("", props.error).detail} />
+      </div>
       <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} onClick={props.onRetry}>
         Try again
       </button>

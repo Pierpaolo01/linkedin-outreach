@@ -5,6 +5,14 @@ import type { Settings } from "./apiSchemas";
 
 const LOCALE = "en-GB";
 
+/** A no-break space: a date, a time or a count with its unit is one phrase that never breaks across lines. */
+export const NBSP = "\u00a0";
+
+/** The words of one date, time or count joined so the phrase never breaks inside itself ("1 December 2026", "today at 10:42"). */
+export function unbroken(phrase: string): string {
+  return phrase.replace(/\s+/g, NBSP);
+}
+
 function dayKey(at: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
@@ -26,11 +34,15 @@ export function formatClock(iso: string, timeZone: string): string {
 export function formatShort(iso: string, timeZone: string, now: Date): string {
   const at = new Date(iso);
   if (dayOffset(at, timeZone, now) === 0) return formatClock(iso, timeZone);
-  return new Intl.DateTimeFormat(LOCALE, { timeZone, day: "numeric", month: "short" }).format(at);
+  return unbroken(new Intl.DateTimeFormat(LOCALE, { timeZone, day: "numeric", month: "short" }).format(at));
 }
 
-/** "today at 10:42", "yesterday at 10:42", "on 9 Nov at 10:42". */
+/** "today at 10:42", "yesterday at 10:42", "on 9 Nov at 10:42": one phrase that never breaks across lines. */
 export function formatWhen(iso: string, timeZone: string, now: Date): string {
+  return unbroken(whenWords(iso, timeZone, now));
+}
+
+function whenWords(iso: string, timeZone: string, now: Date): string {
   const at = new Date(iso);
   const clock = formatClock(iso, timeZone);
   const offset = dayOffset(at, timeZone, now);
@@ -41,8 +53,12 @@ export function formatWhen(iso: string, timeZone: string, now: Date): string {
   return `on ${date} at ${clock}`;
 }
 
-/** "tomorrow 09:00", "Monday 09:00", "16 Nov 09:00": when a spent budget opens again. */
+/** "tomorrow 09:00", "Monday 09:00", "16 Nov 09:00": when a spent budget opens again, as one phrase that never breaks. */
 export function formatResume(iso: string, timeZone: string, now: Date): string {
+  return unbroken(resumeWords(iso, timeZone, now));
+}
+
+function resumeWords(iso: string, timeZone: string, now: Date): string {
   const at = new Date(iso);
   const clock = formatClock(iso, timeZone);
   const offset = dayOffset(at, timeZone, now);
@@ -55,7 +71,7 @@ export function formatResume(iso: string, timeZone: string, now: Date): string {
 
 /** "Thursday 12 November". */
 export function formatToday(timeZone: string, now: Date): string {
-  return new Intl.DateTimeFormat(LOCALE, { timeZone, weekday: "long", day: "numeric", month: "long" }).format(now);
+  return unbroken(new Intl.DateTimeFormat(LOCALE, { timeZone, weekday: "long", day: "numeric", month: "long" }).format(now));
 }
 
 export function formatScore(score: number): string {
@@ -75,16 +91,27 @@ export function joinWords(words: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} and ${words.at(-1) ?? ""}`;
 }
 
+/** "5 campaigns": the count and its unit never break apart. */
 export function plural(n: number, one: string, many: string): string {
-  return `${n} ${n === 1 ? one : many}`;
+  return `${n}${NBSP}${n === 1 ? one : many}`;
 }
 
 /** A fragment from the engine as a sentence: capital first letter, no underscores, a full stop. */
 export function asSentence(text: string): string {
   const clean = text.replace(/_/g, " ").trim();
   if (clean === "") return clean;
-  const capital = clean.charAt(0).toUpperCase() + clean.slice(1);
-  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+  return withStop(clean.charAt(0).toUpperCase() + clean.slice(1));
+}
+
+/**
+ * A line that ends as a sentence does: with exactly one full stop, unless it already ends with "!", "?", "…" or a
+ * full stop. A trailing comma, colon or semicolon gives way to the full stop; a run of full stops becomes one.
+ */
+export function withStop(text: string): string {
+  const clean = text.trim();
+  if (clean === "") return clean;
+  if (/[!?…]$/.test(clean)) return clean;
+  return `${clean.replace(/[\s.,;:]+$/, "")}.`;
 }
 
 export const CAMPAIGN_STATUS_LABEL: Readonly<Record<CampaignStatus, string>> = {
@@ -139,7 +166,7 @@ export function formatDays(days: readonly number[]): string {
 
 
 /** Whether the working window is open now, and if not, when it next opens ("tomorrow at 09:00"). */
-export function workingNow(settings: Settings, now: Date): { readonly open: true; readonly until: string } | { readonly open: false; readonly next: string } {
+export function workingNow(settings: Pick<Settings, "timeZone" | "workingDays" | "workingHours">, now: Date): { readonly open: true; readonly until: string } | { readonly open: false; readonly next: string } {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: settings.timeZone,
     weekday: "short",
@@ -152,10 +179,10 @@ export function workingNow(settings: Settings, now: Date): { readonly open: true
   const { start, end } = settings.workingHours;
   const isDay = (isoDay: number) => settings.workingDays.includes(isoDay);
   if (isDay(weekday) && clock >= start && clock < end) return { open: true, until: end };
-  if (isDay(weekday) && clock < start) return { open: false, next: `today at ${start}` };
+  if (isDay(weekday) && clock < start) return { open: false, next: unbroken(`today at ${start}`) };
   for (let ahead = 1; ahead <= 7; ahead += 1) {
     const day = ((weekday - 1 + ahead) % 7) + 1;
-    if (isDay(day)) return { open: false, next: ahead === 1 ? `tomorrow at ${start}` : `${WEEKDAYS_LONG[day - 1] ?? ""} at ${start}` };
+    if (isDay(day)) return { open: false, next: unbroken(ahead === 1 ? `tomorrow at ${start}` : `${WEEKDAYS_LONG[day - 1] ?? ""} at ${start}`) };
   }
   return { open: false, next: "on the next working day" };
 }

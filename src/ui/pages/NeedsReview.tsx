@@ -3,9 +3,10 @@ import { listActivity, listReview, resolveReview, toApiError } from "../api";
 import type { ResolveStage, ReviewItem } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatScore, formatWhen, plural } from "../format";
-import { ActionError, Announce, EmptyState, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows } from "../formParts";
+import { ActionError, Announce, EmptyState, errorProps, FieldError, focusFirstError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows } from "../formParts";
 import { IconExternal } from "../icons";
 import { useLoad } from "../useLoad";
+import { failure, type Failure } from "../words";
 import { PageHeader } from "./PageHeader";
 
 /** The choices in two groups: carry on from a step of the sequence (in its order), or take them out. */
@@ -111,7 +112,7 @@ export function NeedsReview() {
       />
       <Announce>{notice !== undefined && <p className="mb-group text-sm text-primary">{notice}</p>}</Announce>
       {loaded.status === "error" && loaded.data === undefined ? (
-        <LoadError what="the people held for review" message={loaded.error.message} onRetry={loaded.reload} />
+        <LoadError what="the people held for review" error={loaded.error} onRetry={loaded.reload} />
       ) : loaded.data === undefined ? (
         <SkeletonRows rows={2} rowClassName="h-96" />
       ) : items.length === 0 ? (
@@ -145,8 +146,18 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
   const [choice, setChoice] = useState<ResolveStage | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const [error, setError] = useState<Failure | undefined>(undefined);
+  /** The server's word on the note, under the note's box. */
+  const [noteError, setNoteError] = useState<string | undefined>(undefined);
+  /** Counts notes the app refused, so each refusal moves the focus to the note once its mark has rendered. */
+  const [noteRefusals, setNoteRefusals] = useState(0);
+  const card = useRef<HTMLLIElement>(null);
   const noteId = useId();
+
+  // A refused note: the note box takes the focus, as a refused field does in every form.
+  useEffect(() => {
+    if (noteRefusals > 0 && card.current !== null) focusFirstError(card.current);
+  }, [noteRefusals]);
   const choiceName = useId();
   const now = new Date();
   const { person } = item;
@@ -155,17 +166,22 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
   const resolve = (to: ResolveStage) => {
     setBusy(true);
     setError(undefined);
+    setNoteError(undefined);
     resolveReview(item.id, { stage: to, note: note.trim() === "" ? null : note.trim() })
       .then(() => onResolved(to))
-      .catch((failure: unknown) => {
-        const apiError = toApiError(failure);
-        setError(apiError.fields["note"] ?? apiError.message);
+      .catch((failed: unknown) => {
+        const apiError = toApiError(failed);
+        const onNote = apiError.fields["note"];
+        if (onNote !== undefined) {
+          setNoteError(onNote);
+          setNoteRefusals((n) => n + 1);
+        } else setError(failure(`Nothing was decided. ${person.fullName} is still held for review; press Confirm again.`, apiError));
       })
       .finally(() => setBusy(false));
   };
 
   return (
-    <li className="grid gap-x-section gap-y-block p-card lg:grid-cols-[minmax(0,1fr)_22rem]" data-testid="review-item" aria-label={person.fullName}>
+    <li ref={card} className="grid gap-x-section gap-y-block p-card lg:grid-cols-[minmax(0,1fr)_22rem]" data-testid="review-item" aria-label={person.fullName}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{person.fullName}</h2>
@@ -236,14 +252,19 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
           </span>
           <textarea
             id={noteId}
-            className="textarea textarea-sm w-full bg-base-100"
+            className={`textarea textarea-sm w-full bg-base-100 ${noteError === undefined ? "" : "textarea-error"}`}
             rows={2}
             maxLength={2000}
             value={note}
-            onChange={(event) => setNote(event.target.value)}
+            onChange={(event) => {
+              setNote(event.target.value);
+              setNoteError(undefined);
+            }}
             placeholder="For example: checked on LinkedIn, the invite went out"
+            {...errorProps(noteId, noteError)}
           />
         </label>
+        <FieldError controlId={noteId} message={noteError} />
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -259,7 +280,7 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
           </button>
           {choice === null && <p className="text-sm text-muted">Choose what should happen first.</p>}
         </div>
-        <ActionError message={error} />
+        <ActionError message={error} takeFocus />
       </div>
     </li>
   );
