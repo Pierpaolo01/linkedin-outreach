@@ -517,7 +517,12 @@ function expired(db: Conn, target: Target, step: Step, claim: Claim, at: Date): 
 
 // ---------------------------------------------------------------- handlers
 
-const CONNECTABLE: ReadonlySet<Profile["connectionState"]> = new Set(["can_connect", "connect_in_more"]);
+/**
+ * Profiles the invite may be tried on. `follow_only` included: LinkedIn renders the More menu only
+ * once clicked, so Connect may be inside it; the driver opens More and returns `not_offered` when it
+ * is not (seen live 2026-11-13: a founder's profile read as Follow only).
+ */
+const CONNECTABLE: ReadonlySet<Profile["connectionState"]> = new Set(["can_connect", "connect_in_more", "follow_only"]);
 
 /** The invite note: the one frozen by an earlier claim (null included) wins; else the campaign's, if it has one. */
 function inviteNote(db: Conn, target: Target): { ok: true; text: string | null } | { ok: false; reason: string } {

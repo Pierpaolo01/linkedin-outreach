@@ -146,10 +146,24 @@ describe("invite", () => {
     expect(person(kit, p.personId).contactedAt).toBeNull();
   });
 
+  it("on a profile that reads as Follow only, lets the invite open More: Connect may be in the unrendered menu", async () => {
+    const p = approved(campaign(), { connectInUnrenderedMore: true });
+    await kit.engine.tick();
+    expect(stage(p.prospectId)).toBe("invited");
+    expect(kit.world.invitesTo(p.spec.publicId)).toHaveLength(1);
+  });
+
+  it("on a profile with no Connect even under More, the invite comes back not offered and the prospect is held", async () => {
+    const p = approved(campaign(), { connectUnavailable: true });
+    await kit.engine.tick();
+    expect(stage(p.prospectId)).toBe("needs_review");
+    expect(prospect(kit, p.prospectId).reviewReason).toContain("not offered");
+    expect(kit.world.invitesTo(p.spec.publicId)).toHaveLength(0);
+  });
+
   it.each([
     ["pending", { invitedOutsideApp: true }],
     ["connected", { degree: 1 as const }],
-    ["follow only", { connectUnavailable: true }],
   ])("holds for review when the profile shows %s, and sends nothing", async (state, spec) => {
     const p = approved(campaign(), spec);
     await kit.engine.tick();

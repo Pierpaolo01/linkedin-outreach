@@ -94,6 +94,11 @@ export interface MemberSpec {
   readonly invitedOutsideApp?: boolean;
   /** Connect is in the More menu. */
   readonly connectInMore?: boolean;
+  /**
+   * Connect is in a More menu LinkedIn renders only once clicked: the profile reads as Follow only,
+   * yet the invite goes through (seen live 2026-11-13).
+   */
+  readonly connectInUnrenderedMore?: boolean;
 }
 
 /** Where a message came from: the app's `sendMessage`, an accepted invitation's note, the user by hand, or the member. */
@@ -421,7 +426,7 @@ export class FakeWorld {
   #connectionState(member: Member): ConnectionState {
     if (member.degree === 1) return "connected";
     if (member.invite !== null) return "pending";
-    if (member.spec.connectUnavailable === true) return "follow_only";
+    if (member.spec.connectUnavailable === true || member.spec.connectInUnrenderedMore === true) return "follow_only";
     if (member.spec.connectInMore === true) return "connect_in_more";
     return "can_connect";
   }
