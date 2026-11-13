@@ -2,11 +2,11 @@
 
 2026-11-13. A finish pass on the dashboard (`src/ui/`), on the branch `feat/ui-refine`.
 
-The run kept the existing look (green-grey palette, Seravek, the sidebar and drawer, flat surfaces) and made it consistent, readable and usable at 390px. The direction and every item are in `docs/ui-refine-backlog.md`. It started from a critique (C-01 to C-25) and an audit (A-01 to A-30). They became 48 backlog items, worked through in eight phases (extract, colorize, layout, adapt, harden, clarify, animate, polish), then two finish reviews and six council rounds. All 48 items are fixed and 12 are deferred, each with a reason. No route, behaviour or data shape changed. Everything below comes from the seeded demo apps that Playwright starts on the fake driver; LinkedIn was not touched.
+The run kept the existing look (green-grey palette, Seravek, the sidebar and drawer, flat surfaces) and made it consistent, readable and usable at 390px. The direction and every item are in `docs/ui-refine-backlog.md`. It started from a critique (C-01 to C-25) and an audit (A-01 to A-30). They became 48 backlog items, worked through in eight phases (extract, colorize, layout, adapt, harden, clarify, animate, polish), then two finish reviews and seven council rounds. All 48 items are fixed and 12 are deferred, each with a reason. No route, behaviour or data shape changed. Everything below comes from the seeded demo apps that Playwright starts on the fake driver; LinkedIn was not touched.
 
 ## Before and after
 
-"Before" is the baseline set from `main`, taken on 12 November (commit `83ea9d6`). "After" is this branch at `485aaf2`. Desktop shots are 1440 wide at 1x. Phone shots are 390 wide at 2x. Both are full-page.
+"Before" is the baseline set from `main`, taken on 12 November (commit `83ea9d6`). "After" is this branch at `0a8744c`, the final UI commit. Desktop shots are 1440 wide at 1x. Phone shots are 390 wide at 2x. Both are full-page.
 
 | Page | Viewport | Before | After |
 | --- | --- | --- | --- |
@@ -40,7 +40,7 @@ The run kept the existing look (green-grey palette, Seravek, the sidebar and dra
 - [Desktop, 1440 by 900, 60 seconds](img/after/ui-refine-walkthrough.mp4) (`img/after/ui-refine-walkthrough.mp4`). Home (Today's usage and What the app did), the approval queue (Test Person 2 approved with the A key, so the row folds and the header reads "7 waiting, 1 decided"; one follow-up opened), Campaigns, Hotel owners, Rome with one person open, a new campaign through Name, Where people come from, Who fits, Approval and Messages (the preview fills in "Anna" and "Example Srl"), then Review and start, and the activity log switched to "Warnings and errors" and back. The draft campaign was not started.
 - [Phone, 390 by 844, 26 seconds](img/after/ui-refine-walkthrough-phone.mp4) (`img/after/ui-refine-walkthrough-phone.mp4`). Home, the menu, the approval queue, then Hotel owners, Rome from the menu with one person open.
 
-Both were recorded with Playwright's `recordVideo` against a fresh seeded demo app (port 4748), from a throwaway script outside the repository. A red circle is drawn where the pointer is, because the recording does not show one. The phone video is recorded at 390 by 844 CSS pixels, so it is less sharp than the 2x phone screenshots. Both files are H.264 with `-pix_fmt yuv420p -movflags +faststart`.
+Both were recorded at `485aaf2`, one commit of copy and focus fixes (council round 7) before the screenshots; nothing they show changed in that commit except wording such as the caption by Start. They were recorded with Playwright's `recordVideo` against a fresh seeded demo app (port 4748), from a throwaway script outside the repository. A red circle is drawn where the pointer is, because the recording does not show one. The phone video is recorded at 390 by 844 CSS pixels, so it is less sharp than the 2x phone screenshots. Both files are H.264 with `-pix_fmt yuv420p -movflags +faststart`.
 
 ## Commands run
 
@@ -50,8 +50,8 @@ vite v8.3.8 building client environment for production...
 ✓ 141 modules transformed.
 dist/ui/index.html                   0.58 kB │ gzip:   0.37 kB
 dist/ui/assets/index-DdWuBi9M.css  135.95 kB │ gzip:  21.40 kB
-dist/ui/assets/index-DC5QS5Gw.js   489.96 kB │ gzip: 142.75 kB
-✓ built in 253ms
+dist/ui/assets/index-DN9Fo70t.js   490.91 kB │ gzip: 143.12 kB
+✓ built in 532ms
 ```
 
 The build also prints two warnings from the CSS optimiser about an empty selector in daisyUI's `.join` and `.btn:hover` rules. Both are in daisyUI 5.7.50's own rules. The build still succeeds.
@@ -59,11 +59,11 @@ The build also prints two warnings from the CSS optimiser about an empty selecto
 ```
 $ SCREENSHOTS=1 SHOT_DIR=after npx playwright test e2e/screenshots.spec.ts
 Running 3 tests using 1 worker
-  ✓  1 e2e/screenshots.spec.ts:74:3 › desktop › milestone 3 screenshots (4.7s)
-  ✓  2 e2e/screenshots.spec.ts:92:3 › desktop, the remaining screens › milestone 3 screenshots of campaigns, detail, activity, stats, settings and the wizard (9.1s)
+  ✓  1 e2e/screenshots.spec.ts:74:3 › desktop › milestone 3 screenshots (5.0s)
+  ✓  2 e2e/screenshots.spec.ts:92:3 › desktop, the remaining screens › milestone 3 screenshots of campaigns, detail, activity, stats, settings and the wizard (9.8s)
   -  3 e2e/screenshots.spec.ts:142:3 › phone › milestone 3 phone screenshot
   1 skipped
-  2 passed (28.4s)
+  2 passed (25.4s)
 ```
 
 The skipped test writes the single milestone 3 phone shot. With `SHOT_DIR` set, every page is already shot on the phone, so it skips itself.
@@ -73,14 +73,14 @@ $ npm run verify
 > npm run typecheck && npm run lint && npm run test && npm run build:ui && npm run test:e2e
 (typecheck and lint: no output)
  Test Files  81 passed (81)
-      Tests  1966 passed (1966)
-   Duration  32.71s (tests 86%, import 13%, transform 1%)
-✓ built in 351ms
+      Tests  1968 passed (1968)
+   Duration  38.72s (tests 84%, import 14%, transform 1%)
+✓ built in 275ms
   3 skipped
-  67 passed (1.5m)
+  75 passed (1.5m)
 ```
 
-`verify` passed on the first run. The three skipped browser tests are the screenshot spec's, which run only with `SCREENSHOTS=1`.
+That is the third `verify` run of council round 7. The first failed on three of the round's own new tests (an old hint expectation, and two tests that depended on demo data other tests had changed; they now set up their own data). The second failed once on "Close menu" measuring 43.99999px instead of 44 (the drawer was still sliding in); the test passed 5 times out of 5 alone and in the third run, and the round did not touch it. The three skipped browser tests are the screenshot spec's, which run only with `SCREENSHOTS=1`.
 
 ## What was not verified
 
