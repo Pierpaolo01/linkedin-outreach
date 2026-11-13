@@ -106,12 +106,12 @@ describe("discoveryWaitSentence", () => {
   const until = "2026-11-30T23:00:00.000Z";
   const say = (wait: Parameters<typeof discoveryWaitSentence>[0]["wait"], safetyStop: boolean) => discoveryWaitSentence({ wait, timeZone: "Europe/Rome", safetyStop });
 
-  it("says when finding people resumes", () => {
+  it("says when finding people resumes, and that the search limit resets, as a budget does", () => {
     expect(say({ reason: "search_limit", until, message: "" }, false)).toBe(
-      `Finding people is waiting: LinkedIn's monthly search limit is reached. It resumes on ${nb("1 December 2026")}.`,
+      `Finding people is waiting: LinkedIn’s monthly search limit is reached. It resets on ${nb("1 December 2026")}.`,
     );
     expect(say({ reason: "no_new_people", until: null, message: "" }, false)).toBe(
-      "Finding people is waiting: LinkedIn's recommendations show nobody new today. The app looks again tomorrow.",
+      "Finding people is waiting: LinkedIn’s recommendations show nobody new today. The app looks again tomorrow.",
     );
   });
 
@@ -124,10 +124,10 @@ describe("discoveryWaitSentence", () => {
       say({ reason: "exhausted", until: null, message: "" }, true),
     ];
     expect(lines).toEqual([
-      `LinkedIn's monthly search limit is reached. It resets on ${nb("1 December 2026")}.`,
-      "LinkedIn's recommendations showed nobody new today.",
-      "The app could not read LinkedIn's page; the activity log has the details.",
-      "Finding people has stopped: there is nobody more to find from this campaign's sources.",
+      `LinkedIn’s monthly search limit is reached. It resets on ${nb("1 December 2026")}.`,
+      "LinkedIn’s recommendations showed nobody new today.",
+      "The app could not read LinkedIn’s page; the activity log has the details.",
+      "Finding people has stopped: there is nobody more to find from this campaign’s sources.",
     ]);
     for (const line of lines) expect(line).not.toMatch(/resumes|again|tomorrow|waiting/);
   });
@@ -135,7 +135,7 @@ describe("discoveryWaitSentence", () => {
 
 describe("nextActionWhen", () => {
   const now = new Date("2026-11-12T09:00:00Z");
-  const base = { timeZone: "Europe/Rome", now } as const;
+  const base = { timeZone: "Europe/Rome", now, stage: "invited" } as const;
 
   // A value in the People table's column: a capital, like the column's other values, and a time that never breaks.
   it("says when the next step is planned, or that it is due, as a column value", () => {
@@ -149,6 +149,16 @@ describe("nextActionWhen", () => {
   it("says after you resume during a safety stop, never a time", () => {
     expect(nextActionWhen({ ...base, at: "2026-11-12T12:30:00Z", safetyStop: true })).toBe("After you resume");
     expect(nextActionWhen({ ...base, at: "2026-11-12T08:00:00Z", safetyStop: true })).toBe("After you resume");
+  });
+
+  // A person waiting for the user's own decision is not held by the stop: the app has nothing planned for them either way.
+  it("plans nothing during a safety stop for a person who waits on the user, and keeps After you resume for the app's own steps", () => {
+    for (const stage of ["pending_approval", "needs_review"] as const) {
+      expect(nextActionWhen({ ...base, stage, at: "2026-11-12T12:30:00Z", safetyStop: true }), stage).toBeUndefined();
+    }
+    for (const stage of ["approved", "invited", "accepted", "message_sent"] as const) {
+      expect(nextActionWhen({ ...base, stage, at: "2026-11-12T12:30:00Z", safetyStop: true }), stage).toBe("After you resume");
+    }
   });
 });
 
@@ -189,7 +199,7 @@ describe("budgetNote", () => {
 
   it("says a warm-up allowance, and nothing for an open budget", () => {
     const open = { used: 2, limit: 5, open: true, resumesAt: null };
-    expect(budgetNote({ ...base, kind: "invite", budget: open, warmUpTarget: 20 })).toBe(`Warm-up: today's allowance, rising to ${nb("20 a day")}`);
+    expect(budgetNote({ ...base, kind: "invite", budget: open, warmUpTarget: 20 })).toBe(`Warm-up: today’s allowance, rising to ${nb("20 a day")}`);
     expect(budgetNote({ ...base, kind: "invite", budget: open })).toBeUndefined();
     expect(budgetNote({ ...base, budget: open, warmUpTarget: 20 })).toBeUndefined();
   });
@@ -231,9 +241,10 @@ describe("campaignsSummary", () => {
     expect(campaignsSummary(["paused"], false)).toBe(`${nb("1 campaign")}, 0 active`);
   });
 
-  // During a safety stop the table says "Stopped by safety stop" for those campaigns, so the header does too.
-  it("says the campaigns a safety stop halted as stopped", () => {
-    expect(campaignsSummary(["running", "awaiting_approval", "finding", "paused", "draft"], true)).toBe(`${nb("5 campaigns")}, 3 stopped by safety stop`);
-    expect(campaignsSummary(["paused", "draft"], true)).toBe(`${nb("2 campaigns")}, 0 active`);
+  // During a safety stop the red banner right above already says everything is stopped, and the table says which:
+  // the header does not say it a third time, and no campaign is active.
+  it("says only how many campaigns there are during a safety stop", () => {
+    expect(campaignsSummary(["running", "awaiting_approval", "finding", "paused", "draft"], true)).toBe(nb("5 campaigns"));
+    expect(campaignsSummary(["paused", "draft"], true)).toBe(nb("2 campaigns"));
   });
 });

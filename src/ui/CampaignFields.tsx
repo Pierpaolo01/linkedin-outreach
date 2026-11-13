@@ -1,8 +1,8 @@
 import { useId, useRef, useState, type ReactNode } from "react";
 import { previewCampaign } from "./api";
-import type { PreviewText } from "./apiSchemas";
+import type { CampaignPreview, PreviewText } from "./apiSchemas";
 import { INVITE_NOTE_MAX, VARIABLES, type CampaignForm, type FieldErrors, type SetField } from "./campaignForm";
-import { NBSP } from "./format";
+import { joinWords, NBSP, withStop } from "./format";
 import { describedByError, errorProps, FieldError, FilledText, hintIdOf, LoadError, Notice, SECONDARY_BUTTON, SwitchRow, useDebounced } from "./formParts";
 import { Link } from "./router";
 import { useLoad } from "./useLoad";
@@ -194,6 +194,7 @@ function TemplatePreview(props: {
     { keepPrevious: true },
   );
   const templates = loaded.data?.templates;
+  const problems = loaded.data === undefined ? [] : templateProblems(loaded.data.items);
 
   return (
     <aside aria-label="Preview" className="min-w-0 @preview:sticky @preview:top-6 @preview:self-start" data-testid="preview">
@@ -209,13 +210,21 @@ function TemplatePreview(props: {
               ? "Filled in for an invented person until the campaign finds real people."
               : "Filled in for the first people this campaign found, exactly as they would receive it."}
           </p>
+          {/* A mistake in a template is the same for everyone: said once, in the error tone the field shows it in. */}
+          {problems.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-1 text-sm text-error" data-testid="preview-problems">
+              {problems.map((problem) => (
+                <li key={problem}>{problem}</li>
+              ))}
+            </ul>
+          )}
           <ul className="mt-3 flex flex-col gap-4">
             {loaded.data.items.map((item) => (
               <li key={item.prospectId ?? "sample"} className="flex flex-col gap-2 border-l-2 border-base-300 pl-3 text-sm">
                 <p className="font-semibold">{item.fullName}</p>
-                <PreviewLine label="Invite note" text={item.inviteNote} template={templates?.inviteNote} none="No note: the invite goes without one." />
-                <PreviewLine label="First message" text={item.firstMessage} template={templates?.firstMessage} none="" />
-                <PreviewLine label="Follow-up" text={item.followUp} template={templates?.followUp} none="No follow-up." />
+                <PreviewLine label={TEXT_LABEL.inviteNote} text={item.inviteNote} template={templates?.inviteNote} none="No note: the invite goes without one." />
+                <PreviewLine label={TEXT_LABEL.firstMessage} text={item.firstMessage} template={templates?.firstMessage} none="" />
+                <PreviewLine label={TEXT_LABEL.followUp} text={item.followUp} template={templates?.followUp} none="No follow-up." />
               </li>
             ))}
           </ul>
@@ -225,8 +234,36 @@ function TemplatePreview(props: {
   );
 }
 
+const TEXT_LABEL: Readonly<Record<TextKey, string>> = { inviteNote: "Invite note", firstMessage: "First message", followUp: "Follow-up" };
+const TEXT_KEYS = ["inviteNote", "firstMessage", "followUp"] as const satisfies readonly TextKey[];
+
+/** A problem with the template itself, the same for everyone (or, for a text too long, for whoever it is too long for). */
+const TEMPLATE_PROBLEMS: ReadonlySet<string> = new Set(["unknown_variable", "malformed", "too_long"]);
+const isTemplateProblem = (text: PreviewText | null) => text !== null && !text.ok && TEMPLATE_PROBLEMS.has(text.problem);
+
+/**
+ * The template mistakes in a preview, once each, as sentences naming the text: "Follow-up: {{oops}} is not a
+ * variable." A text too long is said once with the people it is too long for.
+ */
+function templateProblems(items: CampaignPreview["items"]): string[] {
+  return TEXT_KEYS.flatMap((key) => {
+    const failed = items.flatMap((item) => {
+      const text = item[key];
+      return text !== null && !text.ok && TEMPLATE_PROBLEMS.has(text.problem) ? [{ name: item.fullName, text }] : [];
+    });
+    const first = failed[0];
+    if (first === undefined) return [];
+    if (first.text.problem === "too_long") {
+      return [withStop(`${TEXT_LABEL[key]}: longer than ${INVITE_NOTE_MAX}${NBSP}characters for ${joinWords(failed.map((f) => f.name))}`)];
+    }
+    return [withStop(`${TEXT_LABEL[key]}: ${first.text.message}`)];
+  });
+}
+
 function PreviewLine(props: { readonly label: string; readonly text: PreviewText | null; readonly template: string | undefined; readonly none: string }) {
   const { label, text, template, none } = props;
+  // Said once above the people (`templateProblems`), not again for each of them.
+  if (isTemplateProblem(text)) return null;
   let body: ReactNode;
   if (text === null) body = <p className="text-muted">{none}</p>;
   else if (text.ok) {
@@ -243,7 +280,8 @@ function PreviewLine(props: { readonly label: string; readonly text: PreviewText
       </>
     );
   } else if (text.problem === "empty") body = <p className="text-muted">Nothing written yet.</p>;
-  else body = <Notice tone="waits">{text.message}</Notice>;
+  // This person's text cannot be written yet (a value they lack): plain information, not amber, which means "waits for you".
+  else body = <Notice tone="note">{withStop(text.message)}</Notice>;
   return (
     <div>
       <p className="text-caption text-muted">{label}</p>
@@ -332,6 +370,9 @@ export function TimingFields({ form, set, errors }: { readonly form: CampaignFor
   );
 }
 
+/** The app's rule on a wait's two boxes (`src/campaigns/rules.ts`), which it reports on the shortest. */
+const PAIR_RULE = /^The shortest wait must not be longer than the longest/;
+
 type HourKey = "acceptToMessageMinHours" | "acceptToMessageMaxHours" | "followUpDelayMinHours" | "followUpDelayMaxHours";
 
 function HourRange(props: {
@@ -346,18 +387,28 @@ function HourRange(props: {
   const [minKey, minValue] = props.min;
   const [maxKey, maxValue] = props.max;
   const error = props.errors[minKey] ?? props.errors[maxKey];
+  // The app's rule on the pair (the shortest above the longest) arrives on the shortest; it is about both boxes.
+  const pairError = props.errors[minKey] !== undefined && PAIR_RULE.test(props.errors[minKey]);
   const groupId = useId();
-  const box = (key: HourKey, value: string, label: string) => (
-    <input
-      inputMode="numeric"
-      aria-label={`${props.legend}: ${label}`}
-      className={`input input-sm w-20 bg-base-100 nums ${props.errors[key] === undefined ? "" : "input-error"}`}
-      value={value}
-      onChange={(event) => props.set(key, event.target.value)}
-      aria-invalid={props.errors[key] !== undefined || undefined}
-      {...describedByError(groupId, error, { hint: props.note === undefined ? undefined : hintIdOf(groupId) })}
-    />
-  );
+  const box = (key: HourKey, value: string, label: string) => {
+    // A box is marked when it is wrong itself, or when the pair is: then both are, and the first takes the focus.
+    const invalid = props.errors[key] !== undefined || pairError;
+    return (
+      <input
+        inputMode="numeric"
+        aria-label={`${props.legend}: ${label}`}
+        className={`input input-sm w-20 bg-base-100 nums ${invalid ? "input-error" : ""}`}
+        value={value}
+        onChange={(event) => {
+          props.set(key, event.target.value);
+          // A change to either box answers the rule on the pair, so the other box is no longer marked for it.
+          if (pairError && key !== minKey) props.set(minKey, minValue);
+        }}
+        aria-invalid={invalid || undefined}
+        {...describedByError(groupId, invalid ? error : undefined, { hint: props.note === undefined ? undefined : hintIdOf(groupId) })}
+      />
+    );
+  };
   return (
     <fieldset>
       <legend className="font-medium">{props.legend}</legend>

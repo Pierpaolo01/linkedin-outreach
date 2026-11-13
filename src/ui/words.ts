@@ -23,11 +23,13 @@ export const PAUSABLE: ReadonlySet<CampaignStatus> = new Set<CampaignStatus>(["f
 
 /**
  * The Campaigns page's count: every campaign, and those at work (finding people, waiting for approval or running) as
- * active. During a safety stop those are the ones the table says "Stopped by safety stop" for, so the count says so too.
+ * active. During a safety stop none is at work, and the red banner right above and the table already say which it
+ * halted, so the count is the number of campaigns alone.
  */
 export function campaignsSummary(statuses: readonly CampaignStatus[], safetyStop: boolean): string {
-  const working = statuses.filter((status) => PAUSABLE.has(status)).length;
-  return `${plural(statuses.length, "campaign", "campaigns")}, ${working} ${safetyStop && working > 0 ? "stopped by safety stop" : "active"}`;
+  const all = plural(statuses.length, "campaign", "campaigns");
+  if (safetyStop) return all;
+  return `${all}, ${statuses.filter((status) => PAUSABLE.has(status)).length} active`;
 }
 
 /**
@@ -47,7 +49,7 @@ export function budgetNote(args: {
   const { budget } = args;
   if (!budget.open) return budget.resumesAt === null ? "Budget spent" : `Budget spent; it resets ${formatResume(budget.resumesAt, args.timeZone, args.now)}`;
   if (args.kind === "invite" && args.warmUpTarget !== undefined && budget.limit < args.warmUpTarget) {
-    return `Warm-up: today's allowance, rising to ${args.warmUpTarget}${NBSP}a${NBSP}day`;
+    return `Warm-up: today’s allowance, rising to ${args.warmUpTarget}${NBSP}a${NBSP}day`;
   }
   return undefined;
 }
@@ -89,19 +91,19 @@ export function discoveryWaitSentence(args: { readonly wait: DiscoveryWait; read
     case "search_limit": {
       const date = formatDate(wait.until, args.timeZone);
       return safetyStop
-        ? `LinkedIn's monthly search limit is reached. It resets on ${date}.`
-        : `Finding people is waiting: LinkedIn's monthly search limit is reached. It resumes on ${date}.`;
+        ? `LinkedIn’s monthly search limit is reached. It resets on ${date}.`
+        : `Finding people is waiting: LinkedIn’s monthly search limit is reached. It resets on ${date}.`;
     }
     case "no_new_people":
       return safetyStop
-        ? "LinkedIn's recommendations showed nobody new today."
-        : "Finding people is waiting: LinkedIn's recommendations show nobody new today. The app looks again tomorrow.";
+        ? "LinkedIn’s recommendations showed nobody new today."
+        : "Finding people is waiting: LinkedIn’s recommendations show nobody new today. The app looks again tomorrow.";
     case "unreadable":
       return safetyStop
-        ? "The app could not read LinkedIn's page; the activity log has the details."
-        : "Finding people is waiting: the app could not read LinkedIn's page. It looks again tomorrow; the activity log has the details.";
+        ? "The app could not read LinkedIn’s page; the activity log has the details."
+        : "Finding people is waiting: the app could not read LinkedIn’s page. It looks again tomorrow; the activity log has the details.";
     case "exhausted":
-      return "Finding people has stopped: there is nobody more to find from this campaign's sources.";
+      return "Finding people has stopped: there is nobody more to find from this campaign’s sources.";
     default: {
       const _exhaustive: never = wait;
       return _exhaustive;
@@ -125,13 +127,24 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}${NBSP}MB`;
 }
 
+/** Stages that wait on the user's own decision (approve or reject, or choose in Needs review): the app plans nothing for them. */
+const WAITS_ON_USER: ReadonlySet<ProspectStage> = new Set<ProspectStage>(["pending_approval", "needs_review"]);
+
 /**
  * When a prospect's next step is planned, as a value in the People table's column (so with a capital, like the
- * column's other values): "Today at 10:42", or "Due now" when the moment has passed. During a safety stop no step is
- * sent at its time, so it says "After you resume" instead of a time that would not hold.
+ * column's other values): "Today at 10:42", or "Due now" when the moment has passed. During a safety stop no step of
+ * the app's is sent at its time, so it says "After you resume" instead of a time that would not hold; a person who
+ * waits on the user's own decision is not waiting for the resume, so the cell shows nothing planned (undefined), as
+ * it does for anyone without a next step.
  */
-export function nextActionWhen(args: { readonly at: string; readonly timeZone: string; readonly now: Date; readonly safetyStop: boolean }): string {
-  if (args.safetyStop) return "After you resume";
+export function nextActionWhen(args: {
+  readonly at: string;
+  readonly stage: ProspectStage;
+  readonly timeZone: string;
+  readonly now: Date;
+  readonly safetyStop: boolean;
+}): string | undefined {
+  if (args.safetyStop) return WAITS_ON_USER.has(args.stage) ? undefined : "After you resume";
   return new Date(args.at).getTime() <= args.now.getTime() ? "Due now" : capitalised(formatWhen(args.at, args.timeZone, args.now));
 }
 

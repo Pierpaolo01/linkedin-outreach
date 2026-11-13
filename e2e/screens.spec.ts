@@ -252,7 +252,7 @@ test("campaigns: pause and resume, a waiting discovery, and archive after a conf
   await hotels.getByRole("button", { name: "Resume Hotel owners, Rome" }).click();
   await expect(hotels.getByTestId("campaign-status")).toHaveText("Running");
 
-  await expect(row(page, "Local trades, Milan")).toContainText(/LinkedIn's monthly search limit is reached\. It resumes on 1\s\w+\s\d{4}\./);
+  await expect(row(page, "Local trades, Milan")).toContainText(/LinkedIn’s monthly search limit is reached\. It resets on 1\s\w+\s\d{4}\./);
   await expect(row(page, "Restaurants, Naples")).toContainText("there is nobody more to find");
 
   const draft = row(page, "Dentists, Bologna");
@@ -280,7 +280,7 @@ test("a recommendations campaign with nobody new today says it looks again tomor
     await route.fulfill({ response, json: { ...json, campaigns } });
   });
   await page.goto("/campaigns");
-  const sentence = "Finding people is waiting: LinkedIn's recommendations show nobody new today. The app looks again tomorrow.";
+  const sentence = "Finding people is waiting: LinkedIn’s recommendations show nobody new today. The app looks again tomorrow.";
   await expect(row(page, "Architects, Turin")).toContainText(sentence);
   await row(page, "Architects, Turin").getByRole("link", { name: "Architects, Turin", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Architects, Turin");
@@ -657,7 +657,7 @@ test("wizard on a phone: a refused Continue or Start takes the focus and the vie
   await expect(summary).toBeFocused();
   await expect(summary).toBeInViewport({ ratio: 1 });
   await expect(summary).toHaveAttribute("role", "alert");
-  await expect(summary).toContainText("Fix Who fits and Messages, marked below, then press Start again.");
+  await expect(summary).toContainText("Fix Who fits and Messages, marked below, then press Start the campaign again.");
 });
 
 const INK = "rgb(29, 37, 33)";
@@ -950,4 +950,148 @@ test("dates in sentences never break: a waiting discovery's reset date is one ph
     return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
   });
   expect(lines).toBe(1);
+});
+
+// ------------------------------------------------------------ council review, round 6
+
+test("wizard: while a save error shows, the header says the draft is not saved and when it last was", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const id = await draftToMessages(page, "Test header after a failed save");
+  const aside = page.getByTestId("page-aside");
+  await expect(aside).toHaveText(/^Draft saved at \d{2}:\d{2}$/);
+  const savedAt = /\d{2}:\d{2}/.exec(await aside.innerText())?.[0];
+  await page.getByLabel("First message").fill("Test first message for {{first_name}}");
+  await page.route(
+    (url) => url.pathname === `/api/campaigns/${id}`,
+    async (route) => (route.request().method() === "PATCH" ? route.fulfill({ status: 500, json: { error: "Test failure" } }) : route.fallback()),
+  );
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByTestId("save-error")).toBeVisible();
+  // Never "Draft saved at" right above "The draft was not saved".
+  await expect(aside).toHaveText(`Not saved. Last saved at ${savedAt ?? ""}.`);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByRole("heading", { name: "Timings", level: 2 })).toBeVisible();
+  await expect(page.getByTestId("save-error")).toHaveCount(0);
+  await expect(aside).toHaveText(/^Draft saved at \d{2}:\d{2}$/);
+});
+
+test("wizard: a draft whose first save failed says it is not saved yet", async ({ page }) => {
+  await page.route(
+    (url) => url.pathname === "/api/campaigns",
+    async (route) => (route.request().method() === "POST" ? route.fulfill({ status: 500, json: { error: "Test failure" } }) : route.fallback()),
+  );
+  await page.goto("/campaigns/new");
+  await page.getByLabel("Campaign name").fill("Test never saved");
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page.getByTestId("save-error")).toBeVisible();
+  await expect(page.getByTestId("page-aside")).toHaveText("Not saved yet.");
+});
+
+test("live edit: a mistake in a template is said once in the preview, in the error tone, never amber per person", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/campaigns/1");
+  await page.getByRole("button", { name: "Edit messages and timings" }).click();
+  const form = page.getByTestId("live-edit");
+  await form.getByLabel(/^Follow-up/).fill("test follow-up {{oops}}");
+  const preview = form.getByTestId("preview");
+  const said = preview.getByText(/\{\{oops\}\} is not a variable/);
+  await expect(said).toHaveCount(1);
+  await expect(said).toHaveText("Follow-up: {{oops}} is not a variable.");
+  await expect(said).toHaveCSS("color", STOP_RED);
+  // No amber anywhere in the preview: amber means "waits for you".
+  await expect(preview.locator('[class*="bg-accent"]')).toHaveCount(0);
+  // The people's other texts are still shown.
+  await expect(preview.getByTestId("sent-text").first()).toBeVisible();
+});
+
+test("wizard: a refused Start names the button as it is, and an error under its own label does not repeat it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await draftToMessages(page, "Test start refused");
+  await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: /Review and start/ }).click();
+  await page.getByRole("button", { name: "Start the campaign" }).click();
+  const summary = page.getByTestId("start-error");
+  await expect(summary).toContainText("then press Start the campaign again.");
+  await expect(summary).not.toContainText("press Start again");
+  const messages = page.getByTestId("review-step-5");
+  const error = messages.getByTestId("field-error");
+  await expect(error).toHaveText("Write the first message.");
+  // It sits under the First message row's value, beside its label.
+  const label = messages.getByRole("term").filter({ hasText: "First message" });
+  const labelBox = await label.boundingBox();
+  const errorBox = await error.boundingBox();
+  expect(errorBox !== null && labelBox !== null && errorBox.y > labelBox.y && errorBox.y - labelBox.y < 60).toBe(true);
+
+  // At 1440 every label of the review is one line: the label column is wide enough for "Withdraw an unaccepted invite after".
+  const withdraw = page.getByTestId("review-step-6").getByRole("term").filter({ hasText: "Withdraw an unaccepted invite after" });
+  const height = await withdraw.evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
+  expect(height).toBeLessThan(1.5);
+});
+
+test("settings: a range focuses the box that is wrong, and a minimum above its maximum marks both", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/settings");
+  const shortest = page.getByLabel("Shortest gap in seconds");
+  const longest = page.getByLabel("Longest gap in seconds");
+  const save = page.getByRole("button", { name: "Save settings" });
+
+  // Text in the second box: that box takes the focus and is the only one marked.
+  await longest.fill("many");
+  await save.click();
+  await expect(longest).toBeFocused();
+  await expect(longest).toHaveAttribute("aria-invalid", "true");
+  await expect(shortest).not.toHaveAttribute("aria-invalid", "true");
+  await expect(shortest).not.toHaveClass(/input-error/);
+
+  // A minimum above the maximum: a problem of the pair, so both are marked and the first takes the focus.
+  await shortest.fill("90");
+  await longest.fill("30");
+  await save.click();
+  await expect(page.getByText("The first number must not be above the second.")).toBeVisible();
+  for (const box of [shortest, longest]) {
+    await expect(box).toHaveAttribute("aria-invalid", "true");
+    await expect(box).toHaveClass(/input-error/);
+  }
+  await expect(shortest).toBeFocused();
+
+  // The working window's hours, the same way.
+  await page.getByRole("button", { name: "Undo changes" }).click();
+  const start = page.getByLabel("Start of the working day");
+  const end = page.getByLabel("End of the working day");
+  await end.fill("08:00");
+  await save.click();
+  await expect(page.getByText("The end must be after the start.")).toBeVisible();
+  for (const box of [start, end]) {
+    await expect(box).toHaveAttribute("aria-invalid", "true");
+    await expect(box).toHaveClass(/input-error/);
+  }
+  await expect(start).toBeFocused();
+  await page.getByRole("button", { name: "Undo changes" }).click();
+});
+
+test("live edit: a wait's shortest above its longest marks both boxes; text in the longest focuses that box", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/campaigns/1");
+  await page.getByRole("button", { name: "Edit messages and timings" }).click();
+  const form = page.getByTestId("live-edit");
+  const shortest = form.getByLabel("Before the first message: shortest wait in hours");
+  const longest = form.getByLabel("Before the first message: longest wait in hours");
+  const save = form.getByRole("button", { name: "Save changes" });
+
+  await longest.fill("many");
+  await save.click();
+  await expect(longest).toBeFocused();
+  await expect(longest).toHaveAttribute("aria-invalid", "true");
+  await expect(shortest).not.toHaveAttribute("aria-invalid", "true");
+
+  await shortest.fill("60");
+  await longest.fill("30");
+  await save.click();
+  await expect(form.getByText(/The shortest wait must not be longer than the longest/)).toBeVisible();
+  for (const box of [shortest, longest]) {
+    await expect(box).toHaveAttribute("aria-invalid", "true");
+    await expect(box).toHaveClass(/input-error/);
+  }
+  await expect(shortest).toBeFocused();
+  await form.getByRole("button", { name: "Cancel" }).click();
 });

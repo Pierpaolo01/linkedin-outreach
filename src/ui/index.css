@@ -2,7 +2,11 @@
 @plugin "daisyui" {
   themes: false;
 }
-/* The dashboard's one theme: a quiet green-grey desk, amber for what waits on the user, red only for a safety stop. */
+/*
+ * The dashboard's one theme: a quiet green-grey desk, amber for what waits on the user. Red is for what went wrong or
+ * would destroy: filled red (a solid bar, a dot) only for a safety stop and what raises it ("LinkedIn needs you"),
+ * Stop Red text and edges for a field's error and a failed action, and the solid red button of a destructive confirm.
+ */
 @plugin "daisyui/theme" {
   name: "outreach";
   default: true;
@@ -230,9 +234,11 @@ p {
 }
 
 /*
- * One focus indicator: a 2px Ink outline (14.7:1 on Desk Paper, 13.6:1 on Sidebar Sage) on everything that takes focus
+ * One focus indicator: a 2px Ink outline (14.7:1 on Desk Paper, 13.5:1 on Sidebar Sage) on everything that takes focus
  * from the keyboard. Buttons, fields, switches and radios keep daisyUI's own 2px outline in the same family. A menu
- * item draws it inside its box (its neighbours are 2px away); on the current item (Dark Moss) it is light ink (12.8:1).
+ * item draws it inside its box (its neighbours are 2px away); on the current item (Dark Moss) it is light ink (12.3:1).
+ * One exception: an approval row draws a 2px Dark Moss ring inside its edge (`ring-inset`, pages/Approvals.tsx), as the
+ * rows touch each other and an outline outside would be cut by the next row.
  */
 :where(a:not(.btn), summary, [tabindex="0"]:not([role="row"])):focus-visible {
   outline: 2px solid var(--color-base-content);

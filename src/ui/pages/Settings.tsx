@@ -136,6 +136,16 @@ const RULE_WORDS: Readonly<Record<string, string>> = {
 };
 const words = (message: string) => RULE_WORDS[message] ?? asSentence(message);
 
+/**
+ * The two controls a rule of the app's on a group is about ("min must not exceed max" on `actionGapSeconds`): the rule
+ * is about the pair, so both are marked, and the first takes the focus. Empty for any other message.
+ */
+function pairOf(group: string, message: string): readonly string[] {
+  if (message === "end must be after start") return [`${group}.start`, `${group}.end`];
+  const exceeds = /^(\w+) must not exceed (\w+)$/.exec(message);
+  return exceeds?.[1] === undefined || exceeds[2] === undefined ? [] : [`${group}.${exceeds[1]}`, `${group}.${exceeds[2]}`];
+}
+
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const PROVIDER_LABEL: Readonly<Record<AiProvider, string>> = {
   claude_cli: "Claude Code on this Mac",
@@ -168,6 +178,8 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
   const [base, setBase] = useState(settings);
   const [form, setForm] = useState<Form>(() => toForm(settings));
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  /** The controls marked by a rule on their pair, by the group the rule arrived on (`pairOf`). */
+  const [pairs, setPairs] = useState<ReadonlyMap<string, readonly string[]>>(new Map());
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ readonly ok: boolean; readonly text: string; readonly detail?: string | undefined } | undefined>(undefined);
   const ops = useLoad(getOps, "ops");
@@ -193,13 +205,18 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
     setForm((f) => ({ ...f, ...next }));
     setResult(undefined);
     setErrors((e) => Object.fromEntries(Object.entries(e).filter(([path]) => !paths.some((p) => path === p || path.startsWith(`${p}.`) || p.startsWith(`${path}.`)))));
+    // A change to either control of a pair answers the rule on the pair.
+    setPairs((map) => new Map([...map].filter(([group]) => !paths.some((p) => p === group || p.startsWith(`${group}.`)))));
   };
+  /** A control is marked when it is wrong itself, or when a rule on its pair is broken. */
+  const invalid = (path: string) => errors[path] !== undefined || [...pairs.values()].some((paths) => paths.includes(path));
   const setNumber = (path: string) => (value: string) => change({ numbers: { ...form.numbers, [path]: value } }, path);
 
   const save = () => {
     const built = toPatch(form, base);
     if (Object.keys(built.errors).length > 0) {
       setErrors(built.errors);
+      setPairs(new Map());
       setResult({ ok: false, text: "Nothing was saved: some settings need attention. Fix the marked ones, then press Save settings again." });
       setRefusals((n) => n + 1);
       return;
@@ -211,12 +228,14 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
         setBase(next);
         setForm(toForm(next));
         setErrors({});
+        setPairs(new Map());
         setResult({ ok: true, text: "Settings saved." });
         onSaved();
       })
       .catch((failed: unknown) => {
         const error = toApiError(failed);
         setErrors(Object.fromEntries(Object.entries(error.fields).map(([path, message]) => [path, words(message)])));
+        setPairs(new Map(Object.entries(error.fields).flatMap(([path, message]) => (pairOf(path, message).length === 0 ? [] : [[path, pairOf(path, message)] as const]))));
         if (Object.keys(error.fields).length > 0) {
           setResult({ ok: false, text: "Nothing was saved: some settings are not valid. Fix the marked ones, then press Save settings again." });
           setRefusals((n) => n + 1);
@@ -240,17 +259,18 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
   const errorOf = (...paths: string[]) => paths.map((p) => errors[p]).find((m) => m !== undefined);
   const groupError = (group: string) => errorOf(...(GROUPS[group] ?? [group]));
   /**
-   * A number box: marked invalid by its own error, described by its group's error line and then by the line on what it
-   * is for: its own (a budget's row) or its group's (`hintOf`, the path whose hint it shares).
+   * A number box: marked invalid by its own error or its pair's (`invalid`); while marked, described by its group's
+   * error line, then by the line on what it is for: its own (a budget's row) or its group's (`hintOf`, the path whose
+   * hint it shares). A valid box beside a wrong one is not described by the other's error.
    */
   const num = (path: string, label: string, { width = "w-20", hintOf = path }: { readonly width?: string; readonly hintOf?: string } = {}) => (
     <input
       id={fieldId(path)}
       aria-label={label}
-      aria-invalid={errors[path] !== undefined || undefined}
-      {...describedByError(fieldId(groupOf(path)), groupError(groupOf(path)), { hint: HINTED.has(hintOf) ? hintIdOf(fieldId(hintOf)) : undefined })}
+      aria-invalid={invalid(path) || undefined}
+      {...describedByError(fieldId(groupOf(path)), invalid(path) ? groupError(groupOf(path)) : undefined, { hint: HINTED.has(hintOf) ? hintIdOf(fieldId(hintOf)) : undefined })}
       inputMode="numeric"
-      className={`input input-sm ${width} bg-base-100 nums ${errors[path] === undefined ? "" : "input-error"}`}
+      className={`input input-sm ${width} bg-base-100 nums ${invalid(path) ? "input-error" : ""}`}
       value={form.numbers[path] ?? ""}
       onChange={(event) => setNumber(path)(event.target.value)}
     />
@@ -316,9 +336,9 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     id={ids.start}
                     type="time"
                     aria-label="Start of the working day"
-                    aria-invalid={errors["workingHours.start"] !== undefined || undefined}
-                    {...describedByError(fieldId("workingHours"), groupError("workingHours"))}
-                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${errors["workingHours.start"] === undefined ? "" : "input-error"}`}
+                    aria-invalid={invalid("workingHours.start") || undefined}
+                    {...describedByError(fieldId("workingHours"), invalid("workingHours.start") ? groupError("workingHours") : undefined)}
+                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${invalid("workingHours.start") ? "input-error" : ""}`}
                     value={form.start}
                     onChange={(event) => change({ start: event.target.value }, "workingHours")}
                   />
@@ -329,9 +349,9 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                     id={ids.end}
                     type="time"
                     aria-label="End of the working day"
-                    aria-invalid={errors["workingHours.end"] !== undefined || errors["workingHours"] !== undefined || undefined}
-                    {...describedByError(fieldId("workingHours"), groupError("workingHours"))}
-                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${errors["workingHours.end"] === undefined && errors["workingHours"] === undefined ? "" : "input-error"}`}
+                    aria-invalid={invalid("workingHours.end") || undefined}
+                    {...describedByError(fieldId("workingHours"), invalid("workingHours.end") ? groupError("workingHours") : undefined)}
+                    className={`input input-sm w-full min-w-0 bg-base-100 nums sm:w-32 ${invalid("workingHours.end") ? "input-error" : ""}`}
                     value={form.end}
                     onChange={(event) => change({ end: event.target.value }, "workingHours")}
                   />
@@ -537,17 +557,20 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
           <button type="button" className={`${SECONDARY_BUTTON} btn-sm`} disabled={saving} onClick={() => {
               setForm(toForm(base));
               setErrors({});
+              setPairs(new Map());
               setResult(undefined);
             }}
           >
             Undo changes
           </button>
         )}
+        {/* One line says the state of the changes; a refused or failed save replaces it with the failure, never beside it. */}
         <div ref={resultLine} role="status" tabIndex={-1} className="min-w-0 text-sm" data-testid="settings-result">
-          <p className={result === undefined ? "text-muted" : result.ok ? "text-primary" : "text-error"}>
-            {result?.text ?? (dirty ? "You have changes that are not saved." : "No changes to save.")}
-          </p>
-          {result?.detail !== undefined && <p className="text-muted">{result.detail}</p>}
+          {result !== undefined && !result.ok ? (
+            <ActionError message={{ text: result.text, detail: result.detail }} announce={false} />
+          ) : (
+            <p className={result === undefined ? "text-muted" : "text-primary"}>{result?.text ?? (dirty ? "You have changes that are not saved." : "No changes to save.")}</p>
+          )}
         </div>
       </div>
     </>
@@ -643,12 +666,6 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
   const [running, setRunning] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [outcome, setOutcome] = useState<AiTest | { readonly failed: Failure } | undefined>(undefined);
-  const resultBox = useRef<HTMLDivElement>(null);
-  // A test that could not run, or an AI that answered with a problem: the result takes the focus (Test the AI was off while it ran).
-  const problem = outcome !== undefined && ("failed" in outcome || !outcome.ok);
-  useEffect(() => {
-    if (problem) resultBox.current?.focus({ preventScroll: true });
-  }, [problem, outcome]);
 
   useEffect(() => {
     if (!running) return;
@@ -680,25 +697,14 @@ function AiTestButton({ blocked }: { readonly blocked: boolean }) {
         )}
         {blocked && !running && <p className="text-sm text-muted">Save your changes first: the test uses the saved settings.</p>}
       </div>
-      {outcome !== undefined && (
-        <div
-          ref={resultBox}
-          role="status"
-          tabIndex={-1}
-          data-testid="ai-test-result"
-          className={`mt-3 rounded-field px-3 py-2 text-sm ${"failed" in outcome || !outcome.ok ? "bg-error/10 text-error" : "bg-score-high/60"}`}
-        >
-          {"failed" in outcome ? (
-            <>
-              <p>{outcome.failed.text}</p>
-              {outcome.failed.detail !== undefined && <p className="text-muted">{outcome.failed.detail}</p>}
-            </>
-          ) : (
-            <>
-              <p>{asSentence(outcome.message)}</p>
-              {outcome.ok && outcome.model !== null && outcome.model !== "" && <p className="text-muted">Model: {outcome.model}</p>}
-            </>
-          )}
+      {/* A test that could not run, or an AI that answered with a problem, is the one failure pattern, and takes the focus. */}
+      {outcome !== undefined && ("failed" in outcome || !outcome.ok) && (
+        <ActionError message={"failed" in outcome ? outcome.failed : asSentence(outcome.message)} takeFocus className="mt-3" testId="ai-test-result" />
+      )}
+      {outcome !== undefined && !("failed" in outcome) && outcome.ok && (
+        <div role="status" data-testid="ai-test-result" className="mt-3 rounded-field bg-score-high/60 px-3 py-2 text-sm">
+          <p>{asSentence(outcome.message)}</p>
+          {outcome.model !== null && outcome.model !== "" && <p className="text-muted">Model: {outcome.model}</p>}
         </div>
       )}
     </div>
@@ -724,7 +730,7 @@ function backupWords(result: BackupResult): { readonly ok: boolean; readonly tex
     case "created":
       return { ok: true, text: `Backed up${file === undefined ? "" : ` to ${file}`}.` };
     case "skipped":
-      return { ok: true, text: result.message == null ? `Today's backup${file === undefined ? "" : `, ${file},`} is already there.` : asSentence(result.message) };
+      return { ok: true, text: result.message == null ? `Today’s backup${file === undefined ? "" : `, ${file},`} is already there.` : asSentence(result.message) };
     case "failed":
       return { ok: false, ...failure(BACKUP_FAILED, result.message ?? undefined) };
     default: {
@@ -786,8 +792,7 @@ function Backups({ ops }: { readonly ops: OpsLoad }) {
         <Announce>
           {result !== undefined && (
             <div ref={resultLine} tabIndex={-1} className="text-sm" data-testid="backup-result">
-              <p className={result.ok ? "text-primary" : "text-error"}>{result.text}</p>
-              {result.detail !== undefined && <p className="text-muted">{result.detail}</p>}
+              {result.ok ? <p className="text-primary">{result.text}</p> : <ActionError message={{ text: result.text, detail: result.detail }} announce={false} />}
             </div>
           )}
         </Announce>

@@ -327,7 +327,8 @@ test("people scored while Approve all is open wait behind a line; the dialog app
   await expect(dialog).toBeVisible();
   state.arrived = true;
   await expect(page.getByTestId("count-approvals")).toHaveText(String(before + 1), { timeout: 8_000 });
-  await expect(page.getByTestId("new-arrivals")).toContainText("1 new person is waiting");
+  // A sentence in the app's style: a full stop, no dash.
+  await expect(page.getByTestId("new-arrivals")).toHaveText("1 new person is waiting. Close this to see them.");
   await expect(rows).toHaveCount(before);
   await expect(rows.filter({ hasText: LATE_PERSON })).toHaveCount(0);
 
@@ -920,14 +921,15 @@ test("the log's time and level mark sit on a wrapped message's first line, at ev
 });
 
 // The tests on the stop app that need its stop come before the one that resumes it.
-test("campaigns during a safety stop: the header says how many it stopped, and Pause stays a bordered button", async ({ page }) => {
+test("campaigns during a safety stop: the header says only how many campaigns there are, and Pause stays a bordered button", async ({ page }) => {
   await page.goto(appUrl("stop", "/campaigns"));
   const statuses = () => page.getByTestId("campaigns-table").getByTestId("campaign-status").allInnerTexts();
   await expect(page.getByTestId("campaign-row").first()).toBeVisible();
   const shown = await statuses();
   const halted = shown.filter((status) => status === "Stopped by safety stop").length;
   expect(halted).toBeGreaterThan(1);
-  await expect(page.getByText(/^\d+\scampaigns?, \d+ (active|stopped by safety stop)$/)).toHaveText(`${shown.length}\u00a0campaigns, ${halted} stopped by safety stop`);
+  // The red banner right above already says everything is stopped, and the table says which: the header does not repeat it.
+  await expect(page.getByTestId("page-aside")).toHaveText(`${shown.length}\u00a0campaigns`);
   // Pause on a halted campaign steps back (muted words) but stays a bordered button beside Archive's plain text.
   const pause = page.getByTestId("campaign-row").getByRole("button", { name: /^Pause / }).first();
   await expect(pause).toHaveCSS("color", MUTED);
@@ -940,7 +942,7 @@ test("during a safety stop nothing promises work at a time: Campaigns, a campaig
   await page.goto(appUrl("stop", "/campaigns"));
   const trades = page.getByTestId("campaign-row").filter({ has: page.getByRole("link", { name: "Local trades, Milan", exact: true }) });
   // Only what stays true either way: when LinkedIn's limit resets, never when finding people resumes.
-  await expect(trades).toContainText(/LinkedIn's monthly search limit is reached\. It resets on 1\s\w+\s\d{4}\./);
+  await expect(trades).toContainText(/LinkedIn’s monthly search limit is reached\. It resets on 1\s\w+\s\d{4}\./);
   await expect(page.getByTestId("campaigns-table").first()).not.toContainText(/resumes|looks again|tomorrow/);
 
   // A campaign's people with a planned step, one later today and one already due: both wait for the resume.
@@ -951,17 +953,27 @@ test("during a safety stop nothing promises work at a time: Campaigns, a campaig
     async (route) => {
       const response = await route.fetch();
       const json = (await response.json()) as { items: Record<string, unknown>[] };
-      const items = json.items.map((item, index) => ({ ...item, nextActionAt: index === 0 ? later : index === 1 ? due : null }));
+      // The first two wait on the app; the third waits for the user's approval, the fourth for the user's review.
+      const items = json.items.map((item, index) =>
+        index === 0 ? { ...item, stage: "invited", nextActionAt: later }
+        : index === 1 ? { ...item, stage: "accepted", nextActionAt: due }
+        : index === 2 ? { ...item, stage: "pending_approval", nextActionAt: later }
+        : index === 3 ? { ...item, stage: "needs_review", nextActionAt: later }
+        : { ...item, nextActionAt: null },
+      );
       await route.fulfill({ response, json: { ...json, items } });
     },
   );
   await trades.getByRole("link", { name: "Local trades, Milan", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Local trades, Milan");
-  await expect(page.getByText(/^LinkedIn's monthly search limit is reached\. It resets on 1\s\w+\s\d{4}\.$/)).toBeVisible();
+  await expect(page.getByText(/^LinkedIn’s monthly search limit is reached\. It resets on 1\s\w+\s\d{4}\.$/)).toBeVisible();
   await expect(page.getByText(/It resumes on|looks again/)).toHaveCount(0);
   const when = page.getByTestId("people-table").getByTestId("next-action-when");
   await expect(when).toHaveCount(2);
   expect(await when.allInnerTexts()).toEqual(["After you resume", "After you resume"]);
+  // A person who waits on the user's own decision is not waiting for the resume: nothing planned, as outside a stop.
+  const rows = page.getByTestId("people-table").getByTestId("prospect-row");
+  for (const index of [2, 3]) await expect(rows.nth(index).getByRole("cell", { name: "Nothing planned" })).toHaveCount(1);
   await expect(page.getByTestId("people-table")).not.toContainText(/due now|today at|tomorrow at/);
   // Pause on the halted campaign is the bordered secondary button with muted words, as on Home and Campaigns.
   const pause = page.getByRole("button", { name: "Pause", exact: true });
@@ -1021,7 +1033,7 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
   const banner = page.getByTestId("safety-stop");
   await expect(banner).toContainText("Safety stop. All LinkedIn activity is stopped.");
   await expect(banner).toContainText("LinkedIn is asking for a security check.");
-  await expect(banner).toContainText("What to do: Complete LinkedIn's check in the app's window, then press Resume.");
+  await expect(banner).toContainText("What to do: Complete LinkedIn’s check in the app’s window, then press Resume.");
   await expect(page.getByRole("region", { name: "Campaigns" })).toContainText("Stopped by safety stop");
   // The red session card leads with the stop; the window's state is one plain secondary line, never an all-clear light.
   const card = sidebar(page).getByTestId("session-status").locator("xpath=..");
@@ -1040,7 +1052,7 @@ test("the safety-stop banner says what to do, and Resume asks first", async ({ p
 
   await banner.getByRole("button", { name: "Resume" }).click();
   const dialog = page.getByRole("dialog", { name: "Resume LinkedIn activity?" });
-  await expect(dialog).toContainText("Before you resume: Complete LinkedIn's check in the app's window, then press Resume.");
+  await expect(dialog).toContainText("Before you resume: Complete LinkedIn’s check in the app’s window, then press Resume.");
   await dialog.getByRole("button", { name: "Not yet" }).click();
   await expect(dialog).toBeHidden();
   await expect(banner).toBeVisible();
@@ -1090,4 +1102,111 @@ test("a checkpoint shows the red banner with what to do", async ({ page }) => {
   await expect(banner).toContainText("LinkedIn needs you.");
   await expect(banner).toContainText("LinkedIn is asking for a security check in the dedicated window");
   await expect(banner.getByRole("button", { name: "Re-check" })).toBeVisible();
+});
+
+// ------------------------------------------------------------ council review, round 6
+
+test("needs review: after a decision the focus moves to the next person, and to the empty state when nobody is left", async ({ page }) => {
+  // The browser test plays the app: the resolves are answered here, so the demo's held people stay for other tests.
+  const resolved = new Set<unknown>();
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { needsYou: { needsReview: number } };
+    await route.fulfill({ response, json: { ...json, needsYou: { ...json.needsYou, needsReview: Math.max(0, json.needsYou.needsReview - resolved.size) } } });
+  });
+  await page.route(
+    (url) => url.pathname === "/api/review",
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { total: number; items: Record<string, unknown>[] };
+      const items = json.items.filter((item) => !resolved.has(item["id"]));
+      await route.fulfill({ response, json: { ...json, total: items.length, items } });
+    },
+  );
+  let held: Record<string, unknown>[] = [];
+  await page.route(
+    (url) => /^\/api\/prospects\/\d+\/resolve$/.test(url.pathname),
+    async (route) => {
+      const id = Number(/(\d+)\/resolve$/.exec(new URL(route.request().url()).pathname)?.[1]);
+      resolved.add(id);
+      const item = held.find((i) => i["id"] === id);
+      await route.fulfill({ json: { prospect: { ...item, stage: "stopped", reviewReason: null } } });
+    },
+  );
+  // The stop app: the demo app's held people are decided by the test above.
+  held = ((await (await page.request.get(appUrl("stop", "/api/review?pageSize=100"))).json()) as { items: Record<string, unknown>[] }).items;
+  expect(held.length).toBeGreaterThanOrEqual(2);
+
+  await page.goto(appUrl("stop", "/review"));
+  const items = page.getByTestId("review-item");
+  await expect(items).toHaveCount(held.length);
+  for (let left = held.length; left > 0; left -= 1) {
+    const first = items.first();
+    await first.getByRole("radio", { name: "Stop the sequence: nothing more is sent" }).check();
+    await first.getByRole("button", { name: "Confirm" }).click();
+    await expect(items).toHaveCount(left - 1);
+    if (left > 1) await expect(items.first()).toBeFocused();
+  }
+  await expect(page.getByTestId("review-empty")).toBeFocused();
+});
+
+test("approval queue: when the last row is decided, the focus moves to the empty state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // Two people in the list; the decisions are answered here, so the demo's queue stays for other tests.
+  const decided = new Set<unknown>();
+  let shown: Record<string, unknown>[] = [];
+  await page.route(
+    (url) => url.pathname === "/api/approvals",
+    async (route) => {
+      const response = await route.fetch();
+      const json = (await response.json()) as { total: number; items: Record<string, unknown>[] };
+      shown = json.items.slice(0, 2);
+      const items = shown.filter((item) => !decided.has(item["id"]));
+      await route.fulfill({ response, json: { ...json, total: items.length, items } });
+    },
+  );
+  await page.route(
+    (url) => /^\/api\/prospects\/\d+\/(approve|reject)$/.test(url.pathname),
+    async (route) => {
+      const id = Number(/(\d+)\/(approve|reject)$/.exec(new URL(route.request().url()).pathname)?.[1]);
+      decided.add(id);
+      await route.fulfill({ json: { prospect: { ...shown.find((i) => i["id"] === id), stage: "approved" } } });
+    },
+  );
+  await page.goto("/approvals");
+  const rows = page.getByTestId("approval-row");
+  await expect(rows).toHaveCount(2);
+  await rows.nth(1).getByRole("button", { name: "Reject" }).click();
+  // The last row left: the focus goes to the row before it.
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toBeFocused();
+  await page.keyboard.press("a");
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByTestId("queue-empty")).toBeFocused();
+});
+
+test("the session light agrees with the banner: red whenever LinkedIn needs you, a ring when not checked yet", async ({ page }) => {
+  const light = () => sidebar(page).getByTestId("session-status").locator("xpath=preceding-sibling::span[1]");
+  // Logged out: the red "LinkedIn needs you" bar, and the red dot.
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { session: Record<string, unknown> };
+    await route.fulfill({ response, json: { ...json, session: { ...json.session, status: "logged_out", lastCheckedAt: new Date().toISOString() } } });
+  });
+  await page.goto("/");
+  await expect(page.getByTestId("session-problem")).toContainText("LinkedIn needs you.");
+  await expect(sidebar(page).getByTestId("session-status")).toHaveText("Logged out");
+  await expect(light()).toHaveClass(/status-error/);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+
+  // Not checked yet: no banner, and the hollow ring of something that is not working.
+  await page.route("**/api/home", async (route) => {
+    const response = await route.fetch();
+    const json = (await response.json()) as { session: Record<string, unknown> };
+    await route.fulfill({ response, json: { ...json, session: { ...json.session, status: "unknown", lastCheckedAt: null } } });
+  });
+  await page.reload();
+  await expect(sidebar(page).getByTestId("session-status")).toHaveText("Not checked yet");
+  await expect(page.getByTestId("session-problem")).toHaveCount(0);
+  await expect(light()).toHaveClass(/status-hollow/);
 });

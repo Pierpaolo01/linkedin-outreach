@@ -103,12 +103,21 @@ export function asSentence(text: string): string {
   return withStop(clean.charAt(0).toUpperCase() + clean.slice(1));
 }
 
+/** A straight apostrophe between two letters ("LinkedIn's"), which the app shows as the typographic one. */
+const STRAIGHT_APOSTROPHE = /(?<=\p{L})'(?=\p{L})/gu;
+
+/** The typographic apostrophe (’) in place of the straight one between letters: the server's own words keep the straight one (D-10). */
+export function typographic(text: string): string {
+  return text.replace(STRAIGHT_APOSTROPHE, "\u2019");
+}
+
 /**
  * A line that ends as a sentence does: with exactly one full stop, unless it already ends with "!", "?", "…" or a
- * full stop. A trailing comma, colon or semicolon gives way to the full stop; a run of full stops becomes one.
+ * full stop. A trailing comma, colon or semicolon gives way to the full stop; a run of full stops becomes one. Every
+ * line from the server passes here (a log line, an error, a field's message), so its apostrophes become typographic too.
  */
 export function withStop(text: string): string {
-  const clean = text.trim();
+  const clean = typographic(text.trim());
   if (clean === "") return clean;
   if (/[!?…]$/.test(clean)) return clean;
   return `${clean.replace(/[\s.,;:]+$/, "")}.`;

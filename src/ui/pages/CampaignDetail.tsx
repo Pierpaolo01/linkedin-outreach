@@ -122,7 +122,7 @@ function Detail({ campaign, onChanged }: { readonly campaign: Campaign; readonly
           </Link>
         )}
         <p className="text-sm text-muted">
-          {campaign.discoverySource === "search" ? `From ${campaign.sourceUrls.length === 1 ? "a people search" : `${campaign.sourceUrls.length}${NBSP}people searches`}` : "From LinkedIn's recommendations"}
+          {campaign.discoverySource === "search" ? `From ${campaign.sourceUrls.length === 1 ? "a people search" : `${campaign.sourceUrls.length}${NBSP}people searches`}` : "From LinkedIn’s recommendations"}
           {campaign.autoApprove ? ". Auto-approve is on" : ""}.
         </p>
       </div>
@@ -160,7 +160,9 @@ function People({ campaign, safetyStop }: { readonly campaign: Campaign; readonl
   );
   const now = new Date();
   const items = loaded.data?.items ?? [];
-  const quietNext = items.every((p) => p.nextActionAt === null);
+  /** When a person's next step is planned, as the column says it; undefined when nothing is planned for them. */
+  const whenOf = (p: Prospect) => (p.nextActionAt === null ? undefined : nextActionWhen({ at: p.nextActionAt, stage: p.stage, timeZone, now, safetyStop }));
+  const quietNext = items.every((p) => whenOf(p) === undefined);
 
   return (
     <section className="mt-section" aria-labelledby="people">
@@ -233,8 +235,7 @@ function People({ campaign, safetyStop }: { readonly campaign: Campaign; readonl
                       quietNext={quietNext}
                       onToggle={() => setOpen((current) => (current === p.id ? null : p.id))}
                       timeZone={timeZone}
-                      now={now}
-                      safetyStop={safetyStop}
+                      when={whenOf(p)}
                     />
                     {open === p.id && (
                       <tr role="row" className="@max-people:block">
@@ -271,12 +272,12 @@ function ProspectRow(props: {
   readonly quietNext: boolean;
   readonly onToggle: () => void;
   readonly timeZone: string;
-  readonly now: Date;
-  /** During a safety stop a planned step waits for the user's resume, so it shows no time. */
-  readonly safetyStop: boolean;
+  /** When the next step is planned (`nextActionWhen`); undefined when nothing is planned for this person. */
+  readonly when: string | undefined;
 }) {
-  const { prospect: p, campaign, timeZone, now } = props;
+  const { prospect: p, campaign } = props;
   const next = nextStepWords(p.stage, campaign);
+  const { when } = props;
   const stopped = p.stopReason === "replied" ? " (they replied)" : p.stopReason === "manual_takeover" ? " (you messaged them yourself)" : "";
   const { headline, company } = p.person;
   /** The block prints the company after the headline unless the headline already says it. */
@@ -337,9 +338,9 @@ function ProspectRow(props: {
       </td>
       <td
         role="cell"
-        className={`${STACK_CELL} @max-people:col-span-3 @max-people:col-start-2 @max-people:row-start-2 ${props.quietNext ? "sr-only" : p.nextActionAt === null ? "@max-people:sr-only" : ""}`}
+        className={`${STACK_CELL} @max-people:col-span-3 @max-people:col-start-2 @max-people:row-start-2 ${props.quietNext ? "sr-only" : when === undefined ? "@max-people:sr-only" : ""}`}
       >
-        {p.nextActionAt === null ? (
+        {when === undefined ? (
           <span className="text-muted">
             <span aria-hidden="true">–</span>
             <span className="sr-only">Nothing planned</span>
@@ -351,7 +352,7 @@ function ProspectRow(props: {
             </span>
             {next !== undefined && <p>{next}</p>}
             <p className="whitespace-nowrap text-muted" data-testid="next-action-when">
-              {nextActionWhen({ at: p.nextActionAt, timeZone, now, safetyStop: props.safetyStop })}
+              {when}
             </p>
           </div>
         )}
@@ -544,7 +545,7 @@ function MessagesAndTimings({ campaign, onSaved }: { readonly campaign: Campaign
               {campaign.status === "draft" ? "A draft is changed in its setup steps." : `A${campaign.status === "archived" ? "n archived" : " finished"} campaign cannot be changed.`}
             </p>
           )}
-          <dl className={`${DEF_LIST} text-sm sm:grid-cols-[12rem_minmax(0,1fr)]`} data-testid="messages-list">
+          <dl className={`${DEF_LIST} text-sm`} data-testid="messages-list">
             <dt className={`${DEF_TERM} text-muted`}>Invite note</dt>
             <dd className="whitespace-pre-line">{campaign.inviteNote === null || campaign.inviteNote === "" ? <span className="text-muted">No note</span> : campaign.inviteNote}</dd>
             <dt className={`${DEF_TERM} text-muted`}>First message</dt>

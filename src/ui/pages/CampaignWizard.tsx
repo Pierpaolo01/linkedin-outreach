@@ -284,6 +284,17 @@ interface SaveQueue {
   lastSaved: Campaign | null;
 }
 
+/**
+ * The header's word on the draft: "Saving…" while a save the user asked for runs; after a save that went wrong (and
+ * none since that went through), "Not saved." with when it last was; else when it was saved, or "Draft" once it exists.
+ */
+function saveState(args: { readonly saving: boolean; readonly notSaved: boolean; readonly savedAt: string | null; readonly created: boolean }): string | undefined {
+  if (args.saving) return "Saving…";
+  if (args.notSaved) return args.savedAt === null ? "Not saved yet." : `Not saved. Last saved at ${args.savedAt}.`;
+  if (args.savedAt !== null) return `Draft saved at ${args.savedAt}`;
+  return args.created ? "Draft" : undefined;
+}
+
 function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCreated: (id: number) => void }) {
   const { home, refresh, timeZone } = useAppData();
   const stopped = home?.safetyStop != null;
@@ -308,6 +319,11 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
   const [loudSaves, setLoudSaves] = useState(0);
   const saving = loudSaves > 0;
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  /**
+   * The last save the user saw go wrong (refused with marked fields, or failed) has not been followed by one that went
+   * through: the header then says the draft is not saved, never "Draft saved at" above "The draft was not saved".
+   */
+  const [notSaved, setNotSaved] = useState(false);
   /** What came back when a save of the draft failed with no field to mark; the page says the rest. */
   const [saveFailed, setSaveFailed] = useState<Said | undefined>(undefined);
   const [startError, setStartError] = useState<string | Failure | undefined>(undefined);
@@ -337,7 +353,10 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     const keys = [...job.keys];
     const { fields, errors: local } = toFields(snapshot, keys);
     if (Object.keys(local).length > 0) {
-      if (!job.quiet) setErrors((e) => ({ ...e, ...local }));
+      if (!job.quiet) {
+        setErrors((e) => ({ ...e, ...local }));
+        setNotSaved(true);
+      }
       return { ok: false };
     }
     setSaveFailed(undefined);
@@ -364,11 +383,13 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       }
       queue.current.lastSaved = campaign;
       setSavedAt(new Date());
+      setNotSaved(false);
       return { ok: true, campaign };
     } catch (failure) {
       const error = toApiError(failure);
       if (Object.keys(error.fields).length > 0) setErrors((e) => ({ ...e, ...error.fields }));
       else setSaveFailed(error);
+      setNotSaved(true);
       return { ok: false };
     }
   };
@@ -506,8 +527,8 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
       const marked = formNow.current === null ? [] : stepTitlesOf(Object.keys(toFields(formNow.current, ALL_KEYS).errors));
       stop(
         marked.length > 0
-          ? `Some answers could not be saved. Fix ${joinWords(marked)}, marked below, then press Start again.`
-          : "Some answers could not be saved. Fix what is marked below, then press Start again.",
+          ? `Some answers could not be saved. Fix ${joinWords(marked)}, marked below, then press Start the campaign again.`
+          : "Some answers could not be saved. Fix what is marked below, then press Start the campaign again.",
       );
       return;
     }
@@ -517,7 +538,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     const differ = shown === null || kept === null ? CHECKED_KEYS : keptDifferently(shown, kept);
     if (differ.length > 0) {
       const labels = [...new Set(differ.map((key) => FIELD_LABEL[key]))].join(", ");
-      stop(`The campaign was not started: the app's copy of the draft differs from this page (${labels}). Press Start again to save this page and check once more.`);
+      stop(`The campaign was not started: the app’s copy of the draft differs from this page (${labels}). Press Start the campaign again to save this page and check once more.`);
       return;
     }
     try {
@@ -532,8 +553,8 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
         Object.keys(error.fields).length === 0
           ? failure("The campaign did not start. The draft is saved; press Start the campaign again.", error)
           : marked.length > 0
-            ? `The campaign cannot start yet. Fix ${joinWords(marked)}, marked below, then press Start again.`
-            : "The campaign cannot start yet. Fix what is marked below, then press Start again.",
+            ? `The campaign cannot start yet. Fix ${joinWords(marked)}, marked below, then press Start the campaign again.`
+            : "The campaign cannot start yet. Fix what is marked below, then press Start the campaign again.",
       );
       setStartRefusals((n) => n + 1);
       setConfirmAuto(false);
@@ -552,7 +573,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
     <>
       <PageHeader
         title="New campaign"
-        aside={saving ? "Saving…" : savedAt !== null ? `Draft saved at ${formatClock(savedAt.toISOString(), timeZone)}` : created ? "Draft" : undefined}
+        aside={saveState({ saving, notSaved, savedAt: savedAt === null ? null : formatClock(savedAt.toISOString(), timeZone), created })}
       />
       <div className="grid gap-section lg:grid-cols-[13rem_minmax(0,1fr)]">
         <StepStrip step={step} furthest={furthest} problems={stepsWithProblems} unfinished={stepsUnfinished} created={created} onGo={(index) => void goTo(index)} />
@@ -577,7 +598,7 @@ function Wizard({ id, onCreated }: { readonly id: number | null; readonly onCrea
             {step === 2 && <WhoFitsStep form={form} set={set} errors={errors} />}
             {step === 3 && <ApprovalStep form={form} set={set} errors={errors} />}
             {step === 4 && campaignId !== null && (
-              <StepFrame title="Messages" lead="Write what each person receives. Every word is yours; the variables fill in each person's details.">
+              <StepFrame title="Messages" lead="Write what each person receives. Every word is yours; the variables fill in each person’s details.">
                 <MessageFields campaignId={campaignId} form={form} set={set} errors={errors} />
               </StepFrame>
             )}
@@ -734,7 +755,7 @@ function SourceStep({ form, set, errors }: StepProps) {
         <legend className="sr-only">Source</legend>
         {(
           [
-            ["recommendations", "LinkedIn's recommendations", "The people LinkedIn suggests to you on its My Network page."],
+            ["recommendations", "LinkedIn’s recommendations", "The people LinkedIn suggests to you on its My Network page."],
             ["search", "People searches", "One or more searches you set up on LinkedIn, with the filters you want."],
           ] as const
         ).map(([value, label, hint]) => (
@@ -932,58 +953,56 @@ function Review({
 }) {
   const urls = sentUrls(form.sourceUrls);
   const unfinished = unfinishedSteps(form);
-  const problems = (step: number) =>
-    Object.entries(errors)
-      .filter(([path]) => stepOf(path) === step)
-      .map(([path, message]) => {
-        const [key = "", index] = path.split(".");
-        const label = key === "sourceUrls" && index !== undefined ? "Search address" : (Object.entries(FIELD_LABEL).find(([name]) => name === key)?.[1] ?? key);
-        // Inside its own step's block a field named like the step ("Who fits" under Who fits) does not say the name again.
-        if (index === undefined && label === STEPS[step]?.title) return { path, text: withStop(capitalised(message)) };
-        return { path, text: withStop(`${label}${index === undefined ? "" : ` ${Number(index) + 1}`}: ${message}`) };
-      });
+  /** A field's error with the field named before it ("Invite note: …"), for a line that does not sit under that field's own row. */
+  const named = (path: string, message: string) => {
+    const [key = "", index] = path.split(".");
+    const label = key === "sourceUrls" && index !== undefined ? "Search address" : (Object.entries(FIELD_LABEL).find(([name]) => name === key)?.[1] ?? key);
+    return withStop(`${label}${index === undefined ? "" : ` ${Number(index) + 1}`}: ${message}`);
+  };
+  const problems = (step: number) => Object.entries(errors).filter(([path]) => stepOf(path) === step);
   const text = (value: string, empty: string) => (value.trim() === "" ? <span className="text-muted">{empty}</span> : <span className="whitespace-pre-line">{value}</span>);
   /** What Start still needs: in Ink at 500, so the step that lacks it is not the quietest row. Not red before Start is pressed. */
   const needed = (value: string, empty: string) => (value.trim() === "" ? <span className="font-medium">{empty}</span> : text(value, empty));
 
-  const sections: readonly { readonly step: number; readonly rows: readonly (readonly [string, ReactNode])[] }[] = [
-    { step: 0, rows: [["Name", needed(form.name, "No name yet")]] },
+  /** Each step's rows: the label, the value, and the fields whose errors sit under that value, without the label again. */
+  const sections: readonly { readonly step: number; readonly rows: readonly (readonly [string, ReactNode, readonly FormKey[]])[] }[] = [
+    { step: 0, rows: [["Name", needed(form.name, "No name yet"), ["name"]]] },
     {
       step: 1,
       rows: [
-        ["Source", form.discoverySource === "search" ? "People searches" : "LinkedIn's recommendations"],
+        ["Source", form.discoverySource === "search" ? "People searches" : "LinkedIn’s recommendations", ["discoverySource"]],
         ...(form.discoverySource === "search"
-          ? [["Searches", urls.length === 0 ? <span className="font-medium">None yet</span> : <ul className="break-all">{urls.map((u) => <li key={u}>{u}</li>)}</ul>] as const]
+          ? [["Searches", urls.length === 0 ? <span className="font-medium">None yet</span> : <ul className="break-all">{urls.map((u) => <li key={u}>{u}</li>)}</ul>, ["sourceUrls"]] as const]
           : []),
-        ["People to find", form.targetProspectCount.trim() === "" ? "No limit" : form.targetProspectCount],
+        ["People to find", form.targetProspectCount.trim() === "" ? "No limit" : form.targetProspectCount, ["targetProspectCount"]],
       ],
     },
-    { step: 2, rows: [["Who fits", needed(form.scoringBrief, "Not written yet")]] },
+    { step: 2, rows: [["Who fits", needed(form.scoringBrief, "Not written yet"), ["scoringBrief"]]] },
     {
       step: 3,
       rows: [
-        ["Batch size", form.batchSize],
-        ["Score threshold", form.scoreThreshold],
-        ["Open-profile threshold", form.openProfileThreshold],
-        ["Auto-approve", form.autoApprove ? <span className="font-medium">On: people are invited without your review</span> : "Off: you approve each person"],
+        ["Batch size", form.batchSize, ["batchSize"]],
+        ["Score threshold", form.scoreThreshold, ["scoreThreshold"]],
+        ["Open-profile threshold", form.openProfileThreshold, ["openProfileThreshold"]],
+        ["Auto-approve", form.autoApprove ? <span className="font-medium">On: people are invited without your review</span> : "Off: you approve each person", ["autoApprove"]],
       ],
     },
     {
       step: 4,
       rows: [
-        ["Invite note", text(form.inviteNote, "No note")],
-        ["First message", needed(form.firstMessage, "Not written yet")],
-        ["Follow-up", text(form.followUp, "No follow-up")],
-        ["AI-written line", form.aiPersonalise ? "On" : "Off"],
+        ["Invite note", text(form.inviteNote, "No note"), ["inviteNote"]],
+        ["First message", needed(form.firstMessage, "Not written yet"), ["firstMessage"]],
+        ["Follow-up", text(form.followUp, "No follow-up"), ["followUp"]],
+        ["AI-written line", form.aiPersonalise ? "On" : "Off", ["aiPersonalise"]],
       ],
     },
     {
       step: 5,
       rows: [
-        ["Before the first message", `${unbroken(`${form.acceptToMessageMinHours} to ${form.acceptToMessageMaxHours} hours`)} after they accept`],
-        ["Before the follow-up", `${unbroken(`${form.followUpDelayMinHours} to ${form.followUpDelayMaxHours} hours`)} after the first message`],
-        ["Counting days", capitalised(POLICY_WORDS[form.delayPolicy])],
-        ["Withdraw an unaccepted invite after", unbroken(`${form.withdrawAfterDays} days`)],
+        ["Before the first message", `${unbroken(`${form.acceptToMessageMinHours} to ${form.acceptToMessageMaxHours} hours`)} after they accept`, ["acceptToMessageMinHours", "acceptToMessageMaxHours"]],
+        ["Before the follow-up", `${unbroken(`${form.followUpDelayMinHours} to ${form.followUpDelayMaxHours} hours`)} after the first message`, ["followUpDelayMinHours", "followUpDelayMaxHours"]],
+        ["Counting days", capitalised(POLICY_WORDS[form.delayPolicy]), ["delayPolicy"]],
+        ["Withdraw an unaccepted invite after", unbroken(`${form.withdrawAfterDays} days`), ["withdrawAfterDays"]],
       ],
     },
   ];
@@ -997,13 +1016,23 @@ function Review({
       <ActionError message={startError} className="mt-block" testId="start-error" id={START_ERROR_ID} />
       <div className="mt-block divide-y divide-base-300 rounded-box border border-base-300">
         {sections.map(({ step, rows }) => {
-          const list = problems(step);
+          const all = problems(step);
+          /** The errors of a row's fields, under its value; an indexed one ("Search address 2") keeps its name. */
+          const under = (keys: readonly FormKey[]) =>
+            all.flatMap(([path, message]) => {
+              const [key = "", index] = path.split(".");
+              if (!keys.some((k) => k === key)) return [];
+              return [{ path, text: index === undefined ? withStop(capitalised(message)) : named(path, message) }];
+            });
+          const owned = new Set(rows.flatMap(([, , keys]) => under(keys).map((p) => p.path)));
+          /** Errors with no row of their own (the AI line's instructions), named, under the list. */
+          const list = all.filter(([path]) => !owned.has(path)).map(([path, message]) => ({ path, text: named(path, message) }));
           return (
             <div key={step} className="px-4 py-4" data-testid={`review-step-${step + 1}`}>
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="flex items-center gap-2 font-semibold">
                   {/* Every mark takes the number circle's box, so the step names start at one edge. */}
-                  {list.length > 0 ? (
+                  {all.length > 0 ? (
                     // A problem: the step's number in the strip's Stop Red edge, as the strip marks it. Not the filled red
                     // dot, which means a safety stop.
                     <span className={`${STEP_CIRCLE} ${PROBLEM_CIRCLE}`} aria-hidden="true" data-testid="review-mark">
@@ -1021,21 +1050,30 @@ function Review({
                     </span>
                   )}
                   {STEPS[step]?.title}
-                  {list.length > 0 && <span className="sr-only">(needs attention)</span>}
-                  {list.length === 0 && unfinished.has(step) && <span className="sr-only">(not finished)</span>}
+                  {all.length > 0 && <span className="sr-only">(needs attention)</span>}
+                  {all.length === 0 && unfinished.has(step) && <span className="sr-only">(not finished)</span>}
                 </h3>
                 <button type="button" className="link inline-flex min-h-6 shrink-0 items-center text-sm link-hover max-lg:min-h-11" onClick={() => onChange(step)}>
                   Change<span className="sr-only"> {STEPS[step]?.title}</span>
                 </button>
               </div>
-              <dl className={`mt-2 ${DEF_LIST} text-sm sm:grid-cols-[13rem_minmax(0,1fr)]`}>
-                {rows.map(([label, value]) => {
+              <dl className={`mt-2 ${DEF_LIST} text-sm`}>
+                {rows.map(([label, value, keys]) => {
                   // A row named like its step ("Name" under "Name") would say the heading twice: its label is for screen readers only.
                   const repeats = label === STEPS[step]?.title;
+                  const own = under(keys);
                   return (
                     <Fragment key={label}>
                       <dt className={repeats ? "sr-only" : `${DEF_TERM} text-muted`}>{label}</dt>
-                      <dd className={`min-w-0 wrap-break-word ${repeats ? "col-span-full" : ""}`}>{value}</dd>
+                      <dd className={`min-w-0 wrap-break-word ${repeats ? "col-span-full" : ""}`}>
+                        {value}
+                        {/* The row's own error, under its value: the label beside it already names the field. */}
+                        {own.map((p) => (
+                          <p key={p.path} className="mt-1 text-error" data-testid="field-error">
+                            {p.text}
+                          </p>
+                        ))}
+                      </dd>
                     </Fragment>
                   );
                 })}

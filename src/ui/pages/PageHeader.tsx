@@ -15,7 +15,9 @@ export function PageHeader(props: { readonly title: string; readonly aside?: Rea
         <h1 id={PAGE_TITLE_ID} tabIndex={-1} className="text-title font-semibold [overflow-wrap:anywhere]">
           {props.title}
         </h1>
-        {props.aside !== undefined && <div className="nums text-muted">{props.aside}</div>}
+        {props.aside !== undefined && <div className="nums text-muted" data-testid="page-aside">
+            {props.aside}
+          </div>}
       </div>
       {(props.lead !== undefined || props.action !== undefined) && (
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">

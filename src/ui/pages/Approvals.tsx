@@ -4,7 +4,7 @@ import type { ApprovalItem, Campaign, Evidence, PreviewText } from "../apiSchema
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { formatScore, plural } from "../format";
-import { ActionError, Announce, CampaignSelect, Disclosure, EmptyState, FilledText, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
+import { ActionError, Announce, CampaignSelect, Disclosure, EmptyState, FilledText, focusInView, LoadError, Notice, ScoreChip, SECONDARY_BUTTON, SkeletonRows, TOOLBAR } from "../formParts";
 import { IconCheck, IconExternal, IconX } from "../icons";
 import { useLoad } from "../useLoad";
 import { failure, type Failure } from "../words";
@@ -19,6 +19,8 @@ const SCORE_STEPS = [0, 5, 6, 7, 8] as const;
 const COLUMNS = "@queue:grid-cols-[3.25rem_minmax(12rem,1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)_8.75rem]";
 
 type Decision = "approve" | "reject";
+/** The empty state's id: it takes the focus when the last row has been decided. */
+const EMPTY_ID = "queue-empty";
 /** A campaign's three templates, where the texts in the queue were filled from. */
 type Templates = Pick<Campaign, "inviteNote" | "firstMessage" | "followUp">;
 const NO_TEMPLATES: ReadonlyMap<number, Templates> = new Map();
@@ -108,10 +110,18 @@ export function Approvals() {
   const focusRow = (id: number | undefined) => {
     if (id !== undefined) rows.current.get(id)?.focus();
   };
+  /** The empty state, which takes the focus when the last row is decided (the row and its buttons have left). */
+  const [focusEmpty, setFocusEmpty] = useState(0);
+  useEffect(() => {
+    const empty = document.getElementById(EMPTY_ID);
+    if (focusEmpty > 0 && empty !== null) focusInView(empty);
+  }, [focusEmpty]);
 
   const decide = (item: ApprovalItem, decision: Decision) => {
     const index = items.findIndex((i) => i.id === item.id);
-    focusRow((items[index + 1] ?? items[index - 1])?.id);
+    const next = (items[index + 1] ?? items[index - 1])?.id;
+    if (next === undefined) setFocusEmpty((n) => n + 1);
+    else focusRow(next);
     setGone((set) => new Set(set).add(item.id));
     setLeaving((map) => new Map(map).set(item.id, { item, before: items[index + 1]?.id }));
     setRowErrors(withoutError(item.id));
@@ -283,6 +293,7 @@ export function Approvals() {
         filtered ? (
           <EmptyState
             testId="queue-empty"
+            id={EMPTY_ID}
             title={`No prospects waiting${minScore > 0 ? ` with a score of ${minScore} or more` : ""}${campaignName === undefined ? "" : ` in ${campaignName}`}.`}
             action={
               <button
@@ -298,7 +309,7 @@ export function Approvals() {
             }
           />
         ) : (
-          <EmptyState testId="queue-empty" title="The approval queue is empty.">
+          <EmptyState testId="queue-empty" title="The approval queue is empty." id={EMPTY_ID}>
             When a campaign finds and scores new people, they wait here for you. Nobody is invited before you approve them.
           </EmptyState>
         )
@@ -362,10 +373,12 @@ export function Approvals() {
         </p>
         {arrived > 0 && (
           <p role="status" className="text-sm" data-testid="new-arrivals">
-            {arrived === 1 ? "1 new person is" : `${arrived} new people are`} waiting —{" "}
+            {arrived === 1 ? "1 new person is" : `${arrived} new people are`} waiting.{" "}
+            {/* Closing the dialog brings the list up to date by itself. */}
             <button type="button" className="link" disabled={approvingAll} onClick={() => setConfirmIds(null)}>
-              refresh
+              Close this to see them
             </button>
+            .
           </p>
         )}
       </ConfirmDialog>

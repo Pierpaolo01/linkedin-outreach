@@ -89,9 +89,24 @@ export function Announce({ message, children }: { readonly message?: string | un
 }
 
 /** What was said about a failure ("What the app said: …"), set apart from the app's own words and quieter. */
-function FailureDetail({ detail }: { readonly detail: string | undefined }) {
+function FailureDetail({ detail, onRed = false }: { readonly detail: string | undefined; readonly onRed?: boolean }) {
   if (detail === undefined) return null;
-  return <p className="mt-0.5 text-muted">{detail}</p>;
+  return <p className={`mt-0.5 ${onRed ? "text-error-content/90" : "text-muted"}`}>{detail}</p>;
+}
+
+/**
+ * The words of a failed action, the one failure pattern: the app's sentence (what failed, what state things are in,
+ * what to do) in Stop Red, then what was said, apart and muted. On a Stop Red surface (`onRed`: the session banner)
+ * the sentence is light ink at 500 and the detail light ink at 90%. `ActionError` draws it in its box.
+ */
+export function FailureWords({ message, onRed = false }: { readonly message: string | Failure; readonly onRed?: boolean }) {
+  const { text, detail } = typeof message === "string" ? { text: message, detail: undefined } : message;
+  return (
+    <>
+      <p className={onRed ? "font-medium" : "text-error"}>{text}</p>
+      <FailureDetail detail={detail} onRed={onRed} />
+    </>
+  );
 }
 
 /**
@@ -99,7 +114,8 @@ function FailureDetail({ detail }: { readonly detail: string | undefined }) {
  * A `Failure` says what failed, what state things are in and what to do, with the server's words apart under it.
  * With an `id` it can take the focus from the script (`focusInView`), for a summary far from the button that failed;
  * with `takeFocus` it takes the focus itself each time a new message appears (the button that failed was disabled
- * while it worked, so the focus had nowhere to stay).
+ * while it worked, so the focus had nowhere to stay). `announce={false}` inside a live region that already says it
+ * (a save bar's status line), so it is not read twice. Its corners are a field's (6px), as a `Notice`'s are.
  */
 export function ActionError({
   message,
@@ -107,30 +123,30 @@ export function ActionError({
   testId,
   id,
   takeFocus = false,
+  announce = true,
 }: {
   readonly message: string | Failure | undefined;
   readonly className?: string;
   readonly testId?: string;
   readonly id?: string;
   readonly takeFocus?: boolean;
+  readonly announce?: boolean;
 }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (takeFocus && message !== undefined && box.current !== null) focusInView(box.current);
   }, [takeFocus, message]);
   if (message === undefined) return null;
-  const { text, detail } = typeof message === "string" ? { text: message, detail: undefined } : message;
   return (
     <div
       ref={box}
       id={id}
       tabIndex={id === undefined && !takeFocus ? undefined : -1}
-      role="alert"
-      className={`rounded-box bg-error/10 px-3 py-2 text-sm ${className ?? ""}`}
+      role={announce ? "alert" : undefined}
+      className={`rounded-field bg-error/10 px-3 py-2 text-sm ${className ?? ""}`}
       data-testid={testId}
     >
-      <p className="text-error">{text}</p>
-      <FailureDetail detail={detail} />
+      <FailureWords message={message} />
     </div>
   );
 }
@@ -229,10 +245,11 @@ export function FilledText({ text, template }: { readonly text: string; readonly
 
 /**
  * A label and value list (`dl`) that is two columns from 640px and stacked below it. Stacked, each label sits 2px
- * over its value and the next label 12px (`group`) under it, so the pairs read as pairs. Put `DEF_TERM` on every `dt`
- * and add the columns (`sm:grid-cols-[…]`) where it is used.
+ * over its value and the next label 12px (`group`) under it, so the pairs read as pairs. The label column is 13rem,
+ * and 16rem from 1280px, where the value column has room to spare and the longest label ("Withdraw an unaccepted
+ * invite after") fits on one line. Put `DEF_TERM` on every `dt`.
  */
-export const DEF_LIST = "grid gap-x-6 gap-y-0.5 sm:gap-y-2";
+export const DEF_LIST = "grid gap-x-6 gap-y-0.5 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-y-2 xl:grid-cols-[16rem_minmax(0,1fr)]";
 export const DEF_TERM = "max-sm:not-first:mt-2.5";
 
 /**
@@ -301,10 +318,25 @@ export function SkeletonRows(props: {
   );
 }
 
-/** What a list says when it has nothing to show: one sentence at 500, a line on what will appear, maybe one action. */
-export function EmptyState(props: { readonly title: ReactNode; readonly children?: ReactNode; readonly action?: ReactNode; readonly className?: string; readonly testId?: string }) {
+/**
+ * What a list says when it has nothing to show: one sentence at 500, a line on what will appear, maybe one action.
+ * With an `id` it can take the focus from the script (after the last item of a list was decided and left).
+ */
+export function EmptyState(props: {
+  readonly title: ReactNode;
+  readonly children?: ReactNode;
+  readonly action?: ReactNode;
+  readonly className?: string;
+  readonly testId?: string;
+  readonly id?: string;
+}) {
   return (
-    <div className={`rounded-box border border-base-300 p-card ${props.className ?? ""}`} data-testid={props.testId}>
+    <div
+      id={props.id}
+      tabIndex={props.id === undefined ? undefined : -1}
+      className={`rounded-box border border-base-300 p-card ${props.className ?? ""}`}
+      data-testid={props.testId}
+    >
       <p className="font-medium">{props.title}</p>
       {props.children !== undefined && <p className="mt-1 text-muted">{props.children}</p>}
       {props.action !== undefined && <div className="mt-4">{props.action}</div>}
@@ -380,13 +412,15 @@ export function focusInView(element: HTMLElement) {
 
 /**
  * After a refused save: moves the focus to the first control `container` marked, in view (`focusInView`). Found from
- * the first error line with an id: the control that points at it (`aria-describedby`), or the first control of a group
- * (a fieldset) that does. False when nothing is marked, so the caller can bring its own message into view instead.
+ * the first error line with an id: of the controls that point at it (`aria-describedby`), the first that is itself
+ * invalid (in a range, the box that is wrong, not its valid neighbour), else the first; or the first control of a
+ * group (a fieldset) that does. False when nothing is marked, so the caller can bring its own message into view instead.
  */
 export function focusFirstError(container: HTMLElement): boolean {
   const line = container.querySelector<HTMLElement>('[data-testid="field-error"][id]');
   if (line === null) return false;
-  const owner = container.querySelector<HTMLElement>(`[aria-describedby~="${CSS.escape(line.id)}"]`);
+  const pointing = `[aria-describedby~="${CSS.escape(line.id)}"]`;
+  const owner = container.querySelector<HTMLElement>(`${pointing}[aria-invalid="true"]`) ?? container.querySelector<HTMLElement>(pointing);
   const control = owner?.matches("input, select, textarea, button") === true ? owner : owner?.querySelector<HTMLElement>("input, select, textarea, button");
   if (control === null || control === undefined) return false;
   focusInView(control);

@@ -4,7 +4,7 @@ import type { SafetyStop, Session } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { asSentence, formatWhen } from "../format";
-import { focusInView, ON_RED_BUTTON } from "../formParts";
+import { ActionError, FailureWords, focusInView, ON_RED_BUTTON } from "../formParts";
 import { failure, type Failure } from "../words";
 import { IconStop } from "../icons";
 import { sessionView, STOP_REASON } from "./sessionView";
@@ -127,17 +127,18 @@ export function UnreachableBanner({ message }: { readonly message: string }) {
 
 /**
  * A Re-check that did not finish, said beside the button that was pressed: what failed and what to do, then what the
- * app said, apart. It takes the focus when it appears, since the button was off while the check ran.
+ * app said, apart (`FailureWords`, the one failure pattern; in its `ActionError` box off the red surfaces). It takes
+ * the focus when it appears, since the button was off while the check ran.
  */
 export function RecheckFailed({ failure: failed, onRed, className }: { readonly failure: Failure; readonly onRed: boolean; readonly className?: string }) {
   const line = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (line.current !== null) focusInView(line.current);
-  }, [failed]);
+    if (onRed && line.current !== null) focusInView(line.current);
+  }, [failed, onRed]);
+  if (!onRed) return <ActionError message={failed} takeFocus className={className ?? ""} testId="recheck-error" />;
   return (
     <div ref={line} role="alert" tabIndex={-1} className={`text-sm ${className ?? ""}`} data-testid="recheck-error">
-      <p className={onRed ? "font-medium" : "text-error"}>{failed.text}</p>
-      {failed.detail !== undefined && <p className={onRed ? "text-error-content/90" : "text-muted"}>{failed.detail}</p>}
+      <FailureWords message={failed} onRed />
     </div>
   );
 }

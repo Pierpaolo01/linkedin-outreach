@@ -3,7 +3,7 @@ import { listActivity, listReview, resolveReview, toApiError } from "../api";
 import type { ResolveStage, ReviewItem } from "../apiSchemas";
 import { useAppData } from "../appData";
 import { asSentence, formatScore, formatWhen, plural } from "../format";
-import { ActionError, Announce, EmptyState, errorProps, FieldError, focusFirstError, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows } from "../formParts";
+import { ActionError, Announce, EmptyState, errorProps, FieldError, focusFirstError, focusInView, LoadError, Notice, SECONDARY_BUTTON, SkeletonRows } from "../formParts";
 import { IconExternal } from "../icons";
 import { useLoad } from "../useLoad";
 import { failure, type Failure } from "../words";
@@ -70,6 +70,9 @@ function holdOf(item: ReviewItem): string {
   ]);
 }
 
+/** The empty state's id: it takes the focus when the last person held has been decided. */
+const EMPTY_ID = "review-empty";
+
 /** Needs review: people the app would not decide on by itself, each with the reason and what the user can do. */
 export function NeedsReview() {
   const { home, refresh } = useAppData();
@@ -86,6 +89,20 @@ export function NeedsReview() {
   const [gone, setGone] = useState<ReadonlyMap<number, string>>(new Map());
   const [checkedFor, setCheckedFor] = useState(loaded.data);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  /**
+   * Where the focus goes once a decided person's card has left: the next card (or the one before, when it was the
+   * last), or the empty state when nobody is left. The Confirm that was pressed went with the card.
+   */
+  const focusTo = useRef<number | null>(null);
+  const [decisions, setDecisions] = useState(0);
+  const list = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (decisions === 0) return;
+    const id = focusTo.current;
+    const card = id === null ? null : list.current?.querySelector<HTMLElement>(`[data-review-id="${id}"]`);
+    const target = card ?? document.getElementById(EMPTY_ID);
+    if (target !== null && target !== undefined) focusInView(target);
+  }, [decisions]);
 
   if (loaded.data !== checkedFor) {
     setCheckedFor(loaded.data);
@@ -116,12 +133,12 @@ export function NeedsReview() {
       ) : loaded.data === undefined ? (
         <SkeletonRows rows={2} rowClassName="h-96" />
       ) : items.length === 0 ? (
-        <EmptyState title="Nobody is held for review." testId="review-empty">
+        <EmptyState title="Nobody is held for review." testId="review-empty" id={EMPTY_ID}>
           When the app is unsure what happened with a person, it holds them here instead of guessing.
         </EmptyState>
       ) : (
-        <ul className="divide-y divide-base-300 rounded-box border border-base-300">
-          {items.map((item) => (
+        <ul ref={list} className="divide-y divide-base-300 rounded-box border border-base-300">
+          {items.map((item, index) => (
             <ReviewCard
               key={item.id}
               item={item}
@@ -129,6 +146,8 @@ export function NeedsReview() {
               onResolved={(stage) => {
                 setGone((map) => new Map(map).set(item.id, holdOf(item)));
                 setNotice(`${item.person.fullName} ${CHOICE_DONE[stage]}.`);
+                focusTo.current = (items[index + 1] ?? items[index - 1])?.id ?? null;
+                setDecisions((n) => n + 1);
                 refresh();
                 // A fresh answer, asked for after the resolve, no longer lists them and so lets a later hold show.
                 loaded.reload();
@@ -181,7 +200,15 @@ function ReviewCard({ item, heldAt, onResolved }: { readonly item: ReviewItem; r
   };
 
   return (
-    <li ref={card} className="grid gap-x-section gap-y-block p-card lg:grid-cols-[minmax(0,1fr)_22rem]" data-testid="review-item" aria-label={person.fullName}>
+    <li
+      ref={card}
+      // Takes the focus from the script after the person before it was decided (no tab stop of its own).
+      tabIndex={-1}
+      className="grid gap-x-section gap-y-block p-card lg:grid-cols-[minmax(0,1fr)_22rem]"
+      data-testid="review-item"
+      data-review-id={item.id}
+      aria-label={person.fullName}
+    >
       <div className="min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">{person.fullName}</h2>
