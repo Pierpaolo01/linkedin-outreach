@@ -152,6 +152,16 @@ describe("write locators in real Chrome, offline", { timeout: 60_000 }, () => {
     expect(html).toMatch(/^<html lang="en">/);
   });
 
+  it("types a note with characters beyond ASCII and the box holds it exactly", async (ctx) => {
+    if (context === undefined) ctx.skip();
+    // The live note LinkedIn's box did not hold (2026-11-13) had a "®" and a "ü".
+    const { write } = await show('<html lang="en"><body><dialog open><textarea aria-label="note"></textarea></dialog></body></html>');
+    const box: Target = { roles: ["textbox"], within: writeStructure.dialog };
+    const text = "Hey Thomas, Running DUTCH DESIGN AGENCY® with studios in Zürich, café “quoted” – dash, emoji-free.";
+    await write.type(box, text);
+    expect(await write.value(box)).toBe(text);
+  });
+
   it("aborts every request a page makes", async (ctx) => {
     if (context === undefined) ctx.skip();
     const { page } = await show('<html><body><img src="https://blocked.invalid/probe.png"></body></html>');

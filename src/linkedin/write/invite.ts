@@ -95,7 +95,7 @@ export async function sendInvite(deps: WriteDeps, person: PersonRef, note: strin
     case "email_required":
       return emailRequired(deps);
     case "note_quota":
-      return closeAnd(deps, "note_quota");
+      return quotaAnd(deps);
     case "pending":
       // Sent at the click, with no dialog: right only when no note was asked for.
       return text === null ? "sent" : giveUp(deps, "the invitation went out at the click on Connect, without the note");
@@ -109,7 +109,7 @@ export async function sendInvite(deps: WriteDeps, person: PersonRef, note: strin
         const next = await page.waitFor((shown) => only(inviteScreen(shown, wording), ["note", "note_quota", "limit"]), timeoutOf(deps));
         if (next === undefined) return giveUp(deps, "the note box did not appear after Add a note");
         if (next === "limit") return limitHit(deps);
-        if (next === "note_quota") return closeAnd(deps, "note_quota");
+        if (next === "note_quota") return quotaAnd(deps);
         return withNote(deps, text, wording, guard);
       }
       if ((await page.clickUnless(inDialog(wording.sendWithoutNote), expiryOf(page, guard))) !== undefined) return closeAnd(deps, "expired");
@@ -128,7 +128,13 @@ async function withNote(deps: WriteDeps, text: string, wording: WriteWording, gu
   if (pastDeadline(page, guard)) return closeAnd(deps, "expired");
   await page.type(box, text);
   // A box with a shorter limit than ours cuts the note silently.
-  if (!sameText(await page.value(box), text)) return closeAnd(deps, "note_not_taken");
+  const held = await page.value(box);
+  if (!sameText(held, text)) {
+    // Saved with what the box held, so a mismatch can be told apart from a cut (decision 89).
+    const html = `${await page.content()}\n<!-- note box held ${held.length} characters, ${text.length} typed: ${JSON.stringify(held)} -->`;
+    await savePage(page, html, "unknown", deps.health ?? {}).catch(() => undefined);
+    return closeAnd(deps, "note_not_taken");
+  }
   if ((await page.clickUnless(inDialog(wording.sendInvitation), expiryOf(page, guard))) !== undefined) return closeAnd(deps, "expired");
   return confirmSent(deps, wording);
 }
@@ -217,6 +223,12 @@ async function refuse(deps: WriteDeps, message: string): Promise<never> {
   const artifacts = await savePage(deps.page, await deps.page.content(), "unknown", deps.health ?? {});
   await closeDialog(deps);
   throw new Unexpected(`${message}. Saved html ${artifacts.html}`, { artifacts });
+}
+
+/** No free note left: the page is saved for the record, the dialog closed, nothing sent. */
+async function quotaAnd(deps: WriteDeps): Promise<InviteResult> {
+  await savePage(deps.page, await deps.page.content(), "unknown", deps.health ?? {}).catch(() => undefined);
+  return closeAnd(deps, "note_quota");
 }
 
 /** Closes whatever dialog or menu is open, without waiting, and returns the result. Not verified on the live site. */
