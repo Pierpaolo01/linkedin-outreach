@@ -117,11 +117,20 @@ export function attemptStarts(detail: Record<string, unknown> | null): number[] 
 /**
  * The detail a claim stores: the request's, replacing any earlier one. An invite also keeps the start
  * of every attempt, since each loads the person's profile and so costs a profile view on its own day,
- * though a retry reuses the row (budget.ts).
+ * though a retry reuses the row (budget.ts). A row claimed before starts were recorded begins its
+ * history with its `startedAt`, the one earlier attempt still known, so the budget keeps that charge.
  */
-function claimDetail(step: Step, earlier: Record<string, unknown> | null, requested: Record<string, unknown> | undefined, now: Date): Record<string, unknown> | null {
+function claimDetail(
+  step: Step,
+  existing: { readonly detail: Record<string, unknown> | null; readonly attempts: number; readonly startedAt: Date | null } | undefined,
+  requested: Record<string, unknown> | undefined,
+  now: Date,
+): Record<string, unknown> | null {
   if (step !== "invite") return requested ?? null;
-  return { ...requested, [ATTEMPT_STARTS]: [...attemptStarts(earlier), now.getTime()] };
+  const recorded = attemptStarts(existing?.detail ?? null);
+  const earlier =
+    recorded.length === 0 && existing !== undefined && existing.attempts > 0 && existing.startedAt !== null ? [existing.startedAt.getTime()] : recorded;
+  return { ...requested, [ATTEMPT_STARTS]: [...earlier, now.getTime()] };
 }
 
 /**
@@ -192,7 +201,7 @@ export function claimStep(db: Conn, request: ClaimRequest, now: Date): ClaimResu
         finishedAt: null,
         error: null,
         errorKind: null,
-        detail: claimDetail(step, existing?.detail ?? null, request.detail, now),
+        detail: claimDetail(step, existing, request.detail, now),
       })
       .where(and(eq(actions.idempotencyKey, key), eq(actions.status, "planned")))
       .run().changes;
