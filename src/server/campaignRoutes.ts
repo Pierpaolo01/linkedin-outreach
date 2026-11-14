@@ -38,6 +38,7 @@ const bool = z.boolean({ error: "Send true or false" });
 const SCORE = "Enter a score from 0 to 10";
 const minScore = z.coerce.number({ error: SCORE }).min(0, { error: SCORE }).max(10, { error: SCORE });
 
+// `confirmAutoApprove` is no longer needed (decision 94); an older client may still send it, so it is accepted and ignored.
 const startBody = z.strictObject({ confirmAutoApprove: bool.optional() }, { error: "Send a JSON object" });
 const previewBody = campaignFieldsSchema.pick({ inviteNote: true, firstMessage: true, followUp: true, aiPersonalise: true });
 const prospectsQuery = z.strictObject({
@@ -105,7 +106,7 @@ export function registerCampaignRoutes(app: FastifyInstance, { db, now }: { read
     if (id === null) return reply.code(404).send({ error: `No campaign ${raw}` });
     const body = check(startBody, orEmpty(request.body));
     if (!body.ok) return reply.code(400).send(body.body);
-    return sendOutcome(reply, startCampaign(db, id, { confirmAutoApprove: body.value.confirmAutoApprove ?? false }, now()), asCampaign);
+    return sendOutcome(reply, startCampaign(db, id, now()), asCampaign);
   });
 
   for (const [path, move] of [

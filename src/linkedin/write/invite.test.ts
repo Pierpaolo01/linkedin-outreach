@@ -196,17 +196,17 @@ describe("sendInvite refusals", () => {
     await expect(sendInvite(deps, PROFILE_PERSON, null, GUARD)).rejects.toThrow(LimitHit);
   });
 
-  it("refuses with Unexpected when no free note is left, sending nothing", async () => {
+  it("returns note_quota when no free note is left, sending nothing", async () => {
     const { deps, events } = run({ react: linkedIn({ afterAddNote: "synthetic-invite-note-quota-en.html" }) });
 
-    await expect(sendInvite(deps, PROFILE_PERSON, NOTE, GUARD)).rejects.toThrow(Unexpected);
+    await expect(sendInvite(deps, PROFILE_PERSON, NOTE, GUARD)).resolves.toBe("note_quota");
     expect(clicks(events)).toEqual(["Invite Person 1 to connect", "Add a note"]);
   });
 
   it("refuses a note longer than LinkedIn takes before loading anything", async () => {
     const { deps, events } = run();
 
-    await expect(sendInvite(deps, PROFILE_PERSON, "x".repeat(301), GUARD)).rejects.toThrow(Unexpected);
+    await expect(sendInvite(deps, PROFILE_PERSON, "x".repeat(201), GUARD)).rejects.toThrow(Unexpected);
     expect(events).toEqual([]);
   });
 
@@ -215,7 +215,7 @@ describe("sendInvite refusals", () => {
     const realType = page.type.bind(page);
     page.type = async (target, text) => realType(target, text.slice(0, 10));
 
-    await expect(sendInvite(deps, PROFILE_PERSON, NOTE, GUARD)).rejects.toThrow(Unexpected);
+    await expect(sendInvite(deps, PROFILE_PERSON, NOTE, GUARD)).resolves.toBe("note_not_taken");
     expect(clicks(events)).toEqual(["Invite Person 1 to connect", "Add a note"]);
   });
 });

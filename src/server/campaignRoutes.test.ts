@@ -158,7 +158,7 @@ describe("PATCH /api/campaigns/:id", () => {
     const res = await s.send("PATCH", `/api/campaigns/${id}`, { inviteNote: "x".repeat(301) });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ fields: { inviteNote: expect.stringMatching(/^The invite note must be at most 300 characters/) } });
+    expect(res.json()).toMatchObject({ fields: { inviteNote: expect.stringMatching(/^The invite note must be at most 200 characters/) } });
   });
 
   it("answers 400 for a wrong field and 404 for an unknown campaign", async () => {
@@ -197,14 +197,11 @@ describe("POST /api/campaigns/:id/start", () => {
     });
   });
 
-  it("needs confirmAutoApprove to start with auto-approve on", async () => {
+  it("starts with auto-approve on without a confirmation", async () => {
     const id = seedCampaign(s.db, { autoApprove: true });
 
-    const refused = await s.send("POST", `/api/campaigns/${id}/start`);
-    const started = await s.send("POST", `/api/campaigns/${id}/start`, { confirmAutoApprove: true });
+    const started = await s.send("POST", `/api/campaigns/${id}/start`);
 
-    expect(refused.statusCode).toBe(400);
-    expect(refused.json()).toMatchObject({ fields: { autoApprove: "Auto-approve sends without your review. Confirm that this is what you want." } });
     expect(started.statusCode).toBe(200);
   });
 

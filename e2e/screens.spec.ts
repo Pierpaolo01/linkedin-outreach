@@ -15,6 +15,10 @@ test.afterEach(async ({ page }) => {
 const sidebar = (page: Page) => page.getByRole("complementary", { name: "Sidebar" });
 const row = (page: Page, name: string) => page.getByTestId("campaign-row").filter({ has: page.getByRole("link", { name, exact: true }) });
 
+// Line counts are measured in the app's macOS fonts (Seravek, Avenir Next). CI runs on Linux, where Chrome falls back to a wider font,
+// so those measurements run only on a Mac (decision 92).
+const MAC_FONTS = process.platform === "darwin";
+
 test("create a campaign through the wizard, see what blocks the start, fix it and start it", async ({ page }) => {
   const name = "Test campaign from the wizard";
   await page.goto("/campaigns");
@@ -65,12 +69,13 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await brief.fill("Test targeting: invented founders of invented companies.");
   await page.getByRole("button", { name: "Save and continue" }).click();
 
-  // 4. Approval: auto-approve is off and warns when turned on.
+  // 4. Approval: auto-approve is on, and its hint says what each setting does.
   const auto = page.getByRole("switch", { name: "Auto-approve" });
-  await expect(auto).not.toBeChecked();
-  await auto.check();
-  await expect(page.getByText(/^With auto-approve on, the app invites and messages everyone/)).toBeVisible();
+  await expect(auto).toBeChecked();
+  await expect(auto).toHaveAccessibleDescription("On: the app invites and messages everyone who reaches the score threshold.");
   await auto.uncheck();
+  await expect(auto).toHaveAccessibleDescription("Off: you approve each person before the app invites them.");
+  await auto.check();
   await page.getByRole("button", { name: "Save and continue" }).click();
 
   // 5. Messages: every field starts empty; a chip inserts a variable; the preview names the problem.
@@ -81,12 +86,12 @@ test("create a campaign through the wizard, see what blocks the start, fix it an
   await note.fill("test note for ");
   await page.getByRole("button", { name: "Insert First name" }).click();
   await expect(note).toHaveValue("test note for {{first_name}}");
-  // The counter beside the note is the template's own length; the 300 belongs to the filled-in text, in the preview.
+  // The counter beside the note is the template's own length; the 200 belongs to the filled-in text, in the preview.
   await expect(page.getByTestId("note-count")).toHaveText("Template: 28\u00a0characters");
   await first.fill("test first message {{first_name}} {{nickname}}");
   const preview = page.getByTestId("preview");
   await expect(preview).toContainText("test note for Anna");
-  await expect(preview).toContainText("18 of 300\u00a0characters");
+  await expect(preview).toContainText("18 of 200\u00a0characters");
   // What the variables filled in is set apart, as in the approval queue.
   await expect(preview.getByTestId("sent-text").first().locator(".font-medium")).toHaveText(["Anna"]);
   await expect(preview).toContainText("{{nickname}} is not a variable");
@@ -360,12 +365,12 @@ test("campaign detail: a narrow People table drops the Company column for the ey
   expect(await companyWidth(), "the Company column shows in a narrow table").toBeLessThanOrEqual(1);
   const cellWidths = await rows.evaluateAll((els) => els.map((el) => el.querySelectorAll('[role="cell"]')[0]?.getBoundingClientRect().width ?? 0));
   expect(Math.max(...cellWidths), "a company cell shows without its header").toBeLessThanOrEqual(1);
-  expect(await tallest(), "a People row runs past three lines at 1280").toBeLessThanOrEqual(89);
+  if (MAC_FONTS) expect(await tallest(), "a People row runs past three lines at 1280").toBeLessThanOrEqual(89);
 
   // 1440: every column, and no row taller than before (two lines, or three when a headline wraps).
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect.poll(companyWidth).toBeGreaterThan(40);
-  expect(await tallest(), "a People row runs past three lines at 1440").toBeLessThanOrEqual(89);
+  if (MAC_FONTS) expect(await tallest(), "a People row runs past three lines at 1440").toBeLessThanOrEqual(89);
 });
 
 test("campaign detail: the Next action column shows only when someone on the shown page has a next action", async ({ page }) => {
@@ -748,7 +753,7 @@ test("forms: a field's hint describes its control, after its error when there is
   await expect(threshold).toHaveAttribute("aria-invalid", "true");
   const error = await page.getByTestId("field-error").first().innerText();
   await expect(threshold).toHaveAccessibleDescription(`${error} ${hint}`);
-  await expect(page.getByRole("switch", { name: "Auto-approve" })).toHaveAccessibleDescription("Off: you approve each person before the app invites them.");
+  await expect(page.getByRole("switch", { name: "Auto-approve" })).toHaveAccessibleDescription("On: the app invites and messages everyone who reaches the score threshold.");
 });
 
 test("settings: hints describe their fields, the AI fields show the error edge, and a failed save is said by the Save button", async ({ page }) => {
@@ -1023,6 +1028,7 @@ test("wizard: a refused Start names the button as it is, and an error under its 
   expect(errorBox !== null && labelBox !== null && errorBox.y > labelBox.y && errorBox.y - labelBox.y < 60).toBe(true);
 
   // At 1440 every label of the review is one line: the label column is wide enough for "Withdraw an unaccepted invite after".
+  if (!MAC_FONTS) return;
   const withdraw = page.getByTestId("review-step-6").getByRole("term").filter({ hasText: "Withdraw an unaccepted invite after" });
   const height = await withdraw.evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
   expect(height).toBeLessThan(1.5);
@@ -1144,7 +1150,7 @@ test("wizard: the review and the sentence by Start name the button and say what 
   await draftToMessages(page, "Test start words");
   await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: /Review and start/ }).click();
   await expect(page.getByText("Check everything once more. The app checks it too when you press Start the campaign.", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("start-note")).toHaveText("Once started, the campaign begins finding people. Nobody is invited before you approve them.");
+  await expect(page.getByTestId("start-note")).toHaveText("Once started, the campaign begins finding people. Everyone who reaches the score threshold is invited and messaged without your review.");
 
   // During a safety stop (put on this page by the test): it begins when the user resumes, and nothing is said twice.
   const safetyStop = { reason: "checkpoint", detail: null, raisedAt: new Date().toISOString(), whatToDo: "Test: complete the check.", invitesBlockedUntil: null };
@@ -1154,7 +1160,7 @@ test("wizard: the review and the sentence by Start name the button and say what 
   });
   await page.reload();
   await page.getByRole("navigation", { name: "Wizard steps" }).getByRole("button", { name: /Review and start/ }).click();
-  await expect(page.getByTestId("start-note")).toHaveText("Once started, the campaign begins finding people when you resume. Nobody is invited before you approve them.");
+  await expect(page.getByTestId("start-note")).toHaveText("Once started, the campaign begins finding people when you resume. Everyone who reaches the score threshold is invited and messaged without your review.");
 });
 
 test("wizard at 1024 and up: a refused step says Needs attention under its name, in the error tone, read once", async ({ page }) => {

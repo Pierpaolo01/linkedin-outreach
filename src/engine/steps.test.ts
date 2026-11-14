@@ -81,7 +81,7 @@ describe("invite", () => {
 
   it.each([
     ["an unresolved variable", "Hi {{company}}", /unresolved variable \(company\)/],
-    ["a note over 300 characters", "x".repeat(301), /too long/],
+    ["a note over 200 characters", "x".repeat(201), /too long/],
   ])("holds the prospect for review on %s, without loading LinkedIn", async (_label, note, reason) => {
     const c = campaign({ inviteNote: note });
     const p = approved(c);
@@ -146,10 +146,24 @@ describe("invite", () => {
     expect(person(kit, p.personId).contactedAt).toBeNull();
   });
 
+  it("on a profile that reads as Follow only, lets the invite open More: Connect may be in the unrendered menu", async () => {
+    const p = approved(campaign(), { connectInUnrenderedMore: true });
+    await kit.engine.tick();
+    expect(stage(p.prospectId)).toBe("invited");
+    expect(kit.world.invitesTo(p.spec.publicId)).toHaveLength(1);
+  });
+
+  it("on a profile with no Connect even under More, the invite comes back not offered and the prospect is held", async () => {
+    const p = approved(campaign(), { connectUnavailable: true });
+    await kit.engine.tick();
+    expect(stage(p.prospectId)).toBe("needs_review");
+    expect(prospect(kit, p.prospectId).reviewReason).toContain("not offered");
+    expect(kit.world.invitesTo(p.spec.publicId)).toHaveLength(0);
+  });
+
   it.each([
     ["pending", { invitedOutsideApp: true }],
     ["connected", { degree: 1 as const }],
-    ["follow only", { connectUnavailable: true }],
   ])("holds for review when the profile shows %s, and sends nothing", async (state, spec) => {
     const p = approved(campaign(), spec);
     await kit.engine.tick();
@@ -170,6 +184,30 @@ describe("invite", () => {
       expect(stage(p.prospectId)).toBe("needs_review");
     },
   );
+
+  it("writes the note again for a retry whose frozen note is over 200 characters: LinkedIn never took that one", async () => {
+    // A note frozen by an attempt made while LinkedIn's limit was thought to be 300 (2026-11-13); its claim was given back.
+    const p = approved(campaign({ inviteNote: "Hi {{first_name}}" }));
+    kit.db.insert(actions).values({ type: "invite", status: "planned", idempotencyKey: `invite:${p.prospectId}`, prospectId: p.prospectId, attempts: 1, startedAt: new Date(START.getTime() - HOUR) }).run();
+    kit.db.update(prospects).set({ inviteNoteSent: "x".repeat(217) }).where(eq(prospects.id, p.prospectId)).run();
+    await kit.engine.tick();
+    expect(stage(p.prospectId)).toBe("invited");
+    expect(prospect(kit, p.prospectId).inviteNoteSent).toBe("Hi Test");
+    expect(kit.world.invitesTo(p.spec.publicId)).toEqual([expect.objectContaining({ note: "Hi Test" })]);
+  });
+
+  it("does not hold a prospect whose AI line makes the note too long: the invite waits for a shorter line", async () => {
+    // No AI in this kit, so the line cannot be written again yet.
+    const p = approved(campaign({ inviteNote: "Hey {{first_name}}, {{ai_line}}, would like to connect!" }));
+    kit.db.update(prospects).set({ aiLine: `I liked ${"y".repeat(200)}.` }).where(eq(prospects.id, p.prospectId)).run();
+    await kit.engine.tick();
+    const row = prospect(kit, p.prospectId);
+    expect(row.stage).toBe("approved");
+    expect(row.reviewReason).toBeNull();
+    expect(row.nextActionAt?.getTime()).toBeGreaterThan(kit.clock.now().getTime());
+    expect(kit.world.log).toHaveLength(0);
+    expect(hasEvent("AI line is too long")).toBe(true);
+  });
 
   it("never sends a step whose row was already claimed: the claim fails and the prospect is held", async () => {
     const p = approved(campaign());

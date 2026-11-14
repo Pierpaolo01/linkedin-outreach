@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { campaigns, eventLog } from "../db/schema";
+import { campaigns, eventLog, prospects } from "../db/schema";
 import {
   archiveCampaign,
   createCampaign,
@@ -37,7 +37,7 @@ describe("createCampaign", () => {
       discoverySource: "recommendations",
       sourceUrls: [],
       batchSize: 25,
-      autoApprove: false,
+      autoApprove: true,
       scoreThreshold: 7,
       openProfileThreshold: 6,
       inviteNote: null,
@@ -112,6 +112,16 @@ describe("updateCampaign", () => {
     });
   });
 
+  it("turns auto-approve on for a started campaign and approves whoever already waits", () => {
+    const id = seedCampaign(t.db, { status: "awaiting_approval", autoApprove: false });
+    const waiting = seedProspect(t.db, id, seedPerson(t.db, 1), "pending_approval");
+
+    expect(updateCampaign(t.db, id, { autoApprove: true }, LATER)).toMatchObject({ ok: true, value: { campaign: { autoApprove: true } } });
+    const row = t.db.select().from(prospects).where(eq(prospects.id, waiting)).get();
+    expect(row).toMatchObject({ stage: "approved", approvedAt: LATER });
+    expect(statusOf(id)).toBe("running");
+  });
+
   it("refuses other fields of a started campaign", () => {
     const id = seedCampaign(t.db, { status: "paused" });
 
@@ -151,14 +161,14 @@ describe("startCampaign", () => {
   it("moves a valid draft to finding and logs it", () => {
     const id = seedCampaign(t.db);
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toMatchObject({ ok: true, value: { status: "finding" } });
+    expect(startCampaign(t.db, id, LATER)).toMatchObject({ ok: true, value: { status: "finding" } });
     expect(t.db.select().from(eventLog).all().map((e) => e.message)).toEqual(['Campaign "Test campaign" started']);
   });
 
   it("refuses an invalid draft with field messages and leaves it a draft", () => {
     const id = seedCampaign(t.db, { name: "", scoringBrief: "" });
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toEqual({
+    expect(startCampaign(t.db, id, LATER)).toEqual({
       ok: false,
       kind: "invalid",
       message: "The campaign cannot start yet",
@@ -167,17 +177,16 @@ describe("startCampaign", () => {
     expect(statusOf(id)).toBe("draft");
   });
 
-  it("refuses auto-approve unless confirmed", () => {
+  it("starts with auto-approve on without asking for a confirmation", () => {
     const id = seedCampaign(t.db, { autoApprove: true });
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toMatchObject({ ok: false, kind: "invalid", fields: { autoApprove: expect.any(String) } });
-    expect(startCampaign(t.db, id, { confirmAutoApprove: true }, LATER)).toMatchObject({ ok: true, value: { status: "finding" } });
+    expect(startCampaign(t.db, id, LATER)).toMatchObject({ ok: true, value: { status: "finding", autoApprove: true } });
   });
 
   it("refuses to start a campaign that is not a draft", () => {
     const id = seedCampaign(t.db, { status: "running" });
 
-    expect(startCampaign(t.db, id, { confirmAutoApprove: false }, LATER)).toEqual({
+    expect(startCampaign(t.db, id, LATER)).toEqual({
       ok: false,
       kind: "conflict",
       message: "Only a draft can be started; this campaign is running",

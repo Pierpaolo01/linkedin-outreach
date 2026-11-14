@@ -32,6 +32,7 @@ import { systemClock } from "./engine/ports";
 import { openDedicatedWindow } from "./linkedin/browser";
 import { driverPageFor } from "./linkedin/driver";
 import { navigationStateFile, paceNavigation } from "./linkedin/human";
+import { writePageFor } from "./linkedin/write/page";
 import { backupIfDue, backupNow } from "./ops/backup";
 import { activeCampaignCount, createKeepAwake, isKeepAwakeWanted } from "./ops/keepAwake";
 import { createFileLogger } from "./ops/log";
@@ -106,11 +107,11 @@ async function main(): Promise<number> {
     port = createFakeSessionPort(parseFakeStates(env.FAKE_SESSION_STATES), { delayMs: env.FAKE_SESSION_DELAY_MS });
     linkedin = createFakeLinkedIn({ clock: systemClock, random: Math.random, start: new Date() });
   } else {
-    // Read-only on the live site in this build, on purpose and with no switch: `createLiveLinkedIn`
-    // gives the engine `outreach: false` and a driver whose sends throw (see `readOnlyLinkedIn`).
+    // Reads and sends on the live site, through the one dedicated window (`createLiveLinkedIn`).
     const live = createLiveLinkedIn({
       open: () => openDedicatedWindow(),
       pageFor: driverPageFor,
+      writePageFor: (page) => writePageFor(page),
       pace: () => paceNavigation({ stateFile: navigationStateFile(), minGapMs: DRIVER_GAP_MS.min, maxGapMs: DRIVER_GAP_MS.max }),
       screenshotsDir: paths.screenshots,
     });
@@ -180,7 +181,7 @@ async function main(): Promise<number> {
   let runner: Runner | null = null;
   if (env.ENGINE === "on") {
     runner = startRunner({ db: opened.db, clock: systemClock, random: Math.random, log, say, ...linkedin });
-    say(env.LINKEDIN_DRIVER === "live" ? "Engine: running, read-only on LinkedIn (no sends in this build)." : "Engine: running on the fake LinkedIn.");
+    say(env.LINKEDIN_DRIVER === "live" ? "Engine: running on LinkedIn: finds, scores and sends." : "Engine: running on the fake LinkedIn.");
   } else {
     say("Engine: off (ENGINE=off).");
   }

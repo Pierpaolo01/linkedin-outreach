@@ -54,6 +54,18 @@ function literalsOf(template: string, placeholders: readonly Placeholder[]): str
   return literals;
 }
 
+/**
+ * The AI line's closing full stop, when the template puts punctuation straight after it: the AI
+ * writes a sentence, and "{{ai_line}}, would like to connect" must not read "business.,". An
+ * ellipsis is kept. Only the AI line: another value's stop may be an abbreviation's ("Acme Inc.").
+ */
+function withoutDoubledStop(value: string, after: string): string {
+  if (!/^[.,;:!?]/.test(after)) return value;
+  const trimmed = value.trimEnd();
+  if (!trimmed.endsWith(".") || trimmed.endsWith("..")) return value;
+  return trimmed.slice(0, -1);
+}
+
 function failure(problem: Exclude<RenderResult, { ok: true }>["problem"], variables: readonly string[]): RenderResult {
   return { ok: false, problem, variables };
 }
@@ -90,7 +102,9 @@ export function renderTemplate(template: string, values: TemplateValues, options
 
   let rendered = literals[0] ?? "";
   placeholders.forEach((placeholder, index) => {
-    rendered += (resolved.get(placeholder.name) ?? "") + (literals[index + 1] ?? "");
+    const after = literals[index + 1] ?? "";
+    const value = resolved.get(placeholder.name) ?? "";
+    rendered += (placeholder.name === "ai_line" ? withoutDoubledStop(value, after) : value) + after;
   });
   if (DOUBLE_BRACE.test(rendered)) {
     const withBraces = names.filter((name) => /[{}]/.test(resolved.get(name) ?? ""));
@@ -101,4 +115,18 @@ export function renderTemplate(template: string, values: TemplateValues, options
   if (text === "") return failure("empty", []);
   if (maxLength !== undefined && text.length > maxLength) return failure("too_long", []);
   return { ok: true, text };
+}
+
+/**
+ * The most characters `{{ai_line}}` may have so that `template`, filled with `values`, stays within
+ * `maxLength`; shared equally when the line is used more than once. Zero or less when the rest of
+ * the template fills the limit already. Null when the template has no `{{ai_line}}`, or does not
+ * render for another reason (an unresolved variable): then nothing would be sent either way.
+ */
+export function aiLineRoom(template: string, values: TemplateValues, maxLength: number): number | null {
+  const uses = placeholdersIn(template).filter((placeholder) => placeholder.name === "ai_line").length;
+  if (uses === 0) return null;
+  const probe = renderTemplate(template, { ...values, ai_line: "x" });
+  if (!probe.ok) return null;
+  return Math.floor((maxLength - (probe.text.length - uses)) / uses);
 }

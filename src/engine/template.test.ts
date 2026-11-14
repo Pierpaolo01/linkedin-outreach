@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderTemplate, variablesIn, type TemplateValues } from "./template";
+import { aiLineRoom, renderTemplate, variablesIn, type TemplateValues } from "./template";
 
 const marco: TemplateValues = {
   first_name: "Marco",
@@ -39,6 +39,22 @@ describe("renderTemplate", () => {
 
   it("inserts values as they are, special replacement patterns included", () => {
     expect(renderTemplate("Hi {{first_name}}", { first_name: "$& $1 $$ M" })).toEqual({ ok: true, text: "Hi $& $1 $$ M" });
+  });
+
+  it("drops a value's full stop when the template puts punctuation right after it", () => {
+    const template = "Hey {{first_name}}, {{ai_line}}, would like to connect!";
+    expect(renderTemplate(template, { first_name: "Edzard", ai_line: "I saw your agency's work." })).toEqual({
+      ok: true,
+      text: "Hey Edzard, I saw your agency's work, would like to connect!",
+    });
+    expect(renderTemplate("{{ai_line}}. Talk soon", { ai_line: "Great post." })).toEqual({ ok: true, text: "Great post. Talk soon" });
+    expect(renderTemplate("{{ai_line}}!", { ai_line: "Nice." })).toEqual({ ok: true, text: "Nice!" });
+  });
+
+  it("keeps a value's full stop before a space or a word, and keeps an ellipsis", () => {
+    expect(renderTemplate("{{ai_line}} Would like to connect", { ai_line: "Great post." })).toEqual({ ok: true, text: "Great post. Would like to connect" });
+    expect(renderTemplate("{{ai_line}}, ok", { ai_line: "Wait..." })).toEqual({ ok: true, text: "Wait..., ok" });
+    expect(renderTemplate("{{company}}, hi", { company: "Acme Inc." })).toEqual({ ok: true, text: "Acme Inc., hi" });
   });
 
   it("leaves single braces in the text alone", () => {
@@ -142,5 +158,30 @@ describe("variablesIn", () => {
 
   it("lists nothing for a template without placeholders", () => {
     expect(variablesIn("Hi there, {single} braces")).toEqual([]);
+  });
+});
+
+describe("aiLineRoom", () => {
+  const values: TemplateValues = { first_name: "Luc" };
+
+  it("is what the filled template leaves of the limit for the line", () => {
+    // "Hey Luc, " and ", would like to connect!" take 33 of 200.
+    expect(aiLineRoom("Hey {{first_name}}, {{ai_line}}, would like to connect!", values, 200)).toBe(167);
+    const line = "y".repeat(167);
+    const filled = renderTemplate("Hey {{first_name}}, {{ai_line}}, would like to connect!", { ...values, ai_line: line }, { maxLength: 200 });
+    expect(filled.ok).toBe(true);
+  });
+
+  it("shares the room between two uses of the line", () => {
+    expect(aiLineRoom("{{ai_line}} / {{ai_line}}", values, 103)).toBe(50);
+  });
+
+  it("is null without {{ai_line}} or when another variable is unresolved", () => {
+    expect(aiLineRoom("Hi {{first_name}}", values, 200)).toBeNull();
+    expect(aiLineRoom("Hi {{company}}, {{ai_line}}", values, 200)).toBeNull();
+  });
+
+  it("is zero or less when the rest of the template already fills the limit", () => {
+    expect(aiLineRoom(`${"x".repeat(200)} {{ai_line}}`, values, 200)).toBeLessThanOrEqual(0);
   });
 });

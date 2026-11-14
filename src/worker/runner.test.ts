@@ -23,7 +23,6 @@ import {
 import { ProfileInUse } from "../linkedin/browser";
 import type { LogFields, Logger } from "../ops/log";
 import { readSession } from "../server/sessionStore";
-import { readOnlyLinkedIn } from "./liveDriver";
 import { startRunner, type Runner, type RunnerDeps } from "./runner";
 
 const SECOND = 1_000;
@@ -408,7 +407,7 @@ describe("the runner with the real engine", () => {
     expect(prospect(kit, accepted.prospectId).stage).toBe("message_sent");
   });
 
-  it("on the live site's terms never sends and never reads a thread, whatever is due", { timeout: 60_000 }, async () => {
+  it("with outreach off never sends and never reads a thread, whatever is due", { timeout: 60_000 }, async () => {
     const campaignId = seedCampaign(kit);
     seedApproved(kit, campaignId);
     seedAccepted(kit, campaignId);
@@ -418,8 +417,7 @@ describe("the runner with the real engine", () => {
     // What the engine asks of the driver it is given, and what reaches the site underneath.
     const asked: string[] = [];
     const reached: string[] = [];
-    const live = readOnlyLinkedIn(() => spied(kit.world.connect({ clock: systemClock, random: kit.random }).driver, reached));
-    startReal({ outreach: live.outreach, driver: () => spied(live.driver(), asked) });
+    startReal({ outreach: false, driver: () => spied(spied(kit.world.connect({ clock: systemClock, random: kit.random }).driver, reached), asked) });
 
     await vi.advanceTimersByTimeAsync(8 * 60 * MINUTE);
 
@@ -430,16 +428,22 @@ describe("the runner with the real engine", () => {
     expect(kit.world.log.filter((entry) => ["invite", "message", "withdraw", "thread_read"].includes(entry.kind))).toEqual([]);
   });
 
-  it("the live driver's write operations refuse: sends are not in this build", async () => {
-    const { driver, outreach } = readOnlyLinkedIn(() => kit.world.connect({ clock: systemClock, random: kit.random }).driver);
-    const person = { publicId: "someone", memberId: "ACoASomeone" };
-    const guard = { notAfter: new Date(START.getTime() + MINUTE) };
+  it("with outreach on sends the due invite and first message", { timeout: 60_000 }, async () => {
+    // A follow-up three days out stays outside this run.
+    const campaignId = seedCampaign(kit, { followUpDelayMinHours: 72, followUpDelayMaxHours: 72 });
+    const approved = seedApproved(kit, campaignId);
+    const accepted = seedAccepted(kit, campaignId);
+    const asked: string[] = [];
+    startReal({ outreach: true, driver: () => spied(kit.world.connect({ clock: systemClock, random: kit.random }).driver, asked) });
 
-    expect(outreach).toBe(false);
-    await expect(driver().sendInvite(person, null, guard)).rejects.toThrow(/not available in this build/);
-    await expect(driver().sendMessage(person, "Hi", { ...guard, messageCount: 0 })).rejects.toThrow(/not available in this build/);
-    await expect(driver().withdrawInvite(person, guard)).rejects.toThrow(/not available in this build/);
+    await vi.advanceTimersByTimeAsync(8 * 60 * MINUTE);
+
+    expect(asked).toContain("sendInvite");
+    expect(asked).toContain("sendMessage");
+    expect(prospect(kit, approved.prospectId).stage).toBe("invited");
+    expect(kit.world.messagesSentTo(accepted.spec.publicId)).toHaveLength(1);
   });
+
 });
 
 // ---------------------------------------------------------------- the dedicated window

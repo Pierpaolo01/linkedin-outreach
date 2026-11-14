@@ -40,7 +40,7 @@ export const BLANK_FORM: CampaignForm = {
   targetProspectCount: "",
   scoringBrief: "",
   batchSize: "",
-  autoApprove: false,
+  autoApprove: true,
   scoreThreshold: "",
   openProfileThreshold: "",
   inviteNote: "",
@@ -196,4 +196,4 @@ export const VARIABLES = [
   { name: "ai_line", label: "AI-written line" },
 ] as const;
 
-export const INVITE_NOTE_MAX = 300;
+export const INVITE_NOTE_MAX = 200;

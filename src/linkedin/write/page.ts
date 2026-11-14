@@ -85,6 +85,40 @@ export interface WritePageOptions {
 const CLICK_TIMEOUT_MS = 10_000;
 
 /**
+ * The page's HTML with every open shadow root inlined as a `<div data-shadow-root>` at the end of
+ * its host. LinkedIn draws the invite dialog inside a shadow root (`#interop-outlet`, seen on the
+ * live site 2026-11-13), which `page.content()` leaves out; the write operations read dialogs from
+ * HTML, so without this they see none. A string, not a function: the bundler's helpers would not
+ * exist inside the page.
+ */
+const HTML_WITH_SHADOW_ROOTS = `(() => {
+  const inline = (orig, copy) => {
+    const origChildren = orig.children;
+    const copyChildren = copy.children;
+    const count = origChildren.length;
+    if (orig.shadowRoot) {
+      const holder = document.createElement("div");
+      holder.setAttribute("data-shadow-root", "");
+      for (const child of orig.shadowRoot.children) {
+        const cloned = child.cloneNode(true);
+        holder.appendChild(cloned);
+        inline(child, cloned);
+      }
+      copy.appendChild(holder);
+    }
+    for (let i = 0; i < count; i += 1) inline(origChildren[i], copyChildren[i]);
+  };
+  const copy = document.documentElement.cloneNode(true);
+  inline(document.documentElement, copy);
+  return copy.outerHTML;
+})()`;
+
+/** `page.content()` with open shadow roots inlined (`HTML_WITH_SHADOW_ROOTS`). */
+export function contentWithShadowRoots(page: Page): Promise<string> {
+  return page.evaluate(HTML_WITH_SHADOW_ROOTS) as Promise<string>;
+}
+
+/**
  * NOT VERIFIED ON THE LIVE SITE. The dedicated window as a `WritePage`. Lookups use Playwright's
  * role locators, which skip hidden elements; a click hovers first and pauses like a person.
  */
@@ -157,9 +191,13 @@ export function writePageFor(page: Page, { random = Math.random, sleep = realSle
     },
     async value(target) {
       const box = await only(target);
-      return box.evaluate((el) =>
-        el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement ? el.value : el instanceof HTMLElement ? el.innerText : "",
-      );
+      // No instanceof: LinkedIn's dialog elements can come from another realm (its interop outlet),
+      // where `el instanceof HTMLTextAreaElement` is false and innerText of a textarea is "".
+      return box.evaluate((el) => {
+        const tag = el.tagName.toLowerCase();
+        if (tag === "textarea" || tag === "input") return (el as HTMLTextAreaElement).value;
+        return (el as HTMLElement).innerText ?? el.textContent ?? "";
+      });
     },
     async dismiss() {
       await page.keyboard.press("Escape");
@@ -168,7 +206,7 @@ export function writePageFor(page: Page, { random = Math.random, sleep = realSle
     async waitFor(check, timeoutMs) {
       const until = Date.now() + timeoutMs;
       for (;;) {
-        const found = check(await page.content());
+        const found = check(await contentWithShadowRoots(page));
         if (found !== undefined) return found;
         if (Date.now() >= until) return undefined;
         await sleep(pollMs);
@@ -176,7 +214,7 @@ export function writePageFor(page: Page, { random = Math.random, sleep = realSle
     },
     now: () => new Date(),
     url: () => page.url(),
-    content: () => page.content(),
+    content: () => contentWithShadowRoots(page),
     screenshot: (options) => page.screenshot(options),
   };
 }

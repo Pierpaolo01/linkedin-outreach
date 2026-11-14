@@ -134,8 +134,7 @@ export const createCampaign = (fields: CampaignFields = {}) => post(campaignEnve
 export const getCampaign = (id: number) => request(campaignEnvelopeSchema, `/api/campaigns/${id}`);
 export const updateCampaign = (id: number, fields: CampaignFields) =>
   request(campaignUpdateSchema, `/api/campaigns/${id}`, { method: "PATCH", body: fields });
-export const startCampaign = (id: number, options: { readonly confirmAutoApprove?: boolean } = {}) =>
-  post(campaignEnvelopeSchema, `/api/campaigns/${id}/start`, options);
+export const startCampaign = (id: number) => post(campaignEnvelopeSchema, `/api/campaigns/${id}/start`);
 export const pauseCampaign = (id: number) => post(campaignEnvelopeSchema, `/api/campaigns/${id}/pause`);
 export const resumeCampaign = (id: number) => post(campaignEnvelopeSchema, `/api/campaigns/${id}/resume`);
 export const archiveCampaign = (id: number) => post(campaignEnvelopeSchema, `/api/campaigns/${id}/archive`);

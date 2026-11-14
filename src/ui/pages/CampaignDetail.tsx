@@ -27,7 +27,7 @@ import {
   TOOLBAR,
 } from "../formParts";
 import { IconChevron, IconExternal } from "../icons";
-import { NBSP, tabTitle, unbroken } from "../format";
+import { asSentence, NBSP, tabTitle, unbroken } from "../format";
 import { Link } from "../router";
 import { FOLLOW_ENGINE_MS, useLoad } from "../useLoad";
 import { discoveryWaitSentence, failure, formatStamp, FUNNEL, FUNNEL_LABEL, LIVE, nextActionWhen, nextStepWords, PAUSABLE, POLICY_WORDS, stageWords, toggleFailure, type Failure } from "../words";
@@ -325,10 +325,15 @@ function ProspectRow(props: {
       <td role="cell" className={`${STACK_CELL} @max-people-wide:sr-only`}>
         {company ?? <span className="text-muted">Unknown</span>}
       </td>
-      <td role="cell" className={`whitespace-nowrap ${STACK_CELL} @max-people:col-start-1 @max-people:row-start-2`}>
-        <span data-testid="prospect-stage">
+      <td role="cell" className={`${STACK_CELL} @max-people:col-start-1 @max-people:row-start-2`}>
+        <span className="whitespace-nowrap" data-testid="prospect-stage">
           <StageWords stage={p.stage} extra={stopped} replied={p.stopReason === "replied"} />
         </span>
+        {p.stage === "needs_review" && (
+          <p className="mt-0.5 max-w-56 text-sm text-muted" data-testid="prospect-review-reason">
+            {p.reviewReason === null ? "The app did not record a reason." : asSentence(p.reviewReason)}
+          </p>
+        )}
       </td>
       <td role="cell" className={`${STACK_CELL} @max-people:col-start-3 @max-people:row-start-1 @max-people:self-start`}>
         <ScoreChip score={p.score} size="sm" />

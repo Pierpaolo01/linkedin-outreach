@@ -71,6 +71,11 @@ export interface ClaimRequest {
   readonly text: string | null;
   /** What reconcile will need, e.g. `{ userMessagesBefore }`. Replaces any earlier detail. */
   readonly detail?: Record<string, unknown>;
+  /**
+   * A frozen text longer than this is replaced by `text`: LinkedIn refuses a text over its limit
+   * before any effect, so no earlier attempt can have sent it (an invite note over 200 characters).
+   */
+  readonly replaceFrozenLongerThan?: number;
 }
 
 export interface Claim {
@@ -99,6 +104,35 @@ export const MAX_STEP_ATTEMPTS = 3;
 export type ClaimResult = { readonly ok: true; readonly claim: Claim } | { readonly ok: false; readonly refusal: ClaimRefusal };
 
 const refuse = (refusal: ClaimRefusal): ClaimResult => ({ ok: false, refusal });
+
+/** Key in an invite row's `detail`: when each attempt started, as epoch milliseconds. */
+export const ATTEMPT_STARTS = "attemptStarts";
+
+/** The start times an invite row records for its attempts; empty for a row from before they were recorded. */
+export function attemptStarts(detail: Record<string, unknown> | null): number[] {
+  const value = detail?.[ATTEMPT_STARTS];
+  return Array.isArray(value) ? value.filter((v): v is number => typeof v === "number") : [];
+}
+
+/**
+ * The detail a claim stores: the request's, replacing any earlier one. An invite also keeps the start
+ * of every attempt, since each loads the person's profile and so costs a profile view on its own day,
+ * though a retry reuses the row (budget.ts). A row claimed before starts were recorded begins its
+ * history with its `startedAt`, the one earlier attempt still known, so the budget keeps that charge;
+ * also when `releaseClaim` gave that attempt back, since its profile load happened all the same.
+ */
+function claimDetail(
+  step: Step,
+  existing: { readonly detail: Record<string, unknown> | null; readonly startedAt: Date | null } | undefined,
+  requested: Record<string, unknown> | undefined,
+  now: Date,
+): Record<string, unknown> | null {
+  if (step !== "invite") return requested ?? null;
+  const recorded = attemptStarts(existing?.detail ?? null);
+  const earlier =
+    recorded.length === 0 && existing !== undefined && existing.startedAt !== null ? [existing.startedAt.getTime()] : recorded;
+  return { ...requested, [ATTEMPT_STARTS]: [...earlier, now.getTime()] };
+}
 
 /**
  * The text an earlier claim froze for this step, when the step was claimed before (its row has
@@ -148,7 +182,10 @@ export function claimStep(db: Conn, request: ClaimRequest, now: Date): ClaimResu
 
     const column = FROZEN_COLUMN[step];
     const claimedBefore = existing !== undefined && existing.attempts > 0;
-    const text = column === null ? null : claimedBefore ? row.prospect[column] : request.text;
+    const frozen = column === null || !claimedBefore ? null : row.prospect[column];
+    const limit = request.replaceFrozenLongerThan;
+    const keepFrozen = claimedBefore && !(limit !== undefined && frozen !== null && frozen.length > limit);
+    const text = column === null ? null : keepFrozen ? frozen : request.text;
     if (step !== "invite" && step !== "withdraw" && (text === null || text.trim() === "")) return refuse("no_text");
 
     if (existing === undefined) {
@@ -165,7 +202,7 @@ export function claimStep(db: Conn, request: ClaimRequest, now: Date): ClaimResu
         finishedAt: null,
         error: null,
         errorKind: null,
-        detail: request.detail ?? null,
+        detail: claimDetail(step, existing, request.detail, now),
       })
       .where(and(eq(actions.idempotencyKey, key), eq(actions.status, "planned")))
       .run().changes;

@@ -79,6 +79,8 @@ export interface Ai {
     readonly profile: ProfileForScoring;
     readonly industry: Evidence | null;
     readonly instructions: string;
+    /** The most characters the line may have: the room the invite note leaves it. Default `MAX_LINE`. */
+    readonly maxLength?: number;
   }): Promise<Answer<PersonalisedLine | null>>;
 }
 

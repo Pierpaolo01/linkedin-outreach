@@ -234,7 +234,16 @@ export interface SendGuard {
  * deadline had passed and nothing was done; the others are refusals the engine turns into needs
  * review.
  */
-export type InviteResult = "sent" | "already_pending" | "already_connected" | "not_offered" | "expired";
+export type InviteResult =
+  | "sent"
+  | "already_pending"
+  | "already_connected"
+  | "not_offered"
+  | "expired"
+  /** No free personalised note is left this month; nothing was sent (dialog closed). */
+  | "note_quota"
+  /** The note box did not hold the note as typed (LinkedIn took fewer characters); nothing was sent (dialog closed). */
+  | "note_not_taken";
 
 export type WithdrawResult = "withdrawn" | "not_pending" | "expired";
 
@@ -248,8 +257,8 @@ export type MessageResult = "sent" | "thread_changed" | "expired";
  * The operations that change something on LinkedIn. Each resolves only once LinkedIn shows the
  * result. A throw means the result is not known: the click may have happened, so the caller
  * checks LinkedIn before it tries again. Each takes a deadline (`SendGuard`): a call the laptop
- * slept through must not click hours later, outside the working window. The live implementation
- * arrives in milestone 4; until then only the fake driver has these.
+ * slept through must not click hours later, outside the working window. The live implementation is
+ * `src/linkedin/write/`, joined with the reads in `src/worker/liveDriver.ts`.
  */
 export interface WriteDriver {
   /** Throws `LimitHit` on LinkedIn's own invitation-limit message. `note` null sends without a note. */

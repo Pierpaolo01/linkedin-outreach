@@ -80,7 +80,9 @@ export function createFakeAi(): Ai {
     async personalise(input) {
       const sentence = /^[^.!?]*[.!?]/.exec(input.profile.about?.trim() ?? "")?.[0].trim();
       if (sentence === undefined || sentence.length < 20) return { value: null, model: MODEL };
-      return { value: { line: `Your profile says: "${sentence}"`, evidence: sentence }, model: MODEL };
+      const line = `Your profile says: "${sentence}"`;
+      if (line.length > (input.maxLength ?? Infinity)) return { value: null, model: MODEL };
+      return { value: { line, evidence: sentence }, model: MODEL };
     },
   };
 }

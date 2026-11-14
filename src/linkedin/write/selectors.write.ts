@@ -42,7 +42,7 @@ export const writeStructure = {
   /** The page marker of the sent-invitations list. Seen 2026-11-11. */
   sentScreen: listStructure.sentInvitations.screen,
   /** LinkedIn's limit on an invitation note, in characters (the app's form holds the same limit). // unverified */
-  noteMaxLength: 300,
+  noteMaxLength: 200,
 } as const;
 
 /** The row of the sent-invitations list that links this person's profile. Not verified on the live site. */

@@ -2,6 +2,7 @@ import { and, count, eq, gt, gte, inArray, isNotNull, lt, max } from "drizzle-or
 import type { Settings } from "../config/settings";
 import type { Db } from "../db/index";
 import { actions, safetyStops, type ActionType } from "../db/schema";
+import { attemptStarts } from "./ledger";
 import { dayKey, nextWorkingInstant, startOfDay, startOfNextDay, startOfNextWeek, startOfWeek } from "./workingWindow";
 
 /**
@@ -26,6 +27,8 @@ export interface BudgetAnswer {
 const LEDGER_TYPES = {
   invite: ["invite"],
   message: ["message"],
+  // Sending an invite also loads the person's profile again (the write's own check of who it is): each
+  // invite attempt is counted as a profile view as well, by `invitePageLoads`.
   profile_view: ["profile_view"],
   discovery_page: ["search_page", "recommendation_page"],
   withdraw: ["withdraw"],
@@ -46,7 +49,32 @@ function countClaimed(db: Db, kind: BudgetKind, from: Date, to: Date): number {
     .from(actions)
     .where(and(inArray(actions.type, LEDGER_TYPES[kind]), gte(actions.startedAt, from), lt(actions.startedAt, to)))
     .get();
-  return row?.n ?? 0;
+  const rows = row?.n ?? 0;
+  return kind === "profile_view" ? rows + invitePageLoads(db, from, to) : rows;
+}
+
+/**
+ * Invite attempts started in `[from, to)`: each loads the person's profile. A retry reuses the
+ * invite's row, so the row records every attempt's start (`attemptStarts`); a row from before that
+ * counts once, at its `startedAt`. A row's latest attempt is its `startedAt`, so a row with an attempt
+ * in the window started at or after `from`.
+ */
+function invitePageLoads(db: Db, from: Date, to: Date): number {
+  const rows = db
+    .select({ startedAt: actions.startedAt, detail: actions.detail })
+    .from(actions)
+    .where(and(eq(actions.type, "invite"), gte(actions.startedAt, from)))
+    .all();
+  let loads = 0;
+  for (const { startedAt, detail } of rows) {
+    const starts = attemptStarts(detail);
+    if (starts.length === 0) {
+      if (startedAt !== null && startedAt < to) loads += 1;
+    } else {
+      loads += starts.filter((at) => at >= from.getTime() && at < to.getTime()).length;
+    }
+  }
+  return loads;
 }
 
 type Refusal = { readonly reason: Exclude<BudgetAnswer["reason"], "ok">; readonly resumesAt: Date };
@@ -93,7 +121,7 @@ function invitesBlockedUntil(db: Db, now: Date): Date | null {
 }
 
 /** Why `kind` is closed now, each with when it opens again; empty when open. */
-function refusals(db: Db, settings: Settings, kind: BudgetKind, now: Date, used: number, limit: number): Refusal[] {
+function refusals(db: Db, settings: Settings, kind: BudgetKind, now: Date, used: number, limit: number, need: number): Refusal[] {
   const { timeZone } = settings;
   const found: Refusal[] = [];
   if (kind === "invite") {
@@ -106,17 +134,18 @@ function refusals(db: Db, settings: Settings, kind: BudgetKind, now: Date, used:
       found.push({ reason: "week_limit", resumesAt: nextWorkingInstant(settings, weekEnd) });
     }
   }
-  if (used >= limit) {
+  if (used + need > limit) {
     found.push({ reason: "day_limit", resumesAt: nextWorkingInstant(settings, startOfNextDay(timeZone, now)) });
   }
   return found;
 }
 
-export function checkBudget(db: Db, settings: Settings, kind: BudgetKind, now: Date): BudgetAnswer {
+/** `need`: how many units of `kind` the step about to run uses; allowed only when all of them are left today. */
+export function checkBudget(db: Db, settings: Settings, kind: BudgetKind, now: Date, need = 1): BudgetAnswer {
   const used = countClaimed(db, kind, startOfDay(settings.timeZone, now), startOfNextDay(settings.timeZone, now));
   const limit = dayLimit(db, settings, kind, now);
   // The reason that lasts longest wins; on a tie the earlier entry (block, then week, then day).
-  const latest = refusals(db, settings, kind, now, used, limit).reduce<Refusal | null>(
+  const latest = refusals(db, settings, kind, now, used, limit, need).reduce<Refusal | null>(
     (best, next) => (best === null || next.resumesAt.getTime() > best.resumesAt.getTime() ? next : best),
     null,
   );

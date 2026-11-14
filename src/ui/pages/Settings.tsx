@@ -384,7 +384,7 @@ function SettingsForm({ settings, onSaved }: { readonly settings: SettingsData; 
                 path="limits.profileViewsPerDay"
                 control={num("limits.profileViewsPerDay", "Profile views per day")}
                 label="Profile views per day"
-                hint="Profiles the app opens to score people."
+                hint="Every profile the app opens: to score people, and two for each invite."
                 error={errorOf("limits.profileViewsPerDay")}
               />
               <LimitRow

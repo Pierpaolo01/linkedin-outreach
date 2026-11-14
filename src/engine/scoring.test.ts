@@ -277,6 +277,27 @@ describe("profile scoring", () => {
     expect(prospect(kit, p.prospectId)).toMatchObject({ stage: "pending_approval", aiLine: "Your plant in Monza stands out", aiLineEvidence: "Plant manager in Monza" });
   });
 
+  it("asks for a line no longer than the room the invite note leaves for it", async () => {
+    // "Hey Test, " + line + ", " + 150 characters = 200 at most: 38 characters for the line.
+    const c = collecting({ aiPersonalise: true, inviteNote: `Hey {{first_name}}, {{ai_line}}, ${"z".repeat(150)}` });
+    found(c, {}, { cardScore: 8 });
+    await ticks(10);
+    expect(ai.calls.filter((call) => call.method === "personalise")).toEqual([{ method: "personalise", maxLength: 38 }]);
+  });
+
+  it("writes again, shorter, an approved prospect's line that makes the invite note too long, before the invite", async () => {
+    const c = addCampaign(kit, { status: "running", aiPersonalise: true, inviteNote: "Hey {{first_name}}, {{ai_line}}, would like to connect!" });
+    const p = seedApproved(kit, c);
+    kit.db.update(prospects).set({ aiLine: `I liked ${"y".repeat(200)}.`, aiLineEvidence: "old" }).where(eq(prospects.id, p.prospectId)).run();
+    ai.options.personalise = () => ({ line: "Your plant in Monza stands out", evidence: "Plant manager in Monza" });
+    await ticks(1);
+    expect(ai.calls).toEqual([{ method: "personalise", maxLength: 166 }]);
+    expect(prospect(kit, p.prospectId)).toMatchObject({ stage: "approved", aiLine: "Your plant in Monza stands out", aiLineEvidence: "Plant manager in Monza" });
+    expect(events(kit).some((line) => line.includes("written again"))).toBe(true);
+    await ticks(3);
+    expect(prospect(kit, p.prospectId)).toMatchObject({ stage: "invited", inviteNoteSent: "Hey Test, Your plant in Monza stands out, would like to connect!" });
+  });
+
   it("writes a personal line only when the campaign asks for one, and keeps null when the AI has none", async () => {
     const withLine = collecting({ aiPersonalise: true, personalisationInstructions: "mention their trade" });
     const without = collecting();

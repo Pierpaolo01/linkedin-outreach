@@ -35,7 +35,7 @@ Code: `src/server/` (routes), `src/campaigns/` (the rules and writes behind them
   "targetProspectCount": 100,
   "scoringBrief": "Founders of small manufacturers…",
   "batchSize": 25,
-  "autoApprove": false,
+  "autoApprove": true,
   "scoreThreshold": 7,
   "openProfileThreshold": 6,
   "inviteNote": "Hi {{first_name}}…",
@@ -71,7 +71,7 @@ All optional. Each row is one wizard field.
 | 2 | `targetProspectCount` | whole number ≥ 1, or `null` | |
 | 3 | `scoringBrief` | string ≤ 10000 | |
 | 4 | `batchSize` | whole number ≥ 1 | default 25 |
-| 4 | `autoApprove` | boolean | default false; `start` needs `confirmAutoApprove` |
+| 4 | `autoApprove` | boolean | default true (decision 94); no confirmation needed to start |
 | 4 | `scoreThreshold` | whole number 0–10 | default 7 |
 | 4 | `openProfileThreshold` | whole number 0–10 | default 6 |
 | 5 | `inviteNote` | string ≤ 2000, or `null` | |
@@ -102,10 +102,9 @@ Run by `start`, and on every edit of a started campaign (so a live campaign neve
 | `inviteNote`, `firstMessage`, `followUp` | `{{x}} is not a variable. Use {{first_name}}, {{company}}, {{title}}, {{location}}, {{industry}} or {{ai_line}}` |
 | same | `The braces do not match. Write variables as {{first_name}}` |
 | same | `{{ai_line}} is written by the AI only when personalisation is on. Turn it on or remove {{ai_line}}` |
-| `inviteNote` | `The invite note must be at most 300 characters with the variables filled in. With long sample values it comes to N.` |
+| `inviteNote` | `The invite note must be at most 200 characters with the variables filled in. With long sample values it comes to N.` |
 | `openProfileThreshold` | `The open-profile threshold must not be above the score threshold (7)` |
 | `acceptToMessageMinHours`, `followUpDelayMinHours` | `The shortest wait must not be longer than the longest (48 hours)` |
-| `autoApprove` | `Auto-approve sends without your review. Confirm that this is what you want.` (send `confirmAutoApprove: true` with `start` to confirm) |
 
 The invite note is measured with these long sample values: first_name `Maria Alessandra`, company `Example International Engineering and Consulting Group S.p.A.`, title `Head of Business Development and Strategic Partnerships`, location `Reggio nell'Emilia, Emilia-Romagna, Italy`, industry `Industrial Machinery Manufacturing`, ai_line a 147-character sentence.
 
@@ -203,7 +202,7 @@ One rendered text, or why it cannot be written:
 | `POST /api/campaigns` | Campaign fields (optional body) | `201 { "campaign": Campaign }` with status `draft` | 400 |
 | `GET /api/campaigns/:id` | | `200 { "campaign": Campaign }` | 404 |
 | `PATCH /api/campaigns/:id` | Campaign fields | `200 { "campaign": Campaign, "notice": null }` for a draft; for a started campaign `notice` is `"Saved. Edits apply only to steps not yet sent; texts already sent stay as they were."` | 400 (field types); 400 `{ "error": "These changes cannot be saved while the campaign is live", "fields": {…} }` (checks before start); 409 `Once a campaign has started only its templates and timings can change. These cannot: name, scoringBrief`, `A completed campaign cannot be edited`, `An archived campaign cannot be edited`; 404 |
-| `POST /api/campaigns/:id/start` | optional `{ "confirmAutoApprove": true }` | `200 { "campaign": Campaign }`, status `finding` | 400 `{ "error": "The campaign cannot start yet", "fields": {…} }` (checks before start); 400 `{ "fields": { "confirmAutoApprove": "Send true or false" } }`; 409 `Only a draft can be started; this campaign is <status>`; 404 |
+| `POST /api/campaigns/:id/start` | none (an old `{ "confirmAutoApprove": true }` is accepted and ignored) | `200 { "campaign": Campaign }`, status `finding` | 400 `{ "error": "The campaign cannot start yet", "fields": {…} }` (checks before start); 400 `{ "fields": { "confirmAutoApprove": "Send true or false" } }`; 409 `Only a draft can be started; this campaign is <status>`; 404 |
 | `POST /api/campaigns/:id/pause` | no body | `200 { "campaign": Campaign }`, status `paused` | 409 `Only a campaign that is finding, awaiting approval or running can be paused; this campaign is <status>`; 400 no body; 404 |
 | `POST /api/campaigns/:id/resume` | no body | `200 { "campaign": Campaign }`, back to the status it was paused from; a campaign paused while awaiting approval goes to `running` if prospects were approved during the pause | 409 `Only a paused campaign can be resumed; this campaign is <status>`; 400; 404 |
 | `POST /api/campaigns/:id/archive` | no body | `200 { "campaign": Campaign }`, status `archived` (from any status) | 409 `This campaign is already archived`; 400; 404 |

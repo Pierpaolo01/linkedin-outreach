@@ -3,42 +3,47 @@
  * engine's driver and the session checks, opened the first time either needs it, and used by one
  * of them at a time.
  */
-import type { Driver, ReadDriver } from "../engine/ports";
+import type { Driver, ReadDriver, WriteDriver } from "../engine/ports";
 import type { DriverPage } from "../linkedin/driver";
 import { createLiveDriver } from "../linkedin/driver";
+import { LinkedInError } from "../linkedin/errors";
+import type { WriteDeps } from "../linkedin/write/common";
+import { createWriteDriver } from "../linkedin/write/driver";
+import type { WritePage } from "../linkedin/write/page";
 import { createLiveSessionPort, type LiveWindow, type SessionPort } from "../server/sessionPort";
 
-const NO_SENDS =
-  "Sends are not available in this build: invites, messages and withdrawals on the live site arrive in a later milestone";
+/** Errors after which nothing more may touch LinkedIn until the user resumes (decision 18). */
+const SAFETY_STOPS: ReadonlySet<LinkedInError["kind"]> = new Set(["logged_out", "checkpoint", "restricted", "limit_hit"]);
 
 /**
- * The engine's terms on the live site in this milestone: reads only.
- *
- * Deliberate, and not switchable by any environment variable or setting: the engine runs with
- * `outreach: false`, so it picks no invite, message, follow-up, withdrawal, connections check or
- * thread read, and the driver it is given has write operations that throw without touching
- * LinkedIn, so even a bug in the engine cannot send. Invites, messages and withdrawals on the real
- * site arrive in a later milestone (handoff section 6, milestone 4), and will change this function.
+ * Joins the read and write halves into one `Driver` with one latch: a login wall, checkpoint,
+ * restriction or LinkedIn's invitation limit met by any operation makes every later operation, read
+ * or write, throw that same error without touching LinkedIn. Each half keeps its own latch as well.
  */
-export function readOnlyLinkedIn(read: () => ReadDriver): { readonly driver: () => Driver; readonly outreach: false } {
+export function sharedLatch(reads: ReadDriver, writes: WriteDriver): Driver {
+  let stopped: LinkedInError | undefined;
+  function latched<A extends unknown[], T>(act: (...args: A) => Promise<T>): (...args: A) => Promise<T> {
+    return async (...args) => {
+      if (stopped !== undefined) throw stopped;
+      try {
+        return await act(...args);
+      } catch (error) {
+        if (error instanceof LinkedInError && SAFETY_STOPS.has(error.kind)) stopped = error;
+        throw error;
+      }
+    };
+  }
   return {
-    outreach: false,
-    driver: () => {
-      const reads = read();
-      return {
-        // Only the read operations are taken from `reads`, even when it is a whole Driver.
-        ensureSession: () => reads.ensureSession(),
-        searchPeople: (query) => reads.searchPeople(query),
-        listRecommendations: () => reads.listRecommendations(),
-        viewProfile: (publicId) => reads.viewProfile(publicId),
-        listRecentConnections: () => reads.listRecentConnections(),
-        listSentInvitations: () => reads.listSentInvitations(),
-        readThread: (person) => reads.readThread(person),
-        sendInvite: () => Promise.reject(new Error(NO_SENDS)),
-        sendMessage: () => Promise.reject(new Error(NO_SENDS)),
-        withdrawInvite: () => Promise.reject(new Error(NO_SENDS)),
-      };
-    },
+    ensureSession: latched(() => reads.ensureSession()),
+    searchPeople: latched((query) => reads.searchPeople(query)),
+    listRecommendations: latched(() => reads.listRecommendations()),
+    viewProfile: latched((publicId) => reads.viewProfile(publicId)),
+    listRecentConnections: latched(() => reads.listRecentConnections()),
+    listSentInvitations: latched(() => reads.listSentInvitations()),
+    readThread: latched((person) => reads.readThread(person)),
+    sendInvite: latched((person, note, guard) => writes.sendInvite(person, note, guard)),
+    sendMessage: latched((person, text, expected) => writes.sendMessage(person, text, expected)),
+    withdrawInvite: latched((person, guard) => writes.withdrawInvite(person, guard)),
   };
 }
 
@@ -57,6 +62,10 @@ export interface LiveLinkedInDeps<W extends LiveWindow> {
   readonly open: () => Promise<W>;
   /** The window's page as the driver uses it (`driverPageFor`). */
   readonly pageFor: (page: W["page"]) => DriverPage;
+  /** The window's page as the write operations use it (`writePageFor`). */
+  readonly writePageFor: (page: W["page"]) => WritePage;
+  /** Builds the write half. Default `createWriteDriver`; tests pass a stand-in. */
+  readonly writeDriver?: (deps: WriteDeps) => WriteDriver;
   /** Waits before each page load the driver makes, so loads are spaced like a person's. */
   readonly pace: () => Promise<unknown>;
   /** Waits before a session check's feed load. Default: the session port's own. */
@@ -69,13 +78,14 @@ export interface LiveLinkedIn {
   readonly sessionPort: SessionPort;
   /** For the runner. */
   readonly driver: () => Driver;
-  readonly outreach: false;
+  /** Invites, messages, follow-ups and withdrawals run on the live site. */
+  readonly outreach: true;
   /** Opens the dedicated window if it is not open (again, if the user closed it). Throws `ProfileInUse`. */
   readonly window: () => Promise<void>;
 }
 
 export function createLiveLinkedIn<W extends LiveWindow>(deps: LiveLinkedInDeps<W>): LiveLinkedIn {
-  let current: { readonly window: W; readonly page: DriverPage } | undefined;
+  let current: { readonly window: W; readonly page: DriverPage; readonly writePage: WritePage } | undefined;
   let opening: Promise<W> | undefined;
 
   /** The open window; opens one if there is none or its page was closed. Concurrent callers share one open. */
@@ -86,7 +96,7 @@ export function createLiveLinkedIn<W extends LiveWindow>(deps: LiveLinkedInDeps<
         if (current !== undefined) await current.window.close().catch(() => undefined);
         current = undefined;
         const window = await deps.open();
-        current = { window, page: deps.pageFor(window.page) };
+        current = { window, page: deps.pageFor(window.page), writePage: deps.writePageFor(window.page) };
         return window;
       } finally {
         opening = undefined;
@@ -100,6 +110,11 @@ export function createLiveLinkedIn<W extends LiveWindow>(deps: LiveLinkedInDeps<
     return current.page;
   }
 
+  function writePageNow(): WritePage {
+    if (current === undefined) throw new Error("the dedicated window is not open");
+    return current.writePage;
+  }
+
   /** The driver's view of whichever window is open now. A page load opens the window when needed. */
   const page: DriverPage = {
     async load(url) {
@@ -109,6 +124,26 @@ export function createLiveLinkedIn<W extends LiveWindow>(deps: LiveLinkedInDeps<
     url: () => pageNow().url(),
     content: () => pageNow().content(),
     screenshot: (options) => pageNow().screenshot(options),
+  };
+
+  /** The write operations' view of whichever window is open now. A page load opens the window when needed. */
+  const writePage: WritePage = {
+    async load(url) {
+      await windowNow();
+      await writePageNow().load(url);
+    },
+    count: (target) => writePageNow().count(target),
+    click: (target) => writePageNow().click(target),
+    clickUnless: (target, refuse) => writePageNow().clickUnless(target, refuse),
+    type: (target, text) => writePageNow().type(target, text),
+    clear: (target) => writePageNow().clear(target),
+    value: (target) => writePageNow().value(target),
+    dismiss: () => writePageNow().dismiss(),
+    waitFor: (check, timeoutMs) => writePageNow().waitFor(check, timeoutMs),
+    now: () => writePageNow().now(),
+    url: () => writePageNow().url(),
+    content: () => writePageNow().content(),
+    screenshot: (options) => writePageNow().screenshot(options),
   };
 
   // The engine's reads and the session checks load pages in the same window: one at a time, or a
@@ -121,22 +156,32 @@ export function createLiveLinkedIn<W extends LiveWindow>(deps: LiveLinkedInDeps<
     ...(deps.screenshotsDir === undefined ? {} : { screenshotsDir: deps.screenshotsDir }),
   });
 
-  const live = readOnlyLinkedIn(() => {
-    const reads = createLiveDriver({
-      page,
-      pace: deps.pace,
-      ...(deps.screenshotsDir === undefined ? {} : { health: { screenshotsDir: deps.screenshotsDir } }),
-    });
-    return {
-      ensureSession: () => turn(() => reads.ensureSession()),
-      searchPeople: (query) => turn(() => reads.searchPeople(query)),
-      listRecommendations: () => turn(() => reads.listRecommendations()),
-      viewProfile: (publicId) => turn(() => reads.viewProfile(publicId)),
-      listRecentConnections: () => turn(() => reads.listRecentConnections()),
-      listSentInvitations: () => turn(() => reads.listSentInvitations()),
-      readThread: (person) => turn(() => reads.readThread(person)),
-    };
-  });
+  const health = deps.screenshotsDir === undefined ? {} : { health: { screenshotsDir: deps.screenshotsDir } };
+  const makeWrites = deps.writeDriver ?? createWriteDriver;
+
+  // A new driver (with a fresh latch) each time the runner asks: after the user resumes a safety stop.
+  const driver = (): Driver => {
+    const reads = createLiveDriver({ page, pace: deps.pace, ...health });
+    const writes = makeWrites({ page: writePage, pace: deps.pace, ...health });
+    // Reads, writes and session checks share one window: one at a time, so a Re-check pressed
+    // during a send cannot navigate away from the dialog being filled in.
+    return sharedLatch(
+      {
+        ensureSession: () => turn(() => reads.ensureSession()),
+        searchPeople: (query) => turn(() => reads.searchPeople(query)),
+        listRecommendations: () => turn(() => reads.listRecommendations()),
+        viewProfile: (publicId) => turn(() => reads.viewProfile(publicId)),
+        listRecentConnections: () => turn(() => reads.listRecentConnections()),
+        listSentInvitations: () => turn(() => reads.listSentInvitations()),
+        readThread: (person) => turn(() => reads.readThread(person)),
+      },
+      {
+        sendInvite: (person, note, guard) => turn(() => writes.sendInvite(person, note, guard)),
+        sendMessage: (person, text, expected) => turn(() => writes.sendMessage(person, text, expected)),
+        withdrawInvite: (person, guard) => turn(() => writes.withdrawInvite(person, guard)),
+      },
+    );
+  };
 
   return {
     sessionPort: {
@@ -147,8 +192,8 @@ export function createLiveLinkedIn<W extends LiveWindow>(deps: LiveLinkedInDeps<
         await open?.window.close();
       },
     },
-    driver: live.driver,
-    outreach: live.outreach,
+    driver,
+    outreach: true,
     window: async () => {
       await windowNow();
     },

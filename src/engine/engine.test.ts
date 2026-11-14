@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { actions, campaigns, prospects, safetyStops } from "../db/schema";
 import { getSettings } from "../config/settings";
+import { checkBudget } from "./budget";
 import { pickDueWork } from "./engine";
 import { raiseSafetyStop } from "./safetyStop";
 import {
@@ -374,6 +375,18 @@ describe("picking due work", () => {
     expect((await step(kit)).did).toBeNull();
     expect(prospect(kit, real.prospectId).stage).toBe("message_sent");
     expect(kit.world.messagesSentTo(real.spec.publicId)).toHaveLength(1);
+  });
+
+  it("an invite costs two profile views, the engine's read and the send's own load, so one view left is not enough", async () => {
+    kit.settings({ limits: { profileViewsPerDay: 1 } });
+    const p = seedApproved(kit, seedCampaign(kit));
+    expect((await step(kit)).did).toBeNull();
+    expect(prospect(kit, p.prospectId).stage).toBe("approved");
+
+    kit.settings({ limits: { profileViewsPerDay: 2 } });
+    await step(kit);
+    expect(prospect(kit, p.prospectId).stage).toBe("invited");
+    expect(checkBudget(kit.db, getSettings(kit.db), "profile_view", kit.clock.now())).toMatchObject({ allowed: false, used: 2, limit: 2 });
   });
 
   it("with invites spent, withdrawals and messages still run; with profile views spent, neither invites nor withdrawals do", async () => {

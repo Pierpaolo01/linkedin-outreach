@@ -60,8 +60,9 @@ export type CampaignPatch = z.infer<typeof campaignFieldsSchema>;
 /** All of a campaign's wizard fields, as stored. */
 export type CampaignFields = { readonly [K in keyof CampaignPatch]-?: Exclude<CampaignPatch[K], undefined> };
 
-/** Templates and timings: the fields a campaign may still change once it has started. */
+/** Templates, timings and auto-approve (decision 94): the fields a campaign may still change once it has started. */
 export const LIVE_EDITABLE_FIELDS = [
+  "autoApprove",
   "inviteNote",
   "firstMessage",
   "followUp",
@@ -125,7 +126,7 @@ export const LONG_SAMPLE_VALUES = {
   title: "Head of Business Development and Strategic Partnerships",
   location: "Reggio nell'Emilia, Emilia-Romagna, Italy",
   industry: "Industrial Machinery Manufacturing",
-  ai_line: "I read your recent post about bringing lean production methods to small family-owned manufacturers and found the part about supplier visits useful.",
+  ai_line: "I read your recent post about bringing lean production methods to small family-owned manufacturers and found the part on suppliers useful.",
 } as const satisfies Required<TemplateValues>;
 
 const VARIABLE_LIST = `Use ${TEMPLATE_VARIABLES.slice(0, -1)
@@ -163,7 +164,7 @@ function templateProblem(template: string | null, rule: TemplateRule): string | 
  * What stops this campaign from starting, by field; empty when it may start. Also used for edits
  * to a started campaign, so a live campaign never holds a template the engine would refuse.
  */
-export function startProblems(c: CampaignFields, { confirmAutoApprove }: { readonly confirmAutoApprove: boolean }): FieldProblems {
+export function startProblems(c: CampaignFields): FieldProblems {
   const problems: Record<string, string> = {};
   const note = (field: string, problem: string | null) => {
     if (problem !== null) problems[field] = problem;
@@ -193,9 +194,6 @@ export function startProblems(c: CampaignFields, { confirmAutoApprove }: { reado
   if (c.acceptToMessageMinHours > c.acceptToMessageMaxHours) note("acceptToMessageMinHours", longest(c.acceptToMessageMaxHours));
   if (c.followUpDelayMinHours > c.followUpDelayMaxHours) note("followUpDelayMinHours", longest(c.followUpDelayMaxHours));
 
-  if (c.autoApprove && !confirmAutoApprove) {
-    note("autoApprove", "Auto-approve sends without your review. Confirm that this is what you want.");
-  }
   return problems;
 }
 
