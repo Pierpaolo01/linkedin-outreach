@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { campaigns, safetyStops } from "../db/schema";
 import type { DriverOp, KillHook, KillPhase } from "../linkedin/fake/world";
+import { getSettings } from "../config/settings";
+import { usageToday } from "./budget";
 import { activeSafetyStop, resumeSafetyStop } from "./safetyStop";
 import {
   actionByKey,
@@ -86,6 +88,18 @@ describe("reconcile an invite of unknown result", () => {
     await until(() => stage(p.prospectId) === "invited");
     expect(invitesTo(p.spec.publicId)).toBe(1);
     expect(actionByKey(kit, `invite:${p.prospectId}`)).toMatchObject({ status: "done", attempts: 2 });
+  });
+
+  it("charges the profile-view budget for the write's profile load on every attempt, the retry's too", async () => {
+    // Each sendInvite loads the profile again; a retry reuses the invite's ledger row, so the row alone undercounts.
+    const p = seedApproved(kit, seedCampaign(kit));
+    kit.world.failNext("sendInvite", "timeout_before_effect");
+    await step(kit);
+    await until(() => stage(p.prospectId) === "invited");
+    expect(actionByKey(kit, `invite:${p.prospectId}`)).toMatchObject({ status: "done", attempts: 2 });
+    const reads = actionRows(kit).filter((row) => row.type === "profile_view").length;
+    const settings = getSettings(kit.db);
+    expect(usageToday(kit.db, settings, kit.clock.now()).profile_view.used).toBe(reads + 2);
   });
 
   it.each([

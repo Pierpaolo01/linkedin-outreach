@@ -94,6 +94,24 @@ describe("checkBudget, day budgets", () => {
     expect(checkBudget(opened.db, settings, "invite", now).used).toBe(1);
   });
 
+  it("counts each attempt of a retried invite as a profile view, on the day it started", () => {
+    const settings = settingsWith({ limits: { profileViewsPerDay: 10 } });
+    // Tried yesterday, then twice today: the row's startedAt is the last attempt.
+    opened.db
+      .insert(actions)
+      .values({
+        type: "invite",
+        status: "done",
+        idempotencyKey: "test:retried",
+        attempts: 3,
+        startedAt: new Date("2026-11-11T08:30:00Z"),
+        detail: { attemptStarts: [new Date("2026-11-10T09:00:00Z").getTime(), new Date("2026-11-11T08:00:00Z").getTime(), new Date("2026-11-11T08:30:00Z").getTime()] },
+      })
+      .run();
+    expect(checkBudget(opened.db, settings, "profile_view", now).used).toBe(2);
+    expect(checkBudget(opened.db, settings, "invite", now).used).toBe(1);
+  });
+
   it("allows a step that needs several units only when all of them are left", () => {
     const settings = settingsWith({ limits: { profileViewsPerDay: 3 } });
     addRows("profile_view", "2026-11-11T08:00:00Z", { count: 2 });

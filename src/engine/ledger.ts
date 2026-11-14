@@ -105,6 +105,25 @@ export type ClaimResult = { readonly ok: true; readonly claim: Claim } | { reado
 
 const refuse = (refusal: ClaimRefusal): ClaimResult => ({ ok: false, refusal });
 
+/** Key in an invite row's `detail`: when each attempt started, as epoch milliseconds. */
+export const ATTEMPT_STARTS = "attemptStarts";
+
+/** The start times an invite row records for its attempts; empty for a row from before they were recorded. */
+export function attemptStarts(detail: Record<string, unknown> | null): number[] {
+  const value = detail?.[ATTEMPT_STARTS];
+  return Array.isArray(value) ? value.filter((v): v is number => typeof v === "number") : [];
+}
+
+/**
+ * The detail a claim stores: the request's, replacing any earlier one. An invite also keeps the start
+ * of every attempt, since each loads the person's profile and so costs a profile view on its own day,
+ * though a retry reuses the row (budget.ts).
+ */
+function claimDetail(step: Step, earlier: Record<string, unknown> | null, requested: Record<string, unknown> | undefined, now: Date): Record<string, unknown> | null {
+  if (step !== "invite") return requested ?? null;
+  return { ...requested, [ATTEMPT_STARTS]: [...attemptStarts(earlier), now.getTime()] };
+}
+
 /**
  * The text an earlier claim froze for this step, when the step was claimed before (its row has
  * attempts). `{ frozen: false }` when the step was never claimed, so the caller renders it.
@@ -173,7 +192,7 @@ export function claimStep(db: Conn, request: ClaimRequest, now: Date): ClaimResu
         finishedAt: null,
         error: null,
         errorKind: null,
-        detail: request.detail ?? null,
+        detail: claimDetail(step, existing?.detail ?? null, request.detail, now),
       })
       .where(and(eq(actions.idempotencyKey, key), eq(actions.status, "planned")))
       .run().changes;

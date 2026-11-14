@@ -728,7 +728,10 @@ export const THREE_WEEK_MINIMUMS: Minimums = {
   // suggestions source now looks again every day instead of running out, K may rightly still be finding.
   awaitingApprovalReached: 2,
   discoveryResumedAfterApproval: 1,
-  discoveredInvited: 10,
+  // Shows the found → scored → invited path runs; not a rate. Each invite attempt is charged its
+  // profile load, retries included, so a seed with many killed invites leaves fewer views for
+  // discovery (seed 3: 8, others 13–14).
+  discoveredInvited: 5,
   aiCallsAtNight: 1,
   aiCallsDuringSafetyStop: 1,
 };

@@ -2,6 +2,7 @@ import { and, count, eq, gt, gte, inArray, isNotNull, lt, max } from "drizzle-or
 import type { Settings } from "../config/settings";
 import type { Db } from "../db/index";
 import { actions, safetyStops, type ActionType } from "../db/schema";
+import { attemptStarts } from "./ledger";
 import { dayKey, nextWorkingInstant, startOfDay, startOfNextDay, startOfNextWeek, startOfWeek } from "./workingWindow";
 
 /**
@@ -26,9 +27,9 @@ export interface BudgetAnswer {
 const LEDGER_TYPES = {
   invite: ["invite"],
   message: ["message"],
-  // Sending an invite loads the person's profile again (the write's own check of who it is), so every
-  // invite is a profile view as well as an invite.
-  profile_view: ["profile_view", "invite"],
+  // Sending an invite also loads the person's profile again (the write's own check of who it is): each
+  // invite attempt is counted as a profile view as well, by `invitePageLoads`.
+  profile_view: ["profile_view"],
   discovery_page: ["search_page", "recommendation_page"],
   withdraw: ["withdraw"],
 } as const satisfies Record<BudgetKind, readonly [ActionType, ...ActionType[]]>;
@@ -48,7 +49,32 @@ function countClaimed(db: Db, kind: BudgetKind, from: Date, to: Date): number {
     .from(actions)
     .where(and(inArray(actions.type, LEDGER_TYPES[kind]), gte(actions.startedAt, from), lt(actions.startedAt, to)))
     .get();
-  return row?.n ?? 0;
+  const rows = row?.n ?? 0;
+  return kind === "profile_view" ? rows + invitePageLoads(db, from, to) : rows;
+}
+
+/**
+ * Invite attempts started in `[from, to)`: each loads the person's profile. A retry reuses the
+ * invite's row, so the row records every attempt's start (`attemptStarts`); a row from before that
+ * counts once, at its `startedAt`. A row's latest attempt is its `startedAt`, so a row with an attempt
+ * in the window started at or after `from`.
+ */
+function invitePageLoads(db: Db, from: Date, to: Date): number {
+  const rows = db
+    .select({ startedAt: actions.startedAt, detail: actions.detail })
+    .from(actions)
+    .where(and(eq(actions.type, "invite"), gte(actions.startedAt, from)))
+    .all();
+  let loads = 0;
+  for (const { startedAt, detail } of rows) {
+    const starts = attemptStarts(detail);
+    if (starts.length === 0) {
+      if (startedAt !== null && startedAt < to) loads += 1;
+    } else {
+      loads += starts.filter((at) => at >= from.getTime() && at < to.getTime()).length;
+    }
+  }
+  return loads;
 }
 
 type Refusal = { readonly reason: Exclude<BudgetAnswer["reason"], "ok">; readonly resumesAt: Date };
