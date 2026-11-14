@@ -20,11 +20,14 @@ function approvedProspect(row: Partial<typeof people.$inferInsert> = {}) {
 }
 
 describe("claimStep", () => {
-  it("records each invite attempt's start, keeping an older row's earlier attempt that had no history", () => {
+  it.each([
+    ["counted", 2],
+    ["given back by releaseClaim, so its attempts went to zero", 0],
+  ])("records each invite attempt's start, keeping an older row's earlier attempt (%s) that had no history", (_label, attempts) => {
     const { prospectId } = approvedProspect();
     const earlier = new Date(kit.clock.now().getTime() - 3_600_000);
-    // A row claimed before attempt starts were recorded, then given back.
-    kit.db.insert(actions).values({ type: "invite", status: "planned", idempotencyKey: `invite:${prospectId}`, prospectId, attempts: 2, startedAt: earlier }).run();
+    // A row claimed before attempt starts were recorded; the profile load of that attempt happened either way.
+    kit.db.insert(actions).values({ type: "invite", status: "planned", idempotencyKey: `invite:${prospectId}`, prospectId, attempts, startedAt: earlier }).run();
     const now = kit.clock.now();
     expect(claimStep(kit.db, { step: "invite", prospectId, text: null }, now).ok).toBe(true);
     expect(actionByKey(kit, `invite:${prospectId}`)?.detail).toEqual({ attemptStarts: [earlier.getTime(), now.getTime()] });
